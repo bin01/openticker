@@ -292,7 +292,7 @@ table.hz{width:100%;border-collapse:collapse;font-size:13px}
 @media (min-width:900px){.drawer.full .dr-body{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:0 40px;align-items:start}.drawer.full .dr-main,.drawer.full .dr-side{display:block}.drawer.full .kf{grid-template-columns:repeat(3,minmax(0,240px))}.drawer.full .dr-h h3{font-size:34px}}
 @media (max-width:1500px){.brand span{display:none}}
 @media (max-width:760px){#ts{width:140px}}
-@media (max-width:600px){#fullDr{display:none}.srch{order:5;flex:1 1 100%}#ts{width:100%}}
+@media (max-width:600px){#fullDr{display:none}.srch{order:5;flex:1 1 100%}#ts{width:100%}#theme{display:none}}
 .btn{border:1px solid var(--ink);background:var(--ink);color:var(--bg);border-radius:8px;height:30px;padding:0 12px;font:600 12.5px var(--f-body);cursor:pointer;white-space:nowrap}
 .btn.ghost{background:var(--panel);color:var(--ink);border-color:var(--rule)}
 .btn:hover{filter:brightness(1.1)}
@@ -990,7 +990,8 @@ const ic=(n,s=16,fill=false)=>`<svg class="ic" viewBox="0 0 24 24" width="${s}" 
 
 /* ======================= config & state ======================= */
 const HZ=["1D","1W","1M","3M","6M","YTD","1Y"];
-const FUND_ORDER=["SPY","QQQ","SMH","SOXX","Watchlist","Portfolio"];
+const FUND_LIST=["SPY","QQQ","SMH","SOXX"];   // the Funds page, in order; must match FUNDS in app/server.py
+const FUND_ORDER=[...FUND_LIST,"Watchlist","Portfolio"];
 const HEAT={"1D":.03,"1W":.06,"1M":.12,"3M":.2,"6M":.3,"YTD":.4,"1Y":.5};   // return that maps to full color
 const FILTERS=[["all","All"],["leaders","Beating fund"],["laggards","Lagging fund"],["highs","Near 52-wk high"],["lows","Near 52-wk low"],["below200","Below 200-day"]];
 let base=null, liveInfo=null, model=null, fundStats={};
@@ -1522,7 +1523,7 @@ function drawerLive(r){
      <div class="stat"><div class="lbl">vs 50-day average</div><div class="v ${cls(r.vs50)}">${pct(r.vs50,1)}</div><div class="ks">${money(r.ma50)}</div></div>
      <div class="stat"><div class="lbl">vs 200-day average</div><div class="v ${cls(r.vs200)}">${pct(r.vs200,1)}</div><div class="ks">${money(r.ma200)}</div></div>`;
   renderPeers(r);
-  $("#drHeld").innerHTML=inFunds.length?"":`<p class="hint" style="margin:0">None of SPY, QQQ, SMH or SOXX.</p>`;
+  $("#drHeld").innerHTML=inFunds.length?"":`<p class="hint" style="margin:0">None of ${FUND_LIST.slice(0,-1).join(", ")} or ${FUND_LIST.at(-1)}.</p>`;
   if(inFunds.length) $("#drHeld").innerHTML=inFunds.map(k=>{const h=base.funds[k].holdings.find(x=>x.t===r.t);return `<button class="chip" data-f="${k}" style="border:0;cursor:pointer">${k} · ${h.w.toFixed(2)}%</button>`;}).join("");
   const d=detailCache[r.t]; if(d&&!d.loading) renderAnalyst(r,d);
   if(!document.activeElement?.closest?.("#drawer form")) drawerMine(r);
@@ -1660,6 +1661,7 @@ let hlT=null;
 function applyHl(){ document.querySelectorAll(".hl").forEach(e=>e.classList.remove("hl")); if(!hlT){document.body.classList.remove("hl-on");return;} document.querySelectorAll(`[data-sel="${CSS.escape(hlT)}"]`).forEach(e=>e.classList.add("hl")); document.body.classList.add("hl-on"); }
 document.addEventListener("mouseover",e=>{ const t=e.target.closest?.("#app [data-sel], #tape [data-sel]")?.dataset.sel||null; if(t!==hlT){ hlT=t; applyHl(); } });
 const THEMES=["auto","light","dark"]; let theme=load("theme","auto");
+{ const q=new URLSearchParams(location.search).get("theme"); if(THEMES.includes(q)) theme=q; }   // ?theme=dark for screenshots; not saved
 function applyTheme(){ if(theme==="auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme=theme; const tb=$("#theme"); tb.innerHTML=ic({auto:"auto",light:"sun",dark:"moon"}[theme],17); tb.title=`Theme: ${{auto:"matches your system",light:"light",dark:"dark"}[theme]}. Click to change.`; }
 $("#theme").addEventListener("click",()=>{ theme=THEMES[(THEMES.indexOf(theme)+1)%3]; save("theme",theme); applyTheme(); });
 applyTheme();

@@ -907,7 +907,7 @@ def open_terminal(pid, action):
     return False
 
 
-APP_STEPS = {"update": "update", "phone-on": "start --lan", "phone-off": "start --local"}
+APP_STEPS = {"update": "update", "phone-on": "start --lan", "phone-off": "start --local", "edit": "edit"}
 
 
 def open_app_terminal(step):

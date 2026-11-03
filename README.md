@@ -3,51 +3,72 @@
 <h1 align="center">OpenTicker</h1>
 
 <p align="center"><b>A stock market dashboard for your Mac, with your own AI agent built in.</b><br>
-Live prices, what moved the S&amp;P 500 and why, your portfolio, earnings, analysts, insiders and options.<br>
-Ask Claude Code, Codex, OpenCode or a local Ollama model about any of it, on the plan you already pay for.</p>
+Live prices, what moved the market and why, your portfolio, earnings, analysts, insiders and options.<br>
+Ask Claude Code, Codex, OpenCode or a local Ollama model about any of it, on the plan you already pay for.<br>
+And when you want it to work differently, ask your agent to change it.</p>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
-  <img src="docs/screenshot.png" alt="OpenTicker showing the market overview with the Ask panel open">
+  <img src="docs/screenshot.png" alt="OpenTicker showing the market overview with Tick, the analyst panel, open">
 </picture>
 
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#whats-inside">What's inside</a> ·
+  <a href="#tick-your-analyst">Tick</a> ·
+  <a href="#make-it-yours">Make it yours</a> ·
+  <a href="#use-it-from-any-agent">Any agent</a> ·
+  <a href="#commands">Commands</a> ·
+  <a href="#privacy">Privacy</a>
+</p>
+
 ## Install
+
+Paste this into Terminal:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/bin01/openticker/main/install.sh | bash
 ```
 
-That's it. OpenTicker installs to `~/.openticker`, starts in the background, adds **OpenTicker** to your Applications and opens it. It needs macOS 12 or later; the installer sets up its own Python, so nothing else is required. (It also runs on Linux, in your browser.)
+Or let your coding agent do it. Paste this into Claude Code, Codex or any agent:
 
-Want it on your phone too? Run `openticker start --lan`, then `openticker pair`, and open the link on your phone.
+> Install OpenTicker from github.com/bin01/openticker and follow its AGENTS.md.
+
+Either way, OpenTicker installs to `~/.openticker`, runs in the background, adds **OpenTicker** to your Applications and opens it. It needs macOS 12 or later and sets up its own Python, so nothing else is required. It also runs on Linux, in your browser.
+
+**On your phone too:** run `openticker start --lan`, then `openticker pair`, and open the link on your phone. It installs to your home screen.
 
 ## What's inside
 
-- **Market**: the day in plain English, then indexes, rates, the dollar, oil, the VIX and the 11 sectors.
-- **Funds**: which stocks drove SPY, QQQ, SMH and SOXX over a day, a week or a year, holding by holding.
-- **My stocks**: a watchlist and positions with P&L, a brief of what changed (rating changes, target moves, insider trades, unusual options), a portfolio X-ray and price alerts that reach your phone.
-- **Every stock**: chart with earnings and events marked, analysts, earnings history, ownership, options positioning, financials and news.
-- **Calendar and screener**: upcoming earnings and economic events; filter the S&P 500.
-- **⌘K** or <kbd>/</kbd> jumps to anything. Light and dark. Installs on your phone's home screen.
+| Page | What you see |
+| --- | --- |
+| **Market** | The day in plain English, then indexes, rates, the dollar, oil, the VIX and the 11 sectors |
+| **Funds** | Which stocks drove SPY, QQQ, SMH and SOXX over a day, a week or a year, holding by holding |
+| **My stocks** | Your watchlist and positions with gains and losses, a brief of what changed, a portfolio X-ray and price alerts that reach your phone |
+| **Any stock** | A chart with earnings and events marked, analysts, earnings history, ownership, options, financials and news |
+| **Calendar** | Upcoming earnings and economic events |
+| **Screener** | Filter the S&P 500 |
 
-## Ask your agent
+Press <kbd>⌘K</kbd> or <kbd>/</kbd> to jump anywhere, and <kbd>⌘,</kbd> for Settings. Light and dark follow your Mac.
 
-Press <kbd>A</kbd> or click **Ask**. OpenTicker hands your agent the live data for what you're looking at, so answers start from real numbers, not from memory.
+## Tick, your analyst
 
-| Agent | Billing |
+Press <kbd>A</kbd> or click **Ask Tick**. Tick hands your agent the live data for whatever you're looking at, so answers start from real numbers rather than memory, and it draws charts when a picture says it better. Pick the agent, model and effort from the top of the panel. Conversations are saved on your Mac.
+
+| Agent | Billed to |
 | --- | --- |
 | [Claude Code](https://claude.com/claude-code) | Your Claude plan |
 | [Codex](https://developers.openai.com/codex) | Your ChatGPT plan |
-| [OpenCode](https://opencode.ai) | Whatever provider you signed it into |
+| [OpenCode](https://opencode.ai) | Whichever provider you signed it into |
 | [Ollama](https://ollama.com) | Free, runs on your Mac |
 
-If an agent isn't installed or signed in, Ask shows you and opens Terminal with the official one-line installer or sign-in. API keys in your environment are ignored so you're never billed twice; set `OPENTICKER_AGENT_BILLING=api` if you'd rather use them.
+If an agent isn't installed or signed in, Tick says so and opens Terminal with the official installer or sign-in. API keys in your environment are ignored so you're never billed twice. Set `OPENTICKER_AGENT_BILLING=api` if you'd rather use them.
 
-### Skills
+### Playbooks
 
-One click runs a playbook written for that question. They're plain [Agent Skills](https://agentskills.io), so you can read them, edit them, or add your own in `skills/`.
+One click runs a playbook written for that question. Hover any insight and press <kbd>A</kbd> to ask about just that.
 
-| Skill | What you get |
+| Playbook | What you get |
 | --- | --- |
 | Quick take | The story of a stock in 200 words: trend, analysts, what's next |
 | Why is it moving? | Market, sector or company news, sized against a normal day |
@@ -61,64 +82,85 @@ One click runs a playbook written for that question. They're plain [Agent Skills
 | Which sectors lead? | Leaders and laggards across sectors, and what the shift says |
 | Macro backdrop | Rates, the dollar, oil and the VIX, and what they mean for stocks |
 
-Hover any insight and press <kbd>A</kbd> to ask about just that.
+Playbooks are plain [Agent Skills](https://agentskills.io) in `skills/`. Read them, edit them, or ask your agent to write a new one.
+
+## Make it yours
+
+OpenTicker is built to be changed by your coding agent, no programming needed. Describe what you want:
+
+```bash
+openticker edit "add XLE and XLF to the Funds page"
+openticker edit "make Tick answer in bullet points"
+openticker edit "add a playbook that compares a stock with its two closest rivals"
+openticker edit "alert me when a stock in my watchlist drops 5% in a day"
+```
+
+That opens Claude Code, Codex or OpenCode in OpenTicker's code. Or go to **Settings → About → Change OpenTicker**, or open `~/.openticker` in any agent.
+
+Your agent reads [AGENTS.md](AGENTS.md), which maps the code and has recipes for common changes. It makes the change, checks it with `openticker check`, restarts, looks at the result with `openticker shot`, and saves it as a commit. When you run `openticker update`, your changes are replayed on top of the new version. If the two ever clash, update stops without touching anything and tells you to run `openticker edit` to sort it out.
 
 ## Use it from any agent
 
 OpenTicker's data works outside the app too, in whatever agent you already use.
 
-**The `openticker` command** prints Markdown that agents read well:
+**The command** prints Markdown that agents read well:
 
 ```bash
-openticker stock NVDA            # company, price and trend, analysts, earnings, insiders, options, news
-openticker earnings NVDA         # one section: analysts, earnings, ownership, options, news, financials, events
-openticker portfolio             # your positions, watchlist and what changed
-openticker market                # indexes, sectors, macro and today's movers
-openticker fund SMH --h 1M       # what drove a fund
+openticker stock NVDA              # company, price and trend, analysts, earnings, insiders, options, news
+openticker earnings NVDA           # one section: analysts, earnings, ownership, options, news, financials, events
+openticker portfolio               # your positions, watchlist and what changed
+openticker market                  # indexes, sectors, macro and today's movers
+openticker fund SMH --h 1M         # what drove a fund
 openticker compare NVDA AMD AVGO
+openticker history NVDA SMH --h 3M # daily closes, for charts
 openticker calendar
 ```
 
-**Skills for your agent**: setup installs them for Claude Code (`~/.claude/skills`) and for Codex, Cursor, OpenCode and others (`~/.agents/skills`). Re-run with `openticker skills install`. Or as a Claude Code plugin:
+**Skills.** Setup installs the playbooks for Claude Code (`~/.claude/skills`) and for Codex, Cursor, OpenCode and others (`~/.agents/skills`). Run `openticker skills install` to refresh them. They're also a Claude Code plugin:
 
 ```
 /plugin marketplace add bin01/openticker
 /plugin install openticker@openticker
 ```
 
-**MCP**: `openticker mcp` is a stdio MCP server with read-only tools (`stock`, `portfolio`, `market`, `fund`, `compare`, `calendar`, `search`) and the skills as prompts. For Claude Desktop, Cursor or any MCP client:
+**MCP.** `openticker mcp` is a stdio MCP server with read-only tools (`stock`, `portfolio`, `brief`, `market`, `fund`, `compare`, `history`, `calendar`, `search`) and the playbooks as prompts. For Claude Desktop, Cursor or any MCP client:
 
 ```json
 { "mcpServers": { "openticker": { "command": "openticker", "args": ["mcp"] } } }
 ```
 
-## The command
+## Commands
 
-```
-openticker open                  open the app
-openticker start [--lan|--local] run in the background and at login; --lan lets your phone connect
-openticker stop | restart | status | logs
-openticker pair                  link for your phone, including Ask
-openticker update                pull the latest version and restart
-openticker doctor                check Python, the service, the Mac app and your agents
-```
+| Command | What it does |
+| --- | --- |
+| `openticker open` | Open the app |
+| `openticker start [--lan\|--local]` | Run in the background and at login; `--lan` lets your phone connect |
+| `openticker stop`, `restart`, `status`, `logs` | Control the background server |
+| `openticker pair` | A link for your phone, including Tick |
+| `openticker update` | Get the latest version, keep your changes, restart |
+| `openticker doctor` | Check Python, the server, the Mac app and your agents |
+| `openticker edit ["what you want"]` | Open your coding agent in OpenTicker's code |
+| `openticker check` | Fast checks after a change |
+| `openticker shot [page\|TICKER] [--dark] [--phone]` | Screenshot a page and print where it saved |
+| `openticker skills [install]` | List the playbooks, or install them for your agents |
+| `openticker mcp` | Run as an MCP server |
+
+`openticker help` lists everything, including all the data commands.
 
 ## Privacy
 
-Everything runs on your Mac. Your watchlist, positions and alerts live in `~/Library/Application Support/OpenTicker` and never leave it. Market data comes from Yahoo Finance. When you use Ask, the question and the data for what you're looking at go to the agent you chose, under that agent's terms. Only this Mac, or a phone you paired, can use Ask.
-
-## Notes
+Everything runs on your Mac. Your watchlist, positions, alerts and Tick conversations live in `~/Library/Application Support/OpenTicker` and never leave it. Market data comes from Yahoo Finance. When you ask Tick something, the question and the data for what you're looking at go to the agent you chose, under that agent's terms. Only this Mac, or a phone you paired, can use Tick.
 
 OpenTicker uses Yahoo Finance's public data through [yfinance](https://github.com/ranaroussi/yfinance) and fund holdings published by State Street, Invesco and VanEck. It's for personal research and isn't affiliated with any of them. Data can be delayed or wrong, and nothing here is investment advice.
 
 ## Contributing
 
-The app is a small Python server (`app/server.py`, standard library plus yfinance) and plain HTML, CSS and JavaScript (`app/index.html`, `app/static/`), with no build step. The agent layer is `app/agent.py`; the Mac app is one Swift file in `mac/`. See [AGENTS.md](AGENTS.md).
+OpenTicker is a small Python server (standard library plus yfinance) and plain HTML, CSS and JavaScript with no build step. The Mac app is one Swift file. [AGENTS.md](AGENTS.md) maps the code and the house rules, for people and agents alike.
 
 ```bash
 git clone https://github.com/bin01/openticker && cd openticker
-./install.sh            # uses this checkout
-openticker logs
+./install.sh            # installs from this checkout
+openticker check        # after a change
 ```
 
 ## License

@@ -4,7 +4,7 @@
 /* ---------- command bar: pages, funds, actions and stocks in one box ---------- */
 const COMMANDS=[
   ...PAGES.map(([k,l])=>({cmd:"page:"+k,label:l,hint:"Go to",icon:k,keys:l+" "+k,run:()=>goPage(k)})),
-  ...["SPY","QQQ","SMH","SOXX"].map(f=>({cmd:"fund:"+f,label:`${f} dashboard`,hint:"Fund",icon:"funds",keys:f+" fund "+(base?.funds?.[f]?.name||""),run:()=>pickFund(f)})),
+  ...FUND_LIST.map(f=>({cmd:"fund:"+f,label:`${f} dashboard`,hint:"Fund",icon:"funds",keys:f+" fund "+(base?.funds?.[f]?.name||""),run:()=>pickFund(f)})),
   {cmd:"fund:Watchlist",label:"Your watchlist",hint:"My stocks",icon:"star",keys:"watchlist watch",run:()=>pickFund("Watchlist")},
   {cmd:"fund:Portfolio",label:"Your portfolio",hint:"My stocks",icon:"mine",keys:"portfolio positions holdings mine",run:()=>pickFund("Portfolio")},
   {cmd:"brief",label:"Your brief",hint:"My stocks",icon:"mine",keys:"brief news updates what changed",run:()=>{ pickFund(fundFor.mine); setTimeout(()=>$("#s-brief")?.scrollIntoView({behavior:"smooth"}),120); }},

@@ -30,6 +30,12 @@ Data, as Markdown (for you or any agent)
   openticker calendar                earnings and economic events in the next two weeks
   openticker search palantir         find a ticker
 
+Change it (with Claude Code, Codex or any coding agent; see AGENTS.md)
+  openticker edit ["what you want"]  open your coding agent in OpenTicker's code
+  openticker check                   fast checks after a change
+  openticker shot [page|TICKER] [--dark] [--phone] [--no-tick]
+                                     screenshot a page with headless Chrome and print the file
+
 Agents
   openticker skills                  list the built-in playbooks
   openticker skills install          install them for Claude Code and other agents (~/.claude, ~/.agents)
@@ -483,12 +489,26 @@ def cmd_setup(args):
     return 0
 
 
+def git(*a):
+    return subprocess.run(["git", "-C", str(ROOT)] + list(a), capture_output=True, text=True)
+
+
 def cmd_update(args):
+    """Pull the latest code and keep the user's own changes: committed ones are replayed on top, uncommitted ones are
+    stashed and put back. If they clash with the update, nothing changes and we say which files."""
     if not (ROOT / ".git").exists():
         die("this copy wasn't installed with git; reinstall with the one-line installer")
-    r = subprocess.run(["git", "-C", str(ROOT), "pull", "--ff-only"], capture_output=True, text=True)
+    head = git("rev-parse", "HEAD").stdout.strip()
+    r = git("pull", "--rebase", "--autostash")
     if r.returncode != 0:
-        die(r.stderr.strip() or "git pull failed")
+        clash = [ln[3:] for ln in git("status", "--porcelain").stdout.splitlines() if ln[:2] in ("UU", "AA", "DU", "UD")]
+        git("rebase", "--abort")    # puts back your commits and, with --autostash, your uncommitted edits
+        die("the update clashes with your own changes" + (" in " + ", ".join(clash) if clash else "") +
+            ". Nothing was changed. Ask your agent to merge it: openticker edit \"update OpenTicker and keep my changes\"")
+    if any(ln[:2] in ("UU", "AA", "DU", "UD") for ln in git("status", "--porcelain").stdout.splitlines()):
+        git("reset", "--hard", "HEAD")   # the update is in; uncommitted edits that clashed stay safe in `git stash`
+        warn("Updated, but your uncommitted edits clash with it. They're saved in git stash; "
+             "run: openticker edit \"reapply my stashed changes\"")
     print(r.stdout.strip())
     if shutil.which("uv"):
         subprocess.run(["uv", "pip", "install", "-q", "--python", py(), "-r", str(ROOT / "requirements.txt")])
@@ -529,6 +549,144 @@ def cmd_doctor(args):
         except Exception as e:
             warn(f"Couldn't check agents: {e}")
     print(f"\n  {dim('Data')} {paths.HOME}\n  {dim('Logs')} {LOG}\n")
+    return 0
+
+
+# --------------------------------------------------------------------------- for agents that change OpenTicker
+AGENTS = (("claude", "Claude Code"), ("codex", "Codex"), ("opencode", "OpenCode"))
+
+
+def cmd_edit(args):
+    """Open the user's coding agent in OpenTicker's code, where AGENTS.md tells it how everything works."""
+    want = None
+    if "--with" in args:
+        i = args.index("--with")
+        want = args[i + 1] if i + 1 < len(args) else None
+        args = args[:i] + args[i + 2:]
+    names = [a for a in AGENTS if not want or a[0] == want]
+    found = next(((b, n, shutil.which(b)) for b, n in names if shutil.which(b)), None)
+    if not found:
+        print(f"OpenTicker's code is in {ROOT}")
+        die("no coding agent found. Install Claude Code (https://claude.com/claude-code) or Codex, "
+            f"or open {ROOT} in any agent; AGENTS.md there explains the code.")
+    b, name, path = found
+    prompt = " ".join(args).strip()
+    print(f"  {_c('32', '✓')} Opening {name} in {str(ROOT).replace(str(Path.home()), '~')}")
+    print(f"  {dim('Tell it what to change. It will check the result and restart OpenTicker for you.')}\n")
+    os.chdir(ROOT)
+    os.execv(path, [b] + ([prompt] if prompt else []))
+
+
+def _js_check():
+    node = shutil.which("node")
+    if not node:
+        return None, "node isn't installed, so JavaScript wasn't syntax-checked"
+    import tempfile
+    html = (APP / "index.html").read_text()
+    errs = []
+    with tempfile.TemporaryDirectory() as d:
+        inline = Path(d) / "inline.js"
+        inline.write_text("\n".join(re.findall(r"<script>(.*?)</script>", html, re.S)))
+        for f in [inline] + sorted((APP / "static").glob("*.js")):
+            r = subprocess.run([node, "--check", str(f)], capture_output=True, text=True)
+            if r.returncode != 0:
+                lines = r.stderr.strip().splitlines()
+                where = next((m.group(1) for m in (re.search(r":(\d+)$", x) for x in lines[:1]) if m), None)
+                msg = next((x for x in lines if "Error" in x), "syntax error")
+                name = "index.html <script>" if f == inline else f.relative_to(ROOT)
+                errs.append(f"{name}{' line ' + where if where else ''}: {msg}")
+    return errs, None
+
+
+def cmd_check(args):
+    """Fast checks after a change: Python compiles, the CLI still runs on macOS's Python 3.9, JavaScript parses,
+    skills are complete, and the running server answers."""
+    import ast
+    fails, notes = [], []
+    for f in sorted(APP.glob("*.py")):
+        try:
+            compile(f.read_text(), str(f), "exec")
+        except SyntaxError as e:
+            fails.append(f"{f.relative_to(ROOT)} line {e.lineno}: {e.msg}")
+    try:
+        ast.parse((BIN / "openticker").read_text(), feature_version=(3, 9))
+    except SyntaxError as e:
+        fails.append(f"bin/openticker line {e.lineno}: needs Python 3.10+ syntax ({e.msg}); it must run on Python 3.9")
+    errs, note = _js_check()
+    fails += errs or []
+    if note:
+        notes.append(note)
+    need = ("label", "scope", "prompt", "blurb", "order")
+    for d in skill_dirs():
+        meta = (d / "SKILL.md").read_text().split("---")[1] if (d / "SKILL.md").read_text().startswith("---") else ""
+        if not re.search(r"^name:", meta, re.M) or not re.search(r"^description:", meta, re.M):
+            fails.append(f"skills/{d.name}/SKILL.md: needs name and description")
+        elif not re.search(r"hidden:\s*\"?true", meta):
+            miss = [k for k in need if not re.search(rf"^\s+{k}:", meta, re.M)]
+            if miss:
+                fails.append(f"skills/{d.name}/SKILL.md: metadata needs {', '.join(miss)}")
+            sc = re.search(r"^\s+scope:\s*\"?(\w+)", meta, re.M)
+            if sc and sc.group(1) not in ("stock", "portfolio", "market"):
+                fails.append(f"skills/{d.name}/SKILL.md: scope must be stock, portfolio or market")
+    if up():
+        for u in ("/api/base", "/api/app", "/api/agent/market", "/static/ask.js"):
+            try:
+                with urllib.request.urlopen(base() + u, timeout=60) as r:
+                    if r.status != 200:
+                        fails.append(f"GET {u}: {r.status}")
+            except Exception as e:
+                fails.append(f"GET {u}: {e}")
+    else:
+        notes.append("the server isn't running, so endpoints weren't checked (openticker start)")
+    for f in fails:
+        bad(f)
+    for n in notes:
+        warn(n)
+    if not fails:
+        ok("All checks passed" + (" (with the notes above)" if notes else ""))
+        print(f"  {dim('Python changes need')} openticker restart{dim('; page changes show after a reload (⌘R in the app).')}")
+    return 1 if fails else 0
+
+
+def _chrome():
+    for p in (os.environ.get("OPENTICKER_CHROME"), "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+              "/Applications/Chromium.app/Contents/MacOS/Chromium", "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+              "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"):
+        if p and Path(p).exists():
+            return p
+    return next((shutil.which(b) for b in ("google-chrome", "chromium", "chromium-browser", "microsoft-edge") if shutil.which(b)), None)
+
+
+def cmd_shot(args):
+    """Screenshot a page with headless Chrome, so an agent can look at what it changed.
+    openticker shot [market|funds|mine|calendar|screener|TICKER] [--dark|--light] [--phone] [--no-tick] [--out FILE]"""
+    chrome = _chrome()
+    if not chrome:
+        die("needs Google Chrome, Chromium, Edge or Brave for screenshots. Or open the app and look.")
+    if not up():
+        die("OpenTicker isn't running (openticker start)")
+    out = None
+    if "--out" in args:
+        i = args.index("--out")
+        out = args[i + 1] if i + 1 < len(args) else None
+        args = args[:i] + args[i + 2:]
+    target = next((a for a in args if not a.startswith("--")), "market")
+    page = target.lower() if target.lower() in ("market", "funds", "mine", "calendar", "screener") else "market/" + target.upper()
+    theme = "dark" if "--dark" in args else "light" if "--light" in args else "auto"
+    phone = "--phone" in args
+    q = urllib.parse.urlencode({k: v for k, v in (("theme", theme if theme != "auto" else ""), ("tick", "0" if "--no-tick" in args else "")) if v})
+    url = f"{base()}/{'?' + q if q else ''}#{page}"
+    name = f"{target.lower()}{'-' + theme if theme != 'auto' else ''}{'-phone' if phone else ''}.png"
+    path = Path(out).expanduser().resolve() if out else paths.HOME / "shots" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    w, h = (390, 844) if phone else (1440, 900)
+    r = subprocess.run([chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check",
+                        f"--window-size={w},{h}", "--force-device-scale-factor=2", "--virtual-time-budget=9000",
+                        f"--screenshot={path}", url] + (["--no-sandbox"] if os.geteuid() == 0 else []),
+                       capture_output=True, text=True, timeout=120)
+    if r.returncode != 0 or not path.exists():
+        die("Chrome couldn't take the screenshot: " + (r.stderr.strip().splitlines() or ["unknown error"])[-1])
+    print(path)
     return 0
 
 
@@ -584,7 +742,7 @@ MCP_TOOLS = [
     ("brief", "What changed recently for the user's stocks: rating changes, target moves, insider trades, unusual options, earnings.", {}, []),
     ("market", "Market overview: SPY, QQQ, SMH, SOXX, sector ETFs, rates, oil, dollar, VIX and today's biggest S&P 500 movers.", {}, []),
     ("fund", "Which holdings drove an index fund over a period.",
-     {"fund": {"type": "string", "enum": ["SPY", "QQQ", "SMH", "SOXX"]},
+     {"fund": {"type": "string", "description": "A fund on the Funds page: SPY, QQQ, SMH, SOXX or any you added"},
       "period": {"type": "string", "enum": ["1D", "1W", "1M", "3M", "6M", "1Y"]}}, ["fund"]),
     ("compare", "Two to five stocks side by side: returns, valuation, growth, analyst view.",
      {"tickers": {"type": "array", "items": TICKER, "minItems": 2, "maxItems": 5}}, ["tickers"]),
@@ -701,7 +859,7 @@ def cmd_mcp(args):
 # --------------------------------------------------------------------------- main
 COMMANDS = {"start": cmd_start, "stop": lambda a: stop(), "restart": cmd_restart, "status": cmd_status,
             "open": cmd_open, "logs": cmd_logs, "pair": cmd_pair, "setup": cmd_setup, "update": cmd_update,
-            "doctor": cmd_doctor, "skills": cmd_skills, "mcp": cmd_mcp}
+            "doctor": cmd_doctor, "skills": cmd_skills, "mcp": cmd_mcp, "edit": cmd_edit, "check": cmd_check, "shot": cmd_shot}
 
 
 def main(argv):

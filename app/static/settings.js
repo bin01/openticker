@@ -64,6 +64,7 @@ function renderSettings(){
      +(a.phone&&ASK.info?.pair?`<div class="srow col"><div class="sl"><b>Pair your phone</b><small>Open this link on your phone. It also lets you ask Tick from there. Keep it to yourself.</small></div><div class="pairl"><code>${esc(ASK.info.pair)}</code><button type="button" class="btn ghost" id="setPair">${ic("copy",13)}Copy</button></div></div>`:""))}
   ${sec("about","About",
      setRow("OpenTicker",`Version ${esc(a.version||"…")}. Free and open source.`,`<a class="btn ghost" href="https://github.com/bin01/openticker" target="_blank" rel="noopener">GitHub</a>${local&&a.mac?`<button type="button" class="btn" id="setUpd">Update</button>`:""}`)
+     +(local&&a.mac?setRow("Change OpenTicker","Ask your AI agent for anything: another fund, a new page, a different look, how Tick talks. This opens Claude Code or Codex in OpenTicker's code, which explains itself to the agent.",`<button type="button" class="btn ghost" id="setEdit">Open in Terminal</button>`):"")
      +(a.data?setRow("Your data",`Watchlist, positions, alerts and Tick's conversations stay on this Mac in <span class="mono">${esc(a.data)}</span>.`,""):"")
      +setRow("Keyboard shortcuts","",`<dl class="keys"><dt><kbd>⌘</kbd><kbd>K</kbd></dt><dd>Search or run a command</dd><dt><kbd>A</kbd></dt><dd>Ask Tick</dd><dt><kbd>/</kbd></dt><dd>Search stocks</dd><dt><kbd>⌘</kbd><kbd>,</kbd></dt><dd>Settings</dd></dl>`,"col"))}
   </div>`;
@@ -92,6 +93,8 @@ function bindSettings(d,{cur,st}){
   $("#setPhone")?.addEventListener("change",async e=>{ const r=await fetch("/api/app/terminal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({step:e.target.checked?"phone-on":"phone-off"})}).catch(()=>null);
     e.target.closest(".srow").querySelector("small").textContent=r?.ok?"Restarting OpenTicker in Terminal. This page reconnects in about a minute.":"Couldn't open Terminal. Run openticker start --lan yourself."; });
   $("#setPair")?.addEventListener("click",e=>{ navigator.clipboard?.writeText(ASK.info.pair); e.currentTarget.innerHTML=ic("check",13)+"Copied"; });
+  $("#setEdit")?.addEventListener("click",async e=>{ const b=e.currentTarget; const r=await fetch("/api/app/terminal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({step:"edit"})}).catch(()=>null);
+    b.textContent=r?.ok?"Opened in Terminal":"Run openticker edit"; });
   $("#setUpd")?.addEventListener("click",async e=>{ const b=e.currentTarget; const r=await fetch("/api/app/terminal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({step:"update"})}).catch(()=>null);
     b.textContent=r?.ok?"Updating in Terminal…":"Run openticker update"; b.disabled=true; });
 }

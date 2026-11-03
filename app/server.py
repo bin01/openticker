@@ -51,6 +51,8 @@ HERE = Path(__file__).resolve().parent
 CACHE = paths.CACHE
 NY = ZoneInfo("America/New_York")
 
+# The funds on the Funds page. To add one, add it here and to FUND_LIST in app/index.html. Its holdings come from
+# HOLDING_SOURCES below when the issuer publishes a full file, otherwise from Yahoo's top holdings (holdings_yahoo).
 FUNDS = {
     "SPY": "SPDR S&P 500 ETF",
     "QQQ": "Invesco QQQ (Nasdaq-100)",
@@ -159,14 +161,16 @@ def holdings_smh():
     return rows, as_of, True
 
 
-def holdings_soxx():
-    th = yf.Ticker("SOXX").funds_data.top_holdings
+def holdings_yahoo(fund):
+    """Any ETF: Yahoo's top holdings (usually ten). The rest of the fund shows as one 'Other' line."""
+    th = yf.Ticker(fund).funds_data.top_holdings
     rows = [{"t": yahoo_symbol(sym), "n": str(r["Name"]), "w": float(r["Holding Percent"]) * 100}
             for sym, r in th.iterrows()]
     return rows, "Yahoo top 10", False
 
 
-HOLDING_SOURCES = {"SPY": holdings_spy, "QQQ": holdings_qqq, "SMH": holdings_smh, "SOXX": holdings_soxx}
+# Full holdings files from the issuers. A fund that isn't listed here uses holdings_yahoo.
+HOLDING_SOURCES = {"SPY": holdings_spy, "QQQ": holdings_qqq, "SMH": holdings_smh}
 
 
 def load_holdings(force=False):
@@ -177,9 +181,10 @@ def load_holdings(force=False):
         if not force and time.time() - old.get("_fetched", 0) < HOLDINGS_TTL:
             return old
     out = {"_fetched": time.time()}
-    for fund, fn in HOLDING_SOURCES.items():
+    for fund in FUNDS:
         try:
-            rows, as_of, complete = fn()
+            fn = HOLDING_SOURCES.get(fund)
+            rows, as_of, complete = fn() if fn else holdings_yahoo(fund)
             rows = clean(rows)
             if not rows:
                 raise ValueError("no rows")

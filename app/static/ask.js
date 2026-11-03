@@ -728,7 +728,7 @@ if(typeof COMMANDS!=="undefined"){
   for(const s of ASK_SKILLS_FALLBACK) COMMANDS.push({cmd:"skill:"+s.name,label:s.scope==="stock"?`${s.label} (open stock)`:s.label,hint:TICK,icon:"spark",keys:"ask tick "+s.label+" "+s.name.replace(/-/g," "),
     run:()=>{ if(s.scope==="stock"&&!(drawerOpen&&sel)) return openAsk({scope:"market"}); openAsk({scope:s.scope,t:s.scope==="stock"?sel:null,skill:s.name}); }});
 }
-askInfo().then(()=>{ const pref=load("tickOpen",""); if(ASK.paired) openAsk(); else if(pref==="1"||(pref===""&&innerWidth>=1280)) openAsk({focus:false}); });
+askInfo().then(()=>{ const pref=new URLSearchParams(location.search).get("tick")==="0"?"0":load("tickOpen",""); if(ASK.paired) openAsk(); else if(pref==="1"||(pref===""&&innerWidth>=1280)) openAsk({focus:false}); });
 
 /* ---- Mac app: let the native window match the page (title bar color, light/dark) ---- */
 (function(){

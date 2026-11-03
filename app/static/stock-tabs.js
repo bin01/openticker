@@ -2,7 +2,7 @@
    and the written "What stands out" insights on its Overview. Uses globals from index.html and pages.js. */
 
 let drTab="overview";
-const isEtf=t=>(detailCache[t]?.info?.quoteType||"")==="ETF"||["SPY","QQQ","SMH","SOXX"].includes(t);
+const isEtf=t=>(detailCache[t]?.info?.quoteType||"")==="ETF"||FUND_LIST.includes(t);
 function tabsFor(t){
   return isEtf(t)
     ? [["overview","Overview"],["holdings","Holdings"],["events","Distributions"]]

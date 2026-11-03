@@ -3,7 +3,7 @@
 
 /* ======================= router ======================= */
 const PAGES=[["market","Market"],["funds","Funds"],["mine","My stocks"],["calendar","Calendar"],["screener","Screener"]];
-const PAGE_FUNDS={funds:["SPY","QQQ","SMH","SOXX"],mine:["Watchlist","Portfolio"]};
+const PAGE_FUNDS={funds:FUND_LIST,mine:["Watchlist","Portfolio"]};
 let page=load("page","market"); if(!PAGES.some(p=>p[0]===page)) page="market";
 const fundFor={funds:PAGE_FUNDS.funds.includes(load("fund","SPY"))?load("fund","SPY"):"SPY",mine:["Watchlist","Portfolio"].includes(load("fundMine",""))?load("fundMine",""):"Portfolio"};
 const isDash=()=>!!PAGE_FUNDS[page];
@@ -250,7 +250,7 @@ function renderCalendar(){
   const body=$("#calBody");
   if(calTab==="earn"){
     loadEarnings();
-    const scopes=[["mine","My stocks"],["SPY","S&P 500"],["QQQ","Nasdaq-100"],["SMH","SMH"],["SOXX","SOXX"]];
+    const scopes=[["mine","My stocks"],...FUND_LIST.map(f=>[f,{SPY:"S&P 500",QQQ:"Nasdaq-100"}[f]||f])];
     let W;
     if(calScope==="mine"){ W=new Map(); const pos=positionsAgg(), tot=pos.reduce((a,p)=>a+p.shares*(lastValid(base.px[p.t]||[])||0),0);
       (me?.watch||[]).forEach(t=>W.set(t,null)); pos.forEach(p=>W.set(p.t,tot?p.shares*(lastValid(base.px[p.t]||[])||0)/tot*100:null)); }
