@@ -871,6 +871,18 @@ def _describe_tool(name, inp):
 _partial = {}
 
 
+def _opencode_model():
+    """The default model in the user's OpenCode config, to name it when it fails."""
+    for f in (Path.home() / ".config" / "opencode" / "opencode.json", Path.home() / ".config" / "opencode" / "opencode.jsonc"):
+        try:
+            m = re.search(r'"model"\s*:\s*"([^"]+)"', f.read_text())
+            if m:
+                return m.group(1)
+        except OSError:
+            pass
+    return None
+
+
 def _claude_partial():
     """Older Claude Code builds lack --include-partial-messages; then the answer arrives whole instead of streaming."""
     if "v" not in _partial:
@@ -1022,6 +1034,13 @@ class Run:
                 continue
             part = ev.get("part") or {}
             ty = ev.get("type") or part.get("type")
+            if ty == "error":
+                er = ev.get("error") or {}
+                msg = (er.get("message") or er.get("data", {}).get("message") or "OpenCode reported an error.").strip()
+                cfg = _opencode_model()
+                p.kill()
+                return self.emit("error", {"message": f"OpenCode couldn't use its model{f' ({cfg})' if cfg else ''}: {msg} "
+                                                      "Fix it in OpenCode, or pick another agent."})
             if ty == "text" and (part.get("text") or ev.get("text")):
                 self.emit("text", {"text": part.get("text") or ev.get("text")})
             elif ty in ("tool", "tool_use"):
