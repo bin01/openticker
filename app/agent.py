@@ -851,8 +851,9 @@ def _env(provider=None):
 
 
 def _describe_tool(name, inp):
-    if name == "Bash":
-        cmd = str((inp or {}).get("command", ""))
+    if name in ("Bash", "bash", "shell", "execute", "exec_command", "local_shell"):
+        cmd = (inp or {}).get("command") or (inp or {}).get("cmd") or ""
+        cmd = " ".join(cmd) if isinstance(cmd, list) else str(cmd)
         m = re.search(r"\bopenticker\s+(\w+)\s*([A-Za-z.\-^=, ]*)", cmd)
         if m:
             what = {"stock": "the full picture", "analysts": "analyst data", "earnings": "earnings history", "ownership": "insider and holder data",
@@ -863,7 +864,7 @@ def _describe_tool(name, inp):
         return "Running a command"
     if name in ("WebSearch", "web_search"):
         return "Searching the web" + (f": {inp.get('query')}" if isinstance(inp, dict) and inp.get("query") else "")
-    if name == "WebFetch":
+    if name in ("WebFetch", "webfetch", "fetch"):
         return "Reading a web page"
     return f"Using {name}"
 
@@ -1045,7 +1046,7 @@ class Run:
                 self.emit("text", {"text": part.get("text") or ev.get("text")})
             elif ty in ("tool", "tool_use"):
                 st = part.get("state") or {}
-                self.emit("status", {"text": _describe_tool("Bash" if part.get("tool") == "bash" else part.get("tool") or "tool", st.get("input") or {})})
+                self.emit("status", {"text": _describe_tool(part.get("tool") or "tool", st.get("input") or {})})
         self._finish()
 
     # Ollama: local HTTP API, streamed; no tools, so the prompt carries all the data
