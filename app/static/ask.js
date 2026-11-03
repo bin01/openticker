@@ -188,7 +188,7 @@ document.addEventListener("click",async e=>{
 /* the context row: what Tick is looking at, plus any @stocks ------------------------------------------- */
 function renderCtx(){
   const c=ASK.ctx, R=$("#askCtxR"); if(!R) return;
-  R.innerHTML=`<button type="button" class="ctxchip main" aria-haspopup="menu" title="${ASK.pinned?"Pinned. Choose what Tick looks at":"Follows what you're looking at"}">${ic(ASK.pinned?"at":"eye",13)}<b>${esc(ctxLabel(c))}</b>${c.scope==="stock"&&ctxName(c)&&!ASK.also.length?`<small>${esc(trunc(ctxName(c),18))}</small>`:""}${ic("chev",12)}</button>`
+  R.innerHTML=`<button type="button" class="ctxchip main" aria-haspopup="menu" title="${ASK.pinned?"Pinned. Choose what Tick looks at":"Follows what you're looking at"}">${ic(ASK.pinned?"at":"eye",13)}<b>${esc(ctxLabel(c))}</b>${c.scope==="stock"&&ctxName(c)&&ctxName(c)!==c.t&&!ASK.also.length?`<small>${esc(trunc(ctxName(c),18))}</small>`:""}${ic("chev",12)}</button>`
     +ASK.also.map((t,i)=>`<span class="ctxchip"><b>${esc(t)}</b><button type="button" data-also-x="${i}" aria-label="Remove ${esc(t)}">×</button></span>`).join("");
   R.querySelector(".main").onclick=e=>{ e.stopPropagation(); hideMenus("askCtxM"); const m=$("#askCtxM"); m.hidden=!m.hidden; if(!m.hidden) askCtxMenu(); };
   R.querySelectorAll("[data-also-x]").forEach(x=>x.onclick=()=>{ ASK.also.splice(+x.dataset.alsoX,1); renderCtx(); });
