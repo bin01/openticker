@@ -1,0 +1,20 @@
+{
+  "name": "openticker",
+  "description": "Live market data and your own portfolio for any AI agent: stock deep-dives, why a stock moved, bull vs bear, earnings previews, analyst and insider moves, portfolio checkups and market recaps, from the OpenTicker app on your Mac.",
+  "version": "0.1.0",
+  "author": { "name": "OpenTicker", "url": "https://github.com/bin01/openticker" },
+  "homepage": "https://github.com/bin01/openticker",
+  "repository": "https://github.com/bin01/openticker",
+  "license": "Apache-2.0",
+  "keywords": ["stocks", "market-data", "portfolio", "finance", "earnings", "etf"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "OpenTicker",
+    "shortDescription": "Your market data, for any agent",
+    "longDescription": "Live market data and your own portfolio for any AI agent: stock deep-dives, why a stock moved, bull vs bear, earnings previews, analyst and insider moves, portfolio checkups and market recaps, from the OpenTicker app on your Mac. Runs locally; your watchlist and positions never leave your Mac.",
+    "developerName": "OpenTicker",
+    "category": "Productivity",
+    "capabilities": ["Read"],
+    "websiteURL": "https://github.com/bin01/openticker"
+  }
+}

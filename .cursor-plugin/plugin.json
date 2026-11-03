@@ -1,0 +1,17 @@
+{
+  "$schema": "https://cursor.com/schemas/cursor-plugin/plugin.json",
+  "name": "openticker",
+  "displayName": "OpenTicker",
+  "description": "Live market data and your own portfolio for any AI agent: stock deep-dives, why a stock moved, bull vs bear, earnings previews, analyst and insider moves, portfolio checkups and market recaps, from the OpenTicker app on your Mac.",
+  "version": "0.1.0",
+  "author": { "name": "OpenTicker" },
+  "publisher": "OpenTicker",
+  "homepage": "https://github.com/bin01/openticker",
+  "repository": "https://github.com/bin01/openticker",
+  "license": "Apache-2.0",
+  "logo": "docs/icon.png",
+  "category": "productivity",
+  "keywords": ["stocks", "market-data", "portfolio", "finance", "earnings", "etf"],
+  "tags": ["finance", "research", "data"],
+  "skills": "./skills/"
+}
