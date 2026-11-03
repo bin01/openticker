@@ -42,7 +42,28 @@ async function askInfo(force){
 const askSkills=scope=>(ASK.info?.skills||ASK_SKILLS_FALLBACK).filter(s=>s.scope===scope);
 const askSkill=name=>(ASK.info?.skills||ASK_SKILLS_FALLBACK).find(s=>s.name===name);
 const askProv=()=>{ const P=ASK.info?.providers||[]; return P.find(p=>p.id===ASK.prov&&p.available)||P.find(p=>p.available)||null; };
-const askProvLabel=p=>!p?"No agent":p.id==="ollama"?`Ollama · ${(ASK.model||p.models?.[0]||"").replace(/:latest$/,"")}`:p.label;
+/* which model each agent uses: "" means the agent's own default */
+const askModelOf=p=>!p?"":p.id==="ollama"?(ASK.model||p.models?.[0]||""):load("askModel."+p.id,"");
+function prettyModel(m){
+  if(!m) return ""; m=String(m).replace(/:latest$/,"").replace(/\[.*\]$/,"");
+  let x=m.match(/claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/i);
+  if(x) return x[1][0].toUpperCase()+x[1].slice(1)+" "+x[2]+(x[3]?"."+x[3]:"");
+  if(/^(opus|sonnet|haiku)$/i.test(m)) return m[0].toUpperCase()+m.slice(1).toLowerCase();
+  x=m.match(/^(?:openai\/)?gpt-([\w.]+?)(-codex)?$/i); if(x) return "GPT-"+x[1]+(x[2]?" Codex":"");
+  return m.split("/").pop();
+}
+/* the model this agent will answer with, as far as we know: the last one it reported, or its settings */
+function askModelName(p){ if(!p) return ""; const ch=askModelOf(p); const seen=p.seen?.[ch]||(ch===""?p.configured:null); return prettyModel(seen||ch); }
+const askProvLabel=p=>!p?"No agent":p.label+(askModelName(p)?` · ${askModelName(p)}`:"");
+/* small marks so each agent is recognizable at a glance */
+function agentIcon(id,s=16){
+  const svg=(b,extra="")=>`<svg class="agi" viewBox="0 0 16 16" width="${s}" height="${s}" aria-hidden="true" ${extra}>${b}</svg>`;
+  if(id==="claude") return svg(`<g fill="#D97757"><rect x="3" y="3.5" width="10" height="6.5"/><rect x="1" y="5.5" width="2" height="2"/><rect x="13" y="5.5" width="2" height="2"/><rect x="4" y="10" width="1" height="2.5"/><rect x="6" y="10" width="1" height="2.5"/><rect x="9" y="10" width="1" height="2.5"/><rect x="11" y="10" width="1" height="2.5"/></g><g fill="#1b1b1b"><rect x="5" y="5.5" width="1" height="1.6"/><rect x="10" y="5.5" width="1" height="1.6"/></g>`,'shape-rendering="crispEdges"');
+  if(id==="codex") return svg(`<rect x=".5" y=".5" width="15" height="15" rx="4" fill="#0f0f0f" stroke="rgba(255,255,255,.18)"/><path d="m4.5 5.5 2.5 2.5-2.5 2.5M8.5 10.5h3" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>`);
+  if(id==="opencode") return svg(`<rect x=".5" y=".5" width="15" height="15" rx="4" fill="#1d1d1d" stroke="rgba(255,255,255,.18)"/><rect x="4.5" y="4.5" width="7" height="7" fill="none" stroke="#fff" stroke-width="1.5"/><rect x="6.75" y="6.75" width="2.5" height="2.5" fill="#fff"/>`);
+  if(id==="ollama") return svg(`<rect x=".5" y=".5" width="15" height="15" rx="4" fill="#fff" stroke="rgba(0,0,0,.14)"/><path d="M5.2 7.2V4.4c0-.8.9-1 1.2-.3l.5 1.6M10.8 7.2V4.4c0-.8-.9-1-1.2-.3l-.5 1.6M4.6 11.6c-.4-2.6 1-4.6 3.4-4.6s3.8 2 3.4 4.6" fill="none" stroke="#111" stroke-width="1.1" stroke-linecap="round"/><circle cx="6.6" cy="9.2" r=".6" fill="#111"/><circle cx="9.4" cy="9.2" r=".6" fill="#111"/>`);
+  return "";
+}
 const askAgentName=p=>!p?"":p.id==="ollama"?"Ollama":p.label;
 const newChatId=()=>{ const a=crypto.getRandomValues(new Uint8Array(9)); return "c"+Date.now().toString(36)+[...a].map(x=>(x%36).toString(36)).join(""); };
 
@@ -51,9 +72,9 @@ const newChatId=()=>{ const a=crypto.getRandomValues(new Uint8Array(9)); return 
 function tickFace(size=24,mood){
   const glint=size>=20;
   return `<span class="tick ${mood?"tk-"+mood:""}" style="--s:${size}px" aria-hidden="true"><svg viewBox="0 0 32 32" width="${size}" height="${size}">
-    <path class="tk-w" d="M16 1.4v5M16 25.6v4.8"/><g class="tk-b"><rect class="tk-bd" x="5.2" y="6" width="21.6" height="19.8" rx="8.4"/>${glint?`<rect class="tk-sh" x="8" y="8.8" width="2.8" height="5.4" rx="1.4"/>`:""}
-    <g class="tk-e"><ellipse cx="12.4" cy="15.4" rx="2.4" ry="2.9"/><ellipse cx="19.6" cy="15.4" rx="2.4" ry="2.9"/>${glint?`<circle cx="13.2" cy="14.3" r=".9"/><circle cx="20.4" cy="14.3" r=".9"/>`:""}</g>
-    <path class="tk-m" d="M14.2 20.8q1.8 1.6 3.6 0"/></g></svg></span>`;
+    <g class="tk-lean"><path class="tk-w" d="M16 1.4v5M16 25.6v4.8"/><g class="tk-b"><rect class="tk-bd" x="5.2" y="6" width="21.6" height="19.8" rx="8.4"/>${glint?`<rect class="tk-sh" x="8" y="8.8" width="2.8" height="5.4" rx="1.4"/>`:""}
+    <g class="tk-look"><g class="tk-e"><ellipse cx="12.4" cy="15.4" rx="2.4" ry="2.9"/><ellipse cx="19.6" cy="15.4" rx="2.4" ry="2.9"/>${glint?`<circle cx="13.2" cy="14.3" r=".9"/><circle cx="20.4" cy="14.3" r=".9"/>`:""}</g>
+    <path class="tk-m" d="M14.2 20.8q1.8 1.6 3.6 0"/></g></g></g></svg></span>`;
 }
 /* Tick says what he's doing in a small bubble beside him */
 let sayT=0;
@@ -63,6 +84,18 @@ function say(text,kind,ms){ const b=$("#askSay"); if(!b) return; clearTimeout(sa
   if(ms) sayT=setTimeout(()=>b.classList.remove("on"),ms); }
 const QUIPS=["Still here.","Numbers before adjectives.","I don't do hype.","Type @ to bring in another stock.","Ask me why something moved.","I read the live numbers, not the headlines."];
 let quip=0;
+/* Tick watches the cursor: his eyes follow it, and the one on the composer leans toward it */
+let lookXY=null, lookRaf=0, lookT=0;
+function tickLook(){ lookRaf=0;
+  document.querySelectorAll(".tick.live").forEach(t=>{ const r=t.getBoundingClientRect(); if(!r.width) return;
+    if(!lookXY){ t.style.removeProperty("--lx"); t.style.removeProperty("--ly"); t.style.removeProperty("--lean"); return; }
+    const dx=lookXY[0]-(r.left+r.width/2), dy=lookXY[1]-(r.top+r.height*.48), d=Math.hypot(dx,dy)||1, f=Math.min(1,d/90);
+    t.style.setProperty("--lx",(dx/d*1.6*f).toFixed(2)+"px"); t.style.setProperty("--ly",(dy/d*1.3*f).toFixed(2)+"px");
+    if(t.closest(".perch,.tfloat")) t.style.setProperty("--lean",Math.max(-8,Math.min(8,dx/55)).toFixed(1)+"deg"); });
+}
+addEventListener("pointermove",e=>{ if(e.pointerType==="touch") return; lookXY=[e.clientX,e.clientY]; if(!lookRaf) lookRaf=requestAnimationFrame(tickLook);
+  clearTimeout(lookT); lookT=setTimeout(()=>{ lookXY=null; tickLook(); },6000); },{passive:true});
+document.documentElement.addEventListener("pointerleave",()=>{ lookXY=null; tickLook(); });
 function setMood(m){ ASK.mood=m; document.querySelectorAll(".tick.live").forEach(t=>{ t.className="tick live tk-"+m; }); }
 
 /* entry points on the page ------------------------------------------------------------------------ */
@@ -86,13 +119,24 @@ const ctxLabel=c=>c.scope==="stock"?c.t:c.scope==="portfolio"?"Your stocks":"The
 const ctxName=c=>c.scope==="stock"?(base?nameOf(c.t)||"":""):c.scope==="portfolio"?"Positions, watchlist and brief":"Funds, sectors, macro, movers";
 
 /* layout: docked beside the page on wide screens, a sheet elsewhere ------------------------------------- */
-const DOCK_MIN=1100;
+const DOCK_MIN=1100, TICK_W0=392, TICK_GAP=10, DRAWER_W=600;
 const canDock=()=>innerWidth>=DOCK_MIN;
+ASK.side=load("tickSide","right")==="left"?"left":"right";
+ASK.w=+load("tickW",0)||TICK_W0;
+/* Tick's width: 340px up to whatever leaves the page at least 560px */
+function setTickW(w,keep){
+  const max=Math.max(340,Math.min(760,innerWidth-560)); ASK.w=Math.round(Math.max(340,Math.min(max,w)));
+  document.documentElement.style.setProperty("--tick-w",ASK.w+"px"); if(keep) save("tickW",ASK.w);
+  /* no room for the page, the stock panel and Tick: the stock panel takes the whole space beside Tick */
+  document.body.classList.toggle("tick-tight",document.body.classList.contains("tick-docked")&&innerWidth-ASK.w-TICK_GAP-DRAWER_W<380);
+}
 function applyDock(){
   const docked=ASK.open&&canDock();
   document.body.classList.toggle("tick-docked",docked);
+  document.body.classList.toggle("tick-left",docked&&ASK.side==="left");
+  setTickW(+load("tickW",0)||TICK_W0);
   document.body.classList.toggle("asking",ASK.open);
-  const el=$("#ask"); if(el){ el.classList.toggle("open",ASK.open); el.classList.toggle("docked",docked); el.setAttribute("aria-hidden",ASK.open?"false":"true"); }
+  const el=$("#ask"); if(el){ el.classList.toggle("open",ASK.open); el.classList.toggle("docked",docked); el.classList.toggle("left",ASK.side==="left"); el.setAttribute("aria-hidden",ASK.open?"false":"true"); }
   const b=$("#askOpen"); if(b) b.setAttribute("aria-pressed",ASK.open?"true":"false");
 }
 addEventListener("resize",()=>applyDock());
@@ -100,7 +144,7 @@ addEventListener("resize",()=>applyDock());
 function askShell(){
   if($("#ask")) return;
   const el=document.createElement("aside"); el.className="ask"; el.id="ask"; el.setAttribute("aria-label",TICK); el.setAttribute("aria-hidden","true");
-  el.innerHTML=`<div class="ask-h"><b class="ask-nm">${TICK}</b><button type="button" class="ask-prov" id="askProv" aria-haspopup="menu" aria-expanded="false"></button>
+  el.innerHTML=`<div class="ask-grip" role="separator" aria-orientation="vertical" aria-label="Resize ${TICK}" title="Drag to resize. Double-click to reset." tabindex="0"></div><div class="ask-h"><b class="ask-nm">${TICK}</b><button type="button" class="ask-prov" id="askProv" aria-haspopup="menu" aria-expanded="false"></button>
     <div class="ask-hb"><button class="x" id="askHist" title="Conversations" aria-label="Conversations">${ic("clock",16)}</button><button class="x" id="askNew" title="New conversation" aria-label="New conversation">${ic("compose",16)}</button><button class="x" id="askClose" aria-label="Hide ${TICK}" title="Hide ${TICK}">${ic(innerWidth<=760?"close":"dock",16)}</button></div></div>
   <div class="ask-menu provm" id="askMenu" role="menu" hidden></div>
   <div class="ask-b" id="askB"></div>
@@ -134,7 +178,44 @@ function askShell(){
   $("#askHist").onclick=()=>{ ASK.view=ASK.view==="history"?null:"history"; askRender(); };
   $("#askProv").onclick=e=>{ e.stopPropagation(); hideMenus("askMenu"); const m=$("#askMenu"); m.hidden=!m.hidden; e.currentTarget.setAttribute("aria-expanded",!m.hidden); if(!m.hidden) askProvMenu(); };
   el.addEventListener("click",e=>{ if(!e.target.closest(".ask-menu,#askProv,.ctxchip")) hideMenus(); });
+  tickGrip(el.querySelector(".ask-grip")); tickMove(el,el.querySelector(".ask-h"));
   $("#askB").addEventListener("scroll",e=>el.querySelector(".ask-h").classList.toggle("lined",e.target.scrollTop>4),{passive:true});
+}
+function tickGrip(g){
+  g.addEventListener("pointerdown",e=>{ if(e.button!==0) return; e.preventDefault(); g.setPointerCapture(e.pointerId); document.body.classList.add("tick-resizing");
+    const mv=ev=>setTickW(ASK.side==="left"?ev.clientX-TICK_GAP:innerWidth-ev.clientX-TICK_GAP);
+    const up=()=>{ g.removeEventListener("pointermove",mv); g.removeEventListener("pointerup",up); g.removeEventListener("pointercancel",up);
+      document.body.classList.remove("tick-resizing"); setTickW(ASK.w,true); dispatchEvent(new Event("resize")); };
+    g.addEventListener("pointermove",mv); g.addEventListener("pointerup",up); g.addEventListener("pointercancel",up); });
+  g.addEventListener("dblclick",()=>{ setTickW(TICK_W0,true); dispatchEvent(new Event("resize")); });
+  g.addEventListener("keydown",e=>{ if(e.key!=="ArrowLeft"&&e.key!=="ArrowRight") return; e.preventDefault();
+    const wider=(e.key==="ArrowLeft")===(ASK.side!=="left"); setTickW(ASK.w+(wider?24:-24),true); dispatchEvent(new Event("resize")); });
+}
+/* move: drag the header; Tick snaps to the nearer side of the window */
+function tickSide(side,el){
+  el=el||$("#ask"); if(!el||side===ASK.side){ return; }
+  const r0=el.getBoundingClientRect();
+  ASK.side=side; save("tickSide",side); el.style.transition="none"; el.style.transform=""; applyDock();
+  const r1=el.getBoundingClientRect(); el.style.transform=`translateX(${r0.left-r1.left}px)`; void el.offsetWidth;
+  el.style.transition="transform .34s cubic-bezier(.2,.8,.2,1)"; el.style.transform=""; setTimeout(()=>{ el.style.transition=""; },380);
+  dispatchEvent(new Event("resize"));
+}
+function tickMove(el,H){
+  H.addEventListener("pointerdown",e=>{
+    if(e.button!==0||!el.classList.contains("docked")||e.target.closest("button,a,.ask-menu")) return;
+    const x0=e.clientX; let moving=false, drop=null, side=ASK.side;
+    H.setPointerCapture(e.pointerId);
+    const mv=ev=>{ const dx=ev.clientX-x0;
+      if(!moving){ if(Math.abs(dx)<6) return; moving=true; hideMenus(); el.classList.add("moving"); document.body.classList.add("tick-moving");
+        drop=document.createElement("div"); drop.className="tick-drop"; document.body.appendChild(drop); }
+      el.style.transform=`translateX(${dx}px)`; side=ev.clientX<innerWidth/2?"left":"right";
+      drop.style.left=side==="left"?TICK_GAP+"px":"auto"; drop.style.right=side==="right"?TICK_GAP+"px":"auto"; };
+    const up=()=>{ H.removeEventListener("pointermove",mv); H.removeEventListener("pointerup",up); H.removeEventListener("pointercancel",up);
+      if(!moving) return; drop.remove(); document.body.classList.remove("tick-moving"); el.classList.remove("moving");
+      if(side!==ASK.side) return tickSide(side,el);
+      el.style.transition="transform .3s cubic-bezier(.2,.8,.2,1)"; el.style.transform=""; setTimeout(()=>{ el.style.transition=""; },320); };
+    H.addEventListener("pointermove",mv); H.addEventListener("pointerup",up); H.addEventListener("pointercancel",up);
+  });
 }
 function hideMenus(keep){ ["askMenu","askCtxM","askPop"].forEach(id=>{ if(id!==keep&&$("#"+id)) $("#"+id).hidden=true; }); if(keep!=="askMenu") $("#askProv")?.setAttribute("aria-expanded","false"); }
 function paintSend(){ const s=$("#askSend"), typing=!!$("#askQ").value.trim(), stop=!!ASK.run&&!typing;
@@ -149,7 +230,7 @@ async function openAsk(o={}){
   if(o.skill||o.q&&o.send) askSend({skill:o.skill,q:o.q});
   else{ if(o.q) $("#askQ").value=o.q; if(innerWidth>760&&o.focus!==false) setTimeout(()=>$("#askQ").focus(),60); }
 }
-function closeAsk(){ ASK.open=false; save("tickOpen","0"); hideMenus(); applyDock(); }
+function closeAsk(){ ASK.open=false; save("tickOpen","0"); hideMenus(); applyDock(); setTimeout(tickLook,50); }
 
 /* conversations ------------------------------------------------------------------------------------ */
 async function restoreChat(){
@@ -287,7 +368,9 @@ function askRender(){
   if(!$("#ask")) return;
   const c=ASK.ctx, info=ASK.info, p=askProv();
   renderCtx(); renderPlaceholder();
-  const pv=$("#askProv"); pv.innerHTML=`<i class="pdot ${p?"on":""}"></i><span>${esc(p?askProvLabel(p):info?"Choose an agent":"Connecting")}</span>${ic("chev",12)}`; pv.title=p?`${TICK} thinks with ${askAgentName(p)}. ${p.note}`:"";
+  const pv=$("#askProv"), mn=askModelName(p);
+  pv.innerHTML=p?`${agentIcon(p.id,16)}<span>${esc(mn||p.label)}</span>${ic("chev",12)}`:`<i class="pdot"></i><span>${info?"Choose an agent":"Connecting"}</span>${ic("chev",12)}`;
+  pv.title=p?`${TICK} thinks with ${p.label}${mn?`, using ${mn}`:""}. ${p.note}.`:"";
   $("#askHist").classList.toggle("on",ASK.view==="history");
   paintSend();
   if(ASK.run) say((ASK.conv[ASK.conv.length-1]?.status||"Thinking")+"…");
@@ -316,7 +399,7 @@ function askRender(){
         :steps.length?`<details class="how"><summary>How I got there${ic("chevr",13)}</summary><div class="log">${steps.map(s=>stepRow(s)).join("")}</div></details>`:""}
       <div class="md">${mdToHtml(m.text,m)}${live&&m.text?`<span class="caret"></span>`:""}</div>
       ${m.error?`<div class="aerr">${esc(m.error)}</div>`:""}
-      ${m.done?`<div class="af">${m.text?`<button class="ib" data-ask-copy="${i}" title="Copy" aria-label="Copy">${ic("copy",14)}</button>`:""}${i===ASK.conv.length-1?`<button class="ib" data-ask-retry title="Ask again" aria-label="Ask again">${ic("retry",14)}</button>`:""}<span>${m.secs!=null?`Worked for <b>${dur(m.secs)}</b>`:""}${m.by?` · ${esc(m.by)}`:""}</span></div>`:""}</div>`;
+      ${m.done?`<div class="af">${m.text?`<button class="ib" data-ask-copy="${i}" title="Copy" aria-label="Copy">${ic("copy",14)}</button>`:""}${i===ASK.conv.length-1?`<button class="ib" data-ask-retry title="Ask again" aria-label="Ask again">${ic("retry",14)}</button>`:""}<span>${m.secs!=null?`Worked for <b>${dur(m.secs)}</b>`:""}${m.by?` · ${esc(m.by.split(" · ").map((x,j)=>j?prettyModel(x):x).join(" · "))}`:""}</span></div>`:""}</div>`;
   }).join("");
   if(ASK.stick!==false) B.scrollTop=B.scrollHeight;
 }
@@ -349,14 +432,21 @@ document.addEventListener("click",async e=>{
 });
 function askProvMenu(){
   const info=ASK.info||{providers:[]}, m=$("#askMenu"), cur=askProv();
-  const rows=[];
+  const rows=[], HINT={"":"",opus:"Deepest reading, a little slower",sonnet:"Fast and thorough",haiku:"Quickest, for short questions"};
   for(const p of info.providers){
-    if(p.id==="ollama"&&p.available){ for(const mod of p.models) rows.push(`<button role="menuitemradio" aria-checked="${cur?.id==="ollama"&&ASK.model===mod}" data-prov="ollama" data-model="${esc(mod)}"><b>Ollama · ${esc(mod.replace(/:latest$/,""))}</b><small>Free and private, on this Mac</small></button>`); continue; }
-    rows.push(`<button role="menuitemradio" aria-checked="${cur?.id===p.id}" data-prov="${p.id}" ${p.available?"":"disabled"}><b>${esc(p.label)}</b><small>${esc(p.available?p.note:(ST[p.state]||[""])[0])}</small></button>`);
+    rows.push(`<div class="agh">${agentIcon(p.id,16)}<b>${esc(p.label)}</b><small>${esc(p.available?p.note:(ST[p.state]||[""])[0])}</small></div>`);
+    if(!p.available) continue;
+    const mine=cur?.id===p.id?askModelOf(p):null;
+    for(const [id,lab] of p.choices||[["","Default"]]){
+      const known=prettyModel(p.seen?.[id]||(id===""?p.configured:null));
+      const name=id===""?(known?`Default · ${known}`:"Default"):p.id==="ollama"?prettyModel(id):(known||lab);
+      const sub=id===""?(p.id==="claude"?"Whatever Claude Code is set to":"What it's set to use"):p.id==="ollama"?"Free and private, on this Mac":HINT[id]||"";
+      rows.push(`<button role="menuitemradio" class="mrow" aria-checked="${mine===id}" data-prov="${p.id}" data-model="${esc(id)}"><b>${esc(name)}</b>${sub?`<small>${esc(sub)}</small>`:""}</button>`);
+    }
   }
-  m.innerHTML=`<div class="mh">${TICK} answers with</div>${rows.join("")}<hr><button data-ask-agents>${ic("spark",15)}<b>Manage agents</b></button>${info.pair?`<button data-ask-pair>${ic("phone",15)}<b>Use on your phone</b></button><div class="pairbox" id="pairBox" hidden></div>`:""}`;
+  m.innerHTML=`${rows.join("")}<hr><button data-ask-agents>${ic("spark",15)}<b>Manage agents</b></button>${info.pair?`<button data-ask-pair>${ic("phone",15)}<b>Use on your phone</b></button><div class="pairbox" id="pairBox" hidden></div>`:""}`;
   m.querySelector("[data-ask-agents]").onclick=e=>{ e.stopPropagation(); m.hidden=true; ASK.view="agents"; askRender(); };
-  m.querySelectorAll("[data-prov]").forEach(b=>b.onclick=()=>{ ASK.prov=b.dataset.prov; ASK.model=b.dataset.model||""; save("askProv",ASK.prov); save("askModel",ASK.model); m.hidden=true; askRender(); });
+  m.querySelectorAll("[data-prov]").forEach(b=>b.onclick=()=>{ ASK.prov=b.dataset.prov; const mod=b.dataset.model||""; if(ASK.prov==="ollama"){ ASK.model=mod; save("askModel",mod); } else save("askModel."+ASK.prov,mod); save("askProv",ASK.prov); m.hidden=true; askRender(); });
   const pb=m.querySelector("[data-ask-pair]"); if(pb) pb.onclick=e=>{ e.stopPropagation(); const box=$("#pairBox"); box.hidden=false;
     box.innerHTML=`<p>Open this link on your phone (same Wi-Fi). It pairs the phone so ${TICK} works there too.</p><div class="pairl"><code>${esc(info.pair)}</code><button class="btn ghost" id="pairCopy">${ic("copy",13)}Copy</button></div><p class="hint">Send it with AirDrop or Messages. Anyone with this link on your Wi-Fi can talk to ${TICK}, so keep it to yourself.</p>`;
     $("#pairCopy").onclick=ev=>{ ev.stopPropagation(); navigator.clipboard?.writeText(info.pair); $("#pairCopy").innerHTML=ic("check",13)+"Copied"; }; };
@@ -379,7 +469,7 @@ async function askSend({q,skill,retry}){
   const ctl=new AbortController(), t0=Date.now(); ASK.run=ctl; setMood("think"); askRender();
   let toolSince=false, raf=0, started=false; const paint=()=>{ if(!raf) raf=requestAnimationFrame(()=>{ raf=0; askRender(); }); };
   try{
-    const r=await fetch("/api/ask",{method:"POST",headers:askHeaders(),signal:ctl.signal,body:JSON.stringify({provider:prov.id,model:prov.id==="ollama"?ASK.model:undefined,scope:c.scope,t:c.t,
+    const r=await fetch("/api/ask",{method:"POST",headers:askHeaders(),signal:ctl.signal,body:JSON.stringify({provider:prov.id,model:askModelOf(prov)||undefined,scope:c.scope,t:c.t,
       skill:sk&&!q?sk.name:undefined,q:full||undefined,show:shown,history,chat:ASK.chat})});
     if(!r.ok){ const d=await r.json().catch(()=>({})); throw new Error(d.error||`${TICK} didn't answer.`); }
     const rd=r.body.getReader(), dec=new TextDecoder(); let buf="";
@@ -392,7 +482,7 @@ async function askSend({q,skill,retry}){
         if(ev==="text"){ msg.text+=data.text; toolSince=false; msg.status="Writing"; }
         else if(ev==="status"){ msg.status=data.text; if(started) msg.steps.push(data.text); else if(/^Asking /.test(data.text)){ started=true; msg.status="Reading the numbers"; } if(msg.text) toolSince=true; }
         else if(ev==="turn"){ if(toolSince){ msg.text=""; toolSince=false; } }   // drop "let me check…" narration once the agent has looked something up
-        else if(ev==="meta"&&data.model) msg.by=`${askProvLabel(prov).split(" · ")[0]} · ${data.model}`;
+        else if(ev==="meta"&&data.model){ msg.by=`${prov.label} · ${data.model}`; const k=askModelOf(prov); prov.seen={...(prov.seen||{}),[k]:data.model}; }
         else if(ev==="error") msg.error=data.message;
         paint();
       }
@@ -409,7 +499,9 @@ function askStop(){ if(ASK.run){ ASK.run.abort(); ASK.run=null; } }
 function askRetry(){ if(ASK.run) return; const i=ASK.conv.length-1; if(ASK.conv[i]?.role!=="assistant") return; ASK.conv.pop(); const u=ASK.conv[ASK.conv.length-1]; if(!u) return;
   ASK.ctx=u.ctx||ASK.ctx; askSend(u.skill?{skill:u.skill,retry:true}:{q:u.text,retry:true}); }
 /* when an answer lands while Tick is hidden, the header button says so */
-function tickPing(m){ const b=$("#askOpen"); if(!b||ASK.open) return; b.classList.add("ping"); b.title=m.error?`${TICK} hit a problem`:`${TICK} has an answer`; }
+function tickPing(m){ if(ASK.open) return; const b=$("#askOpen"), t=m.error?`${TICK} hit a problem`:`${TICK} has an answer`;
+  if(b){ b.classList.add("ping"); b.title=t; }
+  const f=$("#tickFloat"); if(f){ f.classList.add("ping"); $("#tfSay").textContent=m.error?"I hit a snag.":"I have an answer."; } }
 
 /* "Ask Tick about this": any insight or brief line gets a quiet button; A while hovering does the same */
 let askHover=null;
@@ -489,8 +581,28 @@ document.addEventListener("scroll",e=>{ const B=e.target; if(B.id==="askB") ASK.
 
 /* header button and command bar */
 { const bell=$("#bell"); if(bell&&!$("#askOpen")){ const b=document.createElement("button"); b.className="askbtn"; b.id="askOpen"; b.title=`${TICK}, your analyst (A)`; b.setAttribute("aria-label",`Show ${TICK}`); b.innerHTML=`${tickFace(20)}<span>${TICK}</span>`; b.querySelector(".tick").classList.add("live"); bell.before(b); } }
+/* when the panel is closed, Tick floats in a corner: drag him anywhere, click him to open the panel */
+function tickFloat(){
+  if($("#tickFloat")) return;
+  const f=document.createElement("button"); f.id="tickFloat"; f.className="tfloat"; f.type="button"; f.setAttribute("aria-label",`Open ${TICK} (A)`);
+  f.innerHTML=`<span class="tf-say" id="tfSay">Ask ${TICK} <kbd>A</kbd></span>${tickFace(46,"idle")}`; f.querySelector(".tick").classList.add("live");
+  document.body.appendChild(f);
+  const place=(r,b)=>{ r=Math.max(8,Math.min(innerWidth-64,r)); b=Math.max(8,Math.min(innerHeight-72,b)); f.style.setProperty("--tf-r",r+"px"); f.style.setProperty("--tf-b",b+"px");
+    f.classList.toggle("tf-l",r>innerWidth/2); return [r,b]; };
+  const saved=String(load("tickFloat","")).split(",").map(Number); let pos=place(...(saved.length===2&&saved.every(isFinite)?saved:[24,24]));
+  addEventListener("resize",()=>{ pos=place(...pos); });
+  let drag=null, moved=false;
+  f.addEventListener("pointerdown",e=>{ if(e.button!==0) return; const r=f.getBoundingClientRect(); drag={x:e.clientX,y:e.clientY,r0:pos[0],b0:pos[1]}; moved=false; f.setPointerCapture(e.pointerId); });
+  f.addEventListener("pointermove",e=>{ if(!drag) return; const dx=e.clientX-drag.x, dy=e.clientY-drag.y;
+    if(!moved&&Math.hypot(dx,dy)<5) return; moved=true; f.classList.add("dragging"); pos=place(drag.r0-dx,drag.b0-dy); });
+  const end=()=>{ if(!drag) return; drag=null; f.classList.remove("dragging"); if(moved) save("tickFloat",pos.join(",")); };
+  f.addEventListener("pointerup",end); f.addEventListener("pointercancel",end);
+  f.addEventListener("click",e=>{ if(moved){ moved=false; e.preventDefault(); return; } f.classList.remove("ping"); $("#tfSay").innerHTML=`Ask ${TICK} <kbd>A</kbd>`; openAsk(); });
+}
+tickFloat();
 if(typeof COMMANDS!=="undefined"){
   COMMANDS.push({cmd:"ask:free",label:`Ask ${TICK}…`,hint:TICK,icon:"spark",keys:"ask tick ai agent claude codex question chat",run:()=>openAsk({q:ASK.pendingQ,send:!!ASK.pendingQ})});
+  COMMANDS.push({cmd:"tick:side",label:`Move ${TICK} to the other side`,hint:TICK,icon:"expand",keys:"move tick left right side dock panel",run:()=>{ if(!ASK.open) openAsk({focus:false}); tickSide(ASK.side==="left"?"right":"left"); }});
   COMMANDS.push({cmd:"tick:new",label:`New conversation with ${TICK}`,hint:TICK,icon:"compose",keys:"new chat conversation tick",run:()=>{ openAsk(); newChat(); }});
   for(const s of ASK_SKILLS_FALLBACK) COMMANDS.push({cmd:"skill:"+s.name,label:s.scope==="stock"?`${s.label} (open stock)`:s.label,hint:TICK,icon:"spark",keys:"ask tick "+s.label+" "+s.name.replace(/-/g," "),
     run:()=>{ if(s.scope==="stock"&&!(drawerOpen&&sel)) return openAsk({scope:"market"}); openAsk({scope:s.scope,t:s.scope==="stock"?sel:null,skill:s.name}); }});

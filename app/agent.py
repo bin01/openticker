@@ -749,10 +749,58 @@ def _signed_in(pid, path):
     return True
 
 
+SEEN_FILE = paths.DATA / "agent-models.json"
+CLAUDE_MODELS = [["", "Default"], ["opus", "Opus"], ["sonnet", "Sonnet"], ["haiku", "Haiku"]]
+
+
+def _seen():
+    try:
+        return json.loads(SEEN_FILE.read_text())
+    except Exception:
+        return {}
+
+
+def remember_model(pid, asked, model):
+    """The model an agent actually answered with, so the picker can name it before the next answer."""
+    if not model:
+        return
+    s = _seen()
+    key = f"{pid}:{asked or ''}"
+    if s.get(key) != model:
+        s[key] = model
+        try:
+            SEEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+            SEEN_FILE.write_text(json.dumps(s))
+        except OSError:
+            pass
+
+
+def _configured_model(pid):
+    """The default model in the agent's own settings, when it names one."""
+    try:
+        if pid == "claude":
+            for f in (Path.home() / ".claude" / "settings.json", Path.home() / ".claude" / "settings.local.json"):
+                if f.exists():
+                    m = json.loads(f.read_text() or "{}").get("model")
+                    if m:
+                        return m
+        elif pid == "codex":
+            f = Path.home() / ".codex" / "config.toml"
+            if f.exists():
+                m = re.search(r'^\s*model\s*=\s*"([^"]+)"', f.read_text(), re.M)
+                if m:
+                    return m.group(1)
+        elif pid == "opencode":
+            return _opencode_model()
+    except Exception:
+        return None
+    return None
+
+
 def providers(force=False):
     """Every agent with its state: ready, signin (installed, not signed in), off (Ollama not running), missing."""
     if not force and time.time() - _prov_cache["t"] < 90 and _prov_cache["v"]:
-        return _prov_cache["v"]
+        return _with_seen(_prov_cache["v"])
     out = []
     for p in PROVIDERS:
         q = {k: v for k, v in p.items() if k != "bin"}
@@ -769,8 +817,22 @@ def providers(force=False):
             q["state"] = "signin" if ok is False else "ready"
             q["why"] = "Installed, not signed in." if ok is False else ""
         q["available"] = q["state"] == "ready"
+        if p["id"] == "claude":
+            q["choices"] = CLAUDE_MODELS
+        elif p["id"] == "ollama":
+            q["choices"] = [[m, m] for m in q["models"]]
+        else:
+            q["choices"] = [["", "Default"]]
+        q["configured"] = _configured_model(p["id"])
         out.append(q)
     _prov_cache.update(t=time.time(), v=out)
+    return _with_seen(out)
+
+
+def _with_seen(out):
+    seen = _seen()
+    for q in out:
+        q["seen"] = {k.split(":", 1)[1]: v for k, v in seen.items() if k.startswith(q["id"] + ":")}
     return out
 
 
@@ -901,6 +963,7 @@ def _claude_partial():
 class Run:
     """One streaming agent run. emit(kind, payload) is called from this thread; cancel() stops it."""
     def __init__(self, provider, prompt, emit, model=None):
+        model = model if isinstance(model, str) and re.match(r"^[A-Za-z0-9][\w.:/@+-]{0,100}$", model) else None   # never a flag
         self.provider, self.prompt, self.emit, self.model = provider, prompt, emit, model
         self.proc = None
         self.cancelled = False
@@ -987,6 +1050,8 @@ class Run:
                     elif b.get("type") == "text" and not _partial.get("v", True) and not ev.get("parent_tool_use_id"):
                         self.emit("turn", {})
                         self.emit("text", {"text": b.get("text") or ""})
+            elif ty == "system" and ev.get("subtype") == "init" and ev.get("model"):
+                self.emit("meta", {"model": ev.get("model")})
             elif ty == "result":
                 if ev.get("is_error"):
                     self.emit("error", {"message": self._explain(str(ev.get("result") or ""))})

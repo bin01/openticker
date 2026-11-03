@@ -1094,6 +1094,7 @@ class Handler(BaseHTTPRequestHandler):
                 acc["text"], acc["tool"] = "", False
             elif kind == "meta" and payload.get("model"):
                 acc["by"] = payload["model"]
+                agent.remember_model(prov, body.get("model"), payload["model"])
             elif kind == "error":
                 acc["error"] = payload.get("message")
 
