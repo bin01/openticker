@@ -1037,7 +1037,7 @@ class Run:
             if ty == "error":
                 er = ev.get("error") or {}
                 msg = (er.get("message") or er.get("data", {}).get("message") or "OpenCode reported an error.").strip()
-                cfg = _opencode_model()
+                cfg = self.model or _opencode_model()
                 p.kill()
                 return self.emit("error", {"message": f"OpenCode couldn't use its model{f' ({cfg})' if cfg else ''}: {msg} "
                                                       "Fix it in OpenCode, or pick another agent."})
