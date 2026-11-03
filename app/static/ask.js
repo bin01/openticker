@@ -1,47 +1,77 @@
-/* OpenTicker: Ask. A side sheet where the user asks questions or runs a skill (a ready-made playbook)
-   about a stock, their portfolio or the market. Answers stream from an agent on the user's own Mac
-   (Claude Code, Codex, opencode, or a local Ollama model), so their existing subscription pays.
-   Shares globals with index.html: $, esc, ic, IC, load, save, base, sel, drawerOpen, page, openStock, COMMANDS. */
+/* OpenTicker: Tick, the analyst who lives in the app.
+   A chat column docked beside the dashboard (a sheet on phones). Tick follows what you're looking at, takes
+   @stocks and /skills, keeps every conversation on your Mac, and answers through an agent you already pay for
+   (Claude Code, Codex, OpenCode) or a free local Ollama model.
+   Shares globals with index.html: $, esc, ic, IC, load, save, base, sel, drawerOpen, page, openStock, COMMANDS, me, EARN, ret, idx, nameOf. */
 
 Object.assign(IC,{
   spark:'<path d="M12 3l1.8 4.9L18.7 9.7 13.8 11.5 12 16.4 10.2 11.5 5.3 9.7 10.2 7.9z"/><path d="M19 15l.7 1.8 1.8.7-1.8.7L19 20l-.7-1.8-1.8-.7 1.8-.7z"/>',
   send:'<path d="M12 19V5M5 12l7-7 7 7"/>', stop:'<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>',
   copy:'<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>', check:'<path d="M20 6 9 17l-5-5"/>',
   compose:'<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>', phone:'<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/>',
-  chev:'<path d="m6 9 6 6 6-6"/>'});
+  chev:'<path d="m6 9 6 6 6-6"/>', chevr:'<path d="m9 6 6 6-6 6"/>', clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  dock:'<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M15 4v16"/>', retry:'<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>',
+  trash:'<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>', at:'<circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/>',
+  eye:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>', globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  chart:'<path d="M3 17l5-5 4 3 8-8"/><path d="M15 7h5v5"/>', term:'<path d="m5 8 4 4-4 4M12 16h7"/>', news:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h6M7 13h10"/>'});
 
-/* skills ship with the server; this copy lets chips render before /api/ask/info answers */
+const TICK="Tick";
+/* skills ship with the server; this copy lets things render before /api/ask/info answers */
 const ASK_SKILLS_FALLBACK=[
   {name:"stock-snapshot",label:"Quick take",scope:"stock"},{name:"explain-move",label:"Why is it moving?",scope:"stock"},
   {name:"bull-bear",label:"Bull vs bear",scope:"stock"},{name:"earnings-preview",label:"Earnings preview",scope:"stock"},
   {name:"analyst-pulse",label:"What analysts say",scope:"stock"},{name:"valuation-check",label:"Is it expensive?",scope:"stock"},
   {name:"portfolio-checkup",label:"Check up on my portfolio",scope:"portfolio"},{name:"week-ahead",label:"What to watch this week",scope:"portfolio"},
   {name:"market-recap",label:"Market recap",scope:"market"},{name:"sector-rotation",label:"Which sectors lead?",scope:"market"},{name:"macro-check",label:"Macro backdrop",scope:"market"}];
-const ASK={info:null,infoAt:0,ctx:{scope:"market",t:null},conv:[],run:null,prov:load("askProv","claude"),model:load("askModel",""),open:false};
+const ASK={info:null,infoAt:0,ctx:{scope:"market",t:null},pinned:false,also:[],conv:[],chat:load("tickChat",""),run:null,
+  prov:load("askProv","claude"),model:load("askModel",""),open:false,view:null,menu:null,mi:0,mood:"idle"};
 let askToken=load("askToken","");
 
 /* pairing: the Mac shows a link like http://mac.local:8765/#pair=TOKEN; opening it on the phone stores the token */
 { const m=location.hash.match(/^#pair=([\w-]{10,64})$/); if(m){ askToken=m[1]; save("askToken",askToken); try{ history.replaceState(null,"","#"+page); }catch(e){} ASK.paired=true; } }
 
 const askHeaders=()=>({"Content-Type":"application/json",...(askToken?{"X-Ask-Token":askToken}:{})});
+const askGet=async u=>(await fetch(u,{headers:askToken?{"X-Ask-Token":askToken}:{}})).json();
 async function askInfo(force){
   if(!force&&ASK.info&&Date.now()-ASK.infoAt<60e3) return ASK.info;
-  try{ ASK.info=await (await fetch("/api/ask/info"+(force?"?refresh":""),{headers:askToken?{"X-Ask-Token":askToken}:{}})).json(); ASK.infoAt=Date.now();
+  try{ ASK.info=await askGet("/api/ask/info"+(force?"?refresh":"")); ASK.infoAt=Date.now();
     const o=ASK.info?.providers?.find(p=>p.id==="ollama"); if(o?.models?.length&&!o.models.includes(ASK.model)&&ASK.prov==="ollama") ASK.model=o.models[0]; }catch(e){}
   return ASK.info;
 }
 const askSkills=scope=>(ASK.info?.skills||ASK_SKILLS_FALLBACK).filter(s=>s.scope===scope);
+const askSkill=name=>(ASK.info?.skills||ASK_SKILLS_FALLBACK).find(s=>s.name===name);
 const askProv=()=>{ const P=ASK.info?.providers||[]; return P.find(p=>p.id===ASK.prov&&p.available)||P.find(p=>p.available)||null; };
 const askProvLabel=p=>!p?"No agent":p.id==="ollama"?`Ollama · ${(ASK.model||p.models?.[0]||"").replace(/:latest$/,"")}`:p.label;
 const askAgentName=p=>!p?"":p.id==="ollama"?"Ollama":p.label;
+const newChatId=()=>{ const a=crypto.getRandomValues(new Uint8Array(9)); return "c"+Date.now().toString(36)+[...a].map(x=>(x%36).toString(36)).join(""); };
 
-/* inline entry points ------------------------------------------------------------------------- */
+/* Tick: a small candlestick with eyes. Moods: idle (blinks), think (the candle stretches as if price is moving
+   and the eyes read), done (a small hop), err (goes red for a moment). */
+function tickFace(size=24,mood){
+  const glint=size>=20;
+  return `<span class="tick ${mood?"tk-"+mood:""}" style="--s:${size}px" aria-hidden="true"><svg viewBox="0 0 32 32" width="${size}" height="${size}">
+    <path class="tk-w" d="M16 1.4v5M16 25.6v4.8"/><g class="tk-b"><rect class="tk-bd" x="5.2" y="6" width="21.6" height="19.8" rx="8.4"/>${glint?`<rect class="tk-sh" x="8" y="8.8" width="2.8" height="5.4" rx="1.4"/>`:""}
+    <g class="tk-e"><ellipse cx="12.4" cy="15.4" rx="2.4" ry="2.9"/><ellipse cx="19.6" cy="15.4" rx="2.4" ry="2.9"/>${glint?`<circle cx="13.2" cy="14.3" r=".9"/><circle cx="20.4" cy="14.3" r=".9"/>`:""}</g>
+    <path class="tk-m" d="M14.2 20.8q1.8 1.6 3.6 0"/></g></svg></span>`;
+}
+/* Tick says what he's doing in a small bubble beside him */
+let sayT=0;
+function say(text,kind,ms){ const b=$("#askSay"); if(!b) return; clearTimeout(sayT);
+  if(!text){ b.classList.remove("on"); return; }
+  b.textContent=text; b.classList.toggle("err",kind==="err"); b.classList.add("on");
+  if(ms) sayT=setTimeout(()=>b.classList.remove("on"),ms); }
+const QUIPS=["Still here.","Numbers before adjectives.","I don't do hype.","Type @ to bring in another stock.","Ask me why something moved.","I read the live numbers, not the headlines."];
+let quip=0;
+function setMood(m){ ASK.mood=m; document.querySelectorAll(".tick.live").forEach(t=>{ t.className="tick live tk-"+m; }); }
+
+/* entry points on the page ------------------------------------------------------------------------ */
 function askRow(t,scope){
   scope=scope||(t?"stock":"market");
   const S=askSkills(scope).slice(0,scope==="stock"?4:3);
-  return `<div class="askrow"><span class="askl">${ic("spark",14)}Ask</span>${S.map(s=>`<button class="askchip" data-ask-skill="${esc(s.name)}" data-ask-scope="${scope}"${t?` data-ask-t="${esc(t)}"`:""}>${esc(s.label)}</button>`).join("")}${scope==="stock"?"":`<button class="askchip more" data-ask-scope="${scope}" aria-label="Ask your own question">Your question…</button>`}</div>`;
+  return `<div class="askrow"><span class="askl">${tickFace(16)}Ask ${TICK}</span>${S.map(s=>`<button class="askchip" data-ask-skill="${esc(s.name)}" data-ask-scope="${scope}"${t?` data-ask-t="${esc(t)}"`:""}>${esc(s.label)}</button>`).join("")}</div>`;
 }
-function askCmd(q){ return {cmd:"ask:free",label:`Ask “${q.length>60?q.slice(0,58)+"…":q}”`,hint:"Ask",icon:"spark",run:()=>openAsk({q,send:true})}; }
+function askCmd(q){ return {cmd:"ask:free",label:`Ask ${TICK} “${q.length>60?q.slice(0,58)+"…":q}”`,hint:TICK,icon:"spark",run:()=>openAsk({q,send:true})}; }
 function withAsk(items,q){
   items=items.filter(x=>x.cmd!=="ask:free"); q=(q||"").trim(); if(q.length<3) return items; ASK.pendingQ=q;
   const question=/\?$/.test(q)||q.split(/\s+/).length>=3;
@@ -53,80 +83,255 @@ function askDefaultCtx(){
   return {scope:"market",t:null};
 }
 const ctxLabel=c=>c.scope==="stock"?c.t:c.scope==="portfolio"?"Your stocks":"The market";
+const ctxName=c=>c.scope==="stock"?(base?nameOf(c.t)||"":""):c.scope==="portfolio"?"Positions, watchlist and brief":"Funds, sectors, macro, movers";
 
-/* the sheet ------------------------------------------------------------------------------------ */
+/* layout: docked beside the page on wide screens, a sheet elsewhere ------------------------------------- */
+const DOCK_MIN=1100;
+const canDock=()=>innerWidth>=DOCK_MIN;
+function applyDock(){
+  const docked=ASK.open&&canDock();
+  document.body.classList.toggle("tick-docked",docked);
+  document.body.classList.toggle("asking",ASK.open);
+  const el=$("#ask"); if(el){ el.classList.toggle("open",ASK.open); el.classList.toggle("docked",docked); el.setAttribute("aria-hidden",ASK.open?"false":"true"); }
+  const b=$("#askOpen"); if(b) b.setAttribute("aria-pressed",ASK.open?"true":"false");
+}
+addEventListener("resize",()=>applyDock());
+
 function askShell(){
   if($("#ask")) return;
-  const el=document.createElement("aside"); el.className="ask"; el.id="ask"; el.setAttribute("aria-label","Ask"); el.setAttribute("aria-hidden","true");
-  el.innerHTML=`<div class="ask-h"><div class="ask-ti">${ic("spark",18)}<b>Ask</b><button class="ask-ctx" id="askCtx" aria-haspopup="menu"></button></div>
-    <div class="ask-hb"><button class="x" id="askNew" title="New conversation" aria-label="New conversation">${ic("compose",17)}</button><button class="x" id="askClose" aria-label="Close" title="Close (Esc)">${ic("close",18)}</button></div>
-    <div class="ask-menu ctxm" id="askCtxM" role="menu" hidden></div></div>
+  const el=document.createElement("aside"); el.className="ask"; el.id="ask"; el.setAttribute("aria-label",TICK); el.setAttribute("aria-hidden","true");
+  el.innerHTML=`<div class="ask-h"><b class="ask-nm">${TICK}</b><button type="button" class="ask-prov" id="askProv" aria-haspopup="menu" aria-expanded="false"></button>
+    <div class="ask-hb"><button class="x" id="askHist" title="Conversations" aria-label="Conversations">${ic("clock",16)}</button><button class="x" id="askNew" title="New conversation" aria-label="New conversation">${ic("compose",16)}</button><button class="x" id="askClose" aria-label="Hide ${TICK}" title="Hide ${TICK}">${ic(innerWidth<=760?"close":"dock",16)}</button></div></div>
+  <div class="ask-menu provm" id="askMenu" role="menu" hidden></div>
   <div class="ask-b" id="askB"></div>
-  <form class="ask-f" id="askF"><div class="ask-in"><textarea id="askQ" rows="1" placeholder="Ask anything" aria-label="Your question"></textarea><button class="ask-send" id="askSend" aria-label="Send">${ic("send",17)}</button></div>
-    <div class="ask-meta"><button type="button" class="ask-prov" id="askProv" aria-haspopup="menu"></button><span class="ask-note" id="askNote"></span></div>
-    <div class="ask-menu provm" id="askMenu" role="menu" hidden></div></form>`;
+  <form class="ask-f" id="askF">
+    <div class="perch">${tickFace(38,"idle")}<span class="say" id="askSay" role="status" aria-live="polite"></span></div>
+    <div class="ask-in"><textarea id="askQ" rows="2" placeholder="Message ${TICK}" aria-label="Message ${TICK}" aria-autocomplete="list" aria-controls="askPop"></textarea>
+      <div class="ask-row"><div class="ask-ctxr" id="askCtxR"></div><button class="ask-send" id="askSend" aria-label="Send">${ic("send",16)}</button></div></div>
+    <div class="ask-menu pop" id="askPop" role="listbox" hidden></div>
+    <div class="ask-menu ctxm" id="askCtxM" role="menu" hidden></div></form>`;
   document.body.appendChild(el);
+  const me_=el.querySelector(".perch .tick"); me_.classList.add("live");
+  me_.addEventListener("click",()=>{ if(ASK.run) return; setMood("happy"); say(QUIPS[quip++%QUIPS.length],null,2200); setTimeout(()=>{ if(!ASK.run) setMood("idle"); },1200); });
   const Q=$("#askQ");
-  Q.addEventListener("input",()=>{ Q.style.height="auto"; Q.style.height=Math.min(Q.scrollHeight,160)+"px"; });
-  Q.addEventListener("keydown",e=>{ if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){ e.preventDefault(); $("#askF").requestSubmit(); } });
+  const grow=()=>{ Q.style.height="auto"; Q.style.height=Math.min(Q.scrollHeight,180)+"px"; };
+  Q.addEventListener("input",()=>{ grow(); askPopUpdate(); paintSend(); });
+  Q.addEventListener("keydown",e=>{
+    if(!$("#askPop").hidden){
+      const items=[...$("#askPop").querySelectorAll("[data-pi]")];
+      if(e.key==="ArrowDown"||e.key==="ArrowUp"){ e.preventDefault(); ASK.mi=(ASK.mi+(e.key==="ArrowDown"?1:-1)+items.length)%items.length; markPop(); return; }
+      if((e.key==="Enter"||e.key==="Tab")&&items[ASK.mi]){ e.preventDefault(); items[ASK.mi].click(); return; }
+      if(e.key==="Escape"){ e.preventDefault(); e.stopPropagation(); hidePop(); return; }
+    }
+    if(e.key==="Backspace"&&!Q.value&&ASK.also.length){ ASK.also.pop(); renderCtx(); return; }
+    if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){ e.preventDefault(); $("#askF").requestSubmit(); }
+  });
   $("#askF").onsubmit=async e=>{ e.preventDefault(); const q=Q.value.trim();
-    if(ASK.run){ askStop(); if(!q) return; await new Promise(r=>setTimeout(r,60)); }   // typing while it works steers: stop, then ask again with the new words
-    if(!q) return; Q.value=""; Q.style.height="auto"; askSend({q}); };
-  Q.addEventListener("input",()=>{ if(ASK.run) $("#askSend").innerHTML=Q.value.trim()?ic("send",17):ic("stop",15); });
+    if(ASK.run){ askStop(); if(!q) return; await new Promise(r=>setTimeout(r,80)); }   // Enter while Tick works steers: stop, then go again with the new words
+    if(!q) return; Q.value=""; grow(); hidePop(); askSend({q}); };
   $("#askClose").onclick=closeAsk;
-  $("#askNew").onclick=()=>{ askStop(); ASK.conv=[]; askRender(); Q.focus(); };
-  $("#askProv").onclick=e=>{ e.stopPropagation(); $("#askCtxM").hidden=true; const m=$("#askMenu"); m.hidden=!m.hidden; if(!m.hidden) askProvMenu(); };
-  $("#askCtx").onclick=e=>{ e.stopPropagation(); $("#askMenu").hidden=true; const m=$("#askCtxM"); m.hidden=!m.hidden; if(!m.hidden) askCtxMenu(); };
-  el.addEventListener("click",e=>{ if(!e.target.closest(".ask-menu,#askProv,#askCtx")){ $("#askMenu").hidden=true; $("#askCtxM").hidden=true; } });
+  $("#askNew").onclick=()=>newChat();
+  $("#askHist").onclick=()=>{ ASK.view=ASK.view==="history"?null:"history"; askRender(); };
+  $("#askProv").onclick=e=>{ e.stopPropagation(); hideMenus("askMenu"); const m=$("#askMenu"); m.hidden=!m.hidden; e.currentTarget.setAttribute("aria-expanded",!m.hidden); if(!m.hidden) askProvMenu(); };
+  el.addEventListener("click",e=>{ if(!e.target.closest(".ask-menu,#askProv,.ctxchip")) hideMenus(); });
+  $("#askB").addEventListener("scroll",e=>el.querySelector(".ask-h").classList.toggle("lined",e.target.scrollTop>4),{passive:true});
 }
+function hideMenus(keep){ ["askMenu","askCtxM","askPop"].forEach(id=>{ if(id!==keep&&$("#"+id)) $("#"+id).hidden=true; }); if(keep!=="askMenu") $("#askProv")?.setAttribute("aria-expanded","false"); }
+function paintSend(){ const s=$("#askSend"), typing=!!$("#askQ").value.trim(), stop=!!ASK.run&&!typing;
+  s.innerHTML=stop?ic("stop",13):ic("send",16); s.setAttribute("aria-label",stop?"Stop":"Send"); s.classList.toggle("stop",stop); s.classList.toggle("ready",typing&&!stop); }
+
 async function openAsk(o={}){
   askShell();
-  const ctx=o.scope?{scope:o.scope,t:o.t||null}:askDefaultCtx();
-  if(ctx.scope!==ASK.ctx.scope||ctx.t!==ASK.ctx.t){ if(!ASK.run) ASK.conv=[]; ASK.ctx=ctx; }
-  ASK.open=true; const el=$("#ask"); el.classList.add("open"); el.setAttribute("aria-hidden","false"); document.body.classList.add("asking");
-  askRender(); await askInfo(); askRender();
+  if(o.scope){ ASK.ctx={scope:o.scope,t:o.t||null}; ASK.pinned=true; } else if(!ASK.pinned) ASK.ctx=askDefaultCtx();
+  ASK.open=true; save("tickOpen","1"); applyDock();
+  if(ASK.view==="history"&&(o.skill||o.q)) ASK.view=null;
+  askRender(); await askInfo(); await restoreChat(); askRender();
   if(o.skill||o.q&&o.send) askSend({skill:o.skill,q:o.q});
-  else{ if(o.q) $("#askQ").value=o.q; if(innerWidth>760) setTimeout(()=>$("#askQ").focus(),60); }
+  else{ if(o.q) $("#askQ").value=o.q; if(innerWidth>760&&o.focus!==false) setTimeout(()=>$("#askQ").focus(),60); }
 }
-function closeAsk(){ const el=$("#ask"); if(!el) return; ASK.open=false; el.classList.remove("open"); el.setAttribute("aria-hidden","true"); document.body.classList.remove("asking"); }
+function closeAsk(){ ASK.open=false; save("tickOpen","0"); hideMenus(); applyDock(); }
 
+/* conversations ------------------------------------------------------------------------------------ */
+async function restoreChat(){
+  if(ASK.restored||!ASK.info?.allowed) return; ASK.restored=true;
+  if(!ASK.chat) return;
+  try{ const c=await askGet("/api/ask/chat?id="+encodeURIComponent(ASK.chat)); if(c&&c.messages&&!ASK.conv.length) ASK.conv=c.messages.map(m=>({...m,done:true})); }catch(e){}
+}
+function newChat(){ askStop(); ASK.conv=[]; ASK.chat=""; save("tickChat",""); ASK.view=null; ASK.also=[]; ASK.pinned=false; ASK.ctx=askDefaultCtx(); askRender(); $("#askQ").focus(); }
+async function openChat(id){
+  askStop();
+  try{ const c=await askGet("/api/ask/chat?id="+encodeURIComponent(id)); if(!c.messages) return;
+    ASK.chat=id; save("tickChat",id); ASK.conv=c.messages.map(m=>({...m,done:true})); ASK.view=null; ASK.stick=true;
+    const lastU=[...ASK.conv].reverse().find(m=>m.role==="user"&&m.ctx); if(lastU){ ASK.ctx=lastU.ctx; ASK.pinned=true; }
+    askRender(); }catch(e){}
+}
+function relTime(s){ const m=(Date.now()/1000-s)/60; if(m<1) return "Just now"; if(m<60) return Math.round(m)+" min ago"; if(m<1440) return Math.round(m/60)+" h ago";
+  const d=new Date(s*1000); return m<10080?d.toLocaleDateString("en-US",{weekday:"long"}):d.toLocaleDateString("en-US",{month:"short",day:"numeric"}); }
+async function historyView(){
+  const B=$("#askB"); B.innerHTML=`<div class="hist"><h3>Conversations</h3><p class="hint">Loading…</p></div>`;
+  let L=[]; try{ L=await askGet("/api/ask/chats"); }catch(e){}
+  if(ASK.view!=="history") return;
+  B.innerHTML=`<div class="hist"><div class="hist-h"><h3>Conversations</h3><button class="btn ghost" data-hist-new>${ic("compose",14)}New</button></div>
+    ${L.length?`<ul>${L.map(c=>`<li class="${c.id===ASK.chat?"on":""}"><button class="hist-o" data-hist="${esc(c.id)}"><b>${esc(c.title)}</b><small>${relTime(c.updated)} · ${Math.ceil(c.n/2)} ${c.n>2?"questions":"question"}</small></button><button class="x" data-hist-del="${esc(c.id)}" aria-label="Delete conversation" title="Delete">${ic("trash",15)}</button></li>`).join("")}</ul>`
+      :`<p class="hint">Nothing yet. Everything you ask ${TICK} is kept here, on your Mac.</p>`}</div>`;
+}
+document.addEventListener("click",async e=>{
+  const b=e.target.closest("[data-hist],[data-hist-del],[data-hist-new]"); if(!b) return;
+  if(b.dataset.hist) return openChat(b.dataset.hist);
+  if(b.hasAttribute("data-hist-new")) return newChat();
+  const id=b.dataset.histDel; const li=b.closest("li"); li.classList.add("gone");
+  await fetch("/api/ask/chat/delete",{method:"POST",headers:askHeaders(),body:JSON.stringify({id})}).catch(()=>{});
+  if(id===ASK.chat){ ASK.chat=""; save("tickChat",""); ASK.conv=[]; }
+  setTimeout(()=>historyView(),180);
+});
+
+/* the context row: what Tick is looking at, plus any @stocks ------------------------------------------- */
+function renderCtx(){
+  const c=ASK.ctx, R=$("#askCtxR"); if(!R) return;
+  R.innerHTML=`<button type="button" class="ctxchip main" aria-haspopup="menu" title="${ASK.pinned?"Pinned. Choose what Tick looks at":"Follows what you're looking at"}">${ic(ASK.pinned?"at":"eye",13)}<b>${esc(ctxLabel(c))}</b>${c.scope==="stock"&&ctxName(c)&&!ASK.also.length?`<small>${esc(trunc(ctxName(c),18))}</small>`:""}${ic("chev",12)}</button>`
+    +ASK.also.map((t,i)=>`<span class="ctxchip"><b>${esc(t)}</b><button type="button" data-also-x="${i}" aria-label="Remove ${esc(t)}">×</button></span>`).join("");
+  R.querySelector(".main").onclick=e=>{ e.stopPropagation(); hideMenus("askCtxM"); const m=$("#askCtxM"); m.hidden=!m.hidden; if(!m.hidden) askCtxMenu(); };
+  R.querySelectorAll("[data-also-x]").forEach(x=>x.onclick=()=>{ ASK.also.splice(+x.dataset.alsoX,1); renderCtx(); });
+}
+function askCtxMenu(){
+  const m=$("#askCtxM"), opts=[], here=askDefaultCtx();
+  opts.push({...here,follow:true});
+  if(ASK.ctx.scope==="stock"&&ASK.ctx.t&&ASK.ctx.t!==here.t) opts.push({scope:"stock",t:ASK.ctx.t});
+  for(const o of [{scope:"portfolio",t:null},{scope:"market",t:null}]) if(!(here.scope===o.scope)) opts.push(o);
+  m.innerHTML=`<div class="mh">${TICK} is looking at</div>`+opts.map((o,i)=>`<button role="menuitemradio" aria-checked="${o.follow?!ASK.pinned:ASK.pinned&&o.scope===ASK.ctx.scope&&o.t===ASK.ctx.t}" data-co="${i}"><b>${o.follow?`Whatever you're viewing`:esc(ctxLabel(o))}</b><small>${o.follow?`Now: ${esc(ctxLabel(o))}`:esc(ctxName(o))}</small></button>`).join("")
+    +`<div class="mh">Tip</div><p class="mtip">Type <b>@</b> and a ticker to bring more stocks into the conversation.</p>`;
+  m.querySelectorAll("[data-co]").forEach(b=>b.onclick=()=>{ const o=opts[+b.dataset.co]; ASK.pinned=!o.follow; ASK.ctx={scope:o.scope,t:o.t}; m.hidden=true; renderCtx(); renderPlaceholder(); if(!ASK.conv.length) askRender(); });
+}
+/* follow the page: when you open a stock or switch pages, Tick looks there too (unless pinned) */
+setInterval(()=>{ if(!ASK.open) return;
+  if(!ASK.conv.length&&!ASK.view&&!ASK.run&&noticings(ASK.ctx).length!==(ASK.notes||[]).length) askRender();   // the data arrived after Tick opened
+  if(ASK.pinned) return; const c=askDefaultCtx(); if(c.scope!==ASK.ctx.scope||c.t!==ASK.ctx.t){ ASK.ctx=c; renderCtx(); renderPlaceholder(); if(!ASK.conv.length&&!ASK.view) askRender(); } },350);
+function renderPlaceholder(){ const p=askProv(), c=ASK.ctx; const Q=$("#askQ"); if(!Q) return;
+  Q.placeholder=ASK.conv.length?`Reply to ${TICK}`:`${c.scope==="stock"?`Ask ${TICK} about ${c.t}`:c.scope==="portfolio"?`Ask ${TICK} about your stocks`:`Ask ${TICK} about the market`}. Type @ to add a stock, / for a playbook.`; }
+
+/* @ and / menus --------------------------------------------------------------------------------------- */
+function popToken(){ const Q=$("#askQ"), v=Q.value.slice(0,Q.selectionStart);
+  const at=v.match(/(^|\s)@([\w.^-]{0,12})$/); if(at) return {kind:"@",q:at[2],start:v.length-at[2].length-1};
+  const sl=v.match(/^\/([\w-]{0,30})$/); if(sl) return {kind:"/",q:sl[1],start:0}; return null; }
+function askPopUpdate(){
+  const tk=popToken(), P=$("#askPop"); if(!tk){ hidePop(); return; }
+  let items=[];
+  if(tk.kind==="@"){
+    const q=tk.q.toUpperCase(), ql=tk.q.toLowerCase(), mine=[...(me?.watch||[]),...(me?.positions||[]).map(p=>p.t)];
+    const pool=[...new Set([...mine,...Object.keys(base?.px||{})])].filter(t=>/^[A-Z][A-Z.-]{0,5}$/.test(t));
+    const scored=[]; for(const t of pool){ const n=(nameOf(t)||"").toLowerCase(); let s=!q?(mine.includes(t)?1:9):t===q?0:t.startsWith(q)?1+(t.length-q.length)*.01:ql.length>=2&&n.includes(ql)?3:null; if(s==null) continue; if(mine.includes(t)) s-=.5; scored.push([s,t]); }
+    scored.sort((a,b)=>a[0]-b[0]);
+    items=scored.slice(0,6).map(([,t])=>({k:"stock",t,label:t,sub:nameOf(t)||"",g:mine.includes(t)?"Your stocks":"Stocks"})).sort((a,b)=>(a.g==="Stocks")-(b.g==="Stocks"));
+    if(!q||"my stocks portfolio".includes(ql)) items.push({k:"portfolio",label:"My stocks",sub:"Positions, watchlist and brief",g:"Bigger picture"});
+    if(!q||"market".includes(ql)) items.push({k:"market",label:"The market",sub:"Funds, sectors, macro, movers",g:"Bigger picture"});
+  }else{
+    const ql=tk.q.toLowerCase(), sk=(ASK.info?.skills||ASK_SKILLS_FALLBACK);
+    const order={[ASK.ctx.scope]:0}; const all=[...sk].sort((a,b)=>(order[a.scope]??1)-(order[b.scope]??1));
+    const gn={stock:ASK.ctx.scope==="stock"?`Playbooks for ${ASK.ctx.t}`:"Playbooks for a stock",portfolio:"Playbooks for your stocks",market:"Playbooks for the market"};
+    items=all.filter(s=>!ql||s.name.includes(ql)||s.label.toLowerCase().includes(ql)).slice(0,8).map(s=>({k:"skill",name:s.name,label:s.label,sub:s.blurb||(s.scope==="stock"&&ASK.ctx.scope!=="stock"?"Open a stock or type @ first":""),g:gn[s.scope],dis:s.scope==="stock"&&ASK.ctx.scope!=="stock"}));
+    if("new".startsWith(ql)) items.push({k:"new",label:"New conversation",sub:"Start fresh. This one stays in history",g:"Conversation"});
+  }
+  if(!items.length){ hidePop(); return; }
+  ASK.popItems=items; ASK.popTok=tk; ASK.mi=Math.min(ASK.mi,items.length-1); if(ASK.mi<0) ASK.mi=0;
+  let g=null;
+  P.innerHTML=items.map((it,i)=>`${it.g!==g?`<div class="mh">${esc(g=it.g)}</div>`:""}<button type="button" role="option" data-pi="${i}" ${it.dis?"aria-disabled=\"true\"":""}>${it.k==="stock"?`<span class="pk">${esc(it.label)}</span>`:`<b>${esc(it.label)}</b>`}<small>${esc(trunc(it.sub,48))}</small></button>`).join("")
+    +`<div class="pf"><span><kbd>↑</kbd> <kbd>↓</kbd> choose</span><span><kbd>↵</kbd> ${tk.kind==="@"?"add":"run"}</span><span><kbd>esc</kbd> close</span></div>`;
+  P.hidden=false; markPop();
+  P.querySelectorAll("[data-pi]").forEach(b=>b.onmousedown=e=>{ e.preventDefault(); pickPop(+b.dataset.pi); });
+  P.querySelectorAll("[data-pi]").forEach(b=>b.onclick=e=>{ e.preventDefault(); pickPop(+b.dataset.pi); });
+}
+function markPop(){ $("#askPop").querySelectorAll("[data-pi]").forEach((b,i)=>{ b.classList.toggle("on",i===ASK.mi); if(i===ASK.mi) b.scrollIntoView({block:"nearest"}); }); }
+function hidePop(){ const P=$("#askPop"); if(P) P.hidden=true; ASK.mi=0; }
+function pickPop(i){
+  const it=ASK.popItems?.[i], tk=ASK.popTok, Q=$("#askQ"); if(!it||it.dis) return;
+  const cut=()=>{ const end=Q.selectionStart; Q.value=(Q.value.slice(0,tk.start)+Q.value.slice(end)).replace(/^\s+/,""); };
+  if(it.k==="stock"){ cut(); if(ASK.ctx.scope!=="stock"){ ASK.ctx={scope:"stock",t:it.t}; ASK.pinned=true; } else if(it.t!==ASK.ctx.t&&!ASK.also.includes(it.t)&&ASK.also.length<4) ASK.also.push(it.t); }
+  else if(it.k==="portfolio"||it.k==="market"){ cut(); ASK.ctx={scope:it.k,t:null}; ASK.pinned=true; }
+  else if(it.k==="skill"){ Q.value=""; hidePop(); return askSend({skill:it.name}); }
+  else if(it.k==="new"){ Q.value=""; hidePop(); return newChat(); }
+  hidePop(); renderCtx(); renderPlaceholder(); Q.focus(); if(!ASK.conv.length) askRender();
+}
+
+/* what Tick notices: a few lines from the live data, so a new conversation starts somewhere useful ---------- */
+function noticings(c){
+  const out=[]; if(!base?.px) return out;
+  const r1=t=>{ try{ return ret(base.px[t],idx("1D")).r; }catch(e){ return null; } };
+  const today=new Date().toISOString().slice(0,10), soon=new Date(Date.now()+8*864e5).toISOString().slice(0,10);
+  const day=d=>d===today?"today":"on "+new Date(d+"T12:00:00Z").toLocaleDateString("en-US",{weekday:"long",timeZone:"UTC"});
+  if(c&&c.scope==="stock"){
+    const t=c.t, r=r1(t), spy=r1("SPY");
+    if(r!=null){ const vs=spy==null?"":Math.sign(r)!==Math.sign(spy)?`, while SPY went the other way`:Math.abs(r)>Math.abs(spy)*2&&Math.abs(r)>.01?`, well beyond SPY's ${pct(Math.abs(spy),1).replace(/^[+−]/,"")}`:", about in line with the market";
+      out.push({dir:cls(r),text:`<b>${esc(t)}</b> is ${r>=0?"up":"down"} <b class="${cls(r)}">${pct(r,1).replace(/^[+−]/,"")}</b> today${vs}.`,act:"Why is it moving?",go:{scope:"stock",t,skill:"explain-move"}}); }
+    const e=EARN?.[t]; if(e&&e.date&&e.reported==null&&e.date>=today&&e.date<=soon) out.push({dir:"ev",text:`Reports earnings ${day(e.date)}.`,act:"Preview it",go:{scope:"stock",t,skill:"earnings-preview"}});
+    return out;
+  }
+  const mine=[...new Set([...(me?.positions||[]).map(p=>p.t),...(me?.watch||[])])];
+  const movers=mine.map(t=>({t,r:r1(t)})).filter(x=>x.r!=null&&Math.abs(x.r)>=.015).sort((a,b)=>Math.abs(b.r)-Math.abs(a.r));
+  if(movers[0]){ const m=movers[0]; out.push({dir:cls(m.r),text:`<b>${esc(m.t)}</b> is ${m.r>0?"up":"down"} <b class="${cls(m.r)}">${pct(m.r,1).replace(/^[+−]/,"")}</b> today${movers[1]?`, the biggest move in your stocks`:""}.`,act:"Want the why?",go:{scope:"stock",t:m.t,skill:"explain-move"}}); }
+  const spy=r1("SPY"); if(spy!=null){
+    const hold=base.funds?.SPY?.holdings||[]; let up=0,n=0; for(const h of hold){ const r=r1(h.t); if(r!=null){ n++; if(r>0) up++; } }
+    const breadth=n?up/n:null, narrow=breadth!=null&&((spy>0&&breadth<.45)||(spy<0&&breadth>.55));
+    out.push({dir:cls(spy),text:`SPY is ${spy>=0?"up":"down"} <b class="${cls(spy)}">${pct(spy,2).replace(/^[+−]/,"")}</b>${breadth!=null?narrow?`, but only ${Math.round(breadth*100)}% of S&amp;P 500 stocks ${spy>=0?"rose":"fell"}. A narrow day.`:`, and ${Math.round(breadth*100)}% of S&amp;P 500 stocks rose.`:"."}`,act:"Recap the day",go:{scope:"market",skill:"market-recap"}});
+  }
+  const er=mine.map(t=>({t,...(EARN?.[t]||{})})).filter(e=>e.date&&e.reported==null&&e.date>=today&&e.date<=soon).sort((a,b)=>a.date<b.date?-1:1)[0];
+  if(er){ out.push({dir:"ev",text:`<b>${esc(er.t)}</b> reports earnings ${day(er.date)}.`,act:"Preview it",go:{scope:"stock",t:er.t,skill:"earnings-preview"}}); }
+  return out.slice(0,3);
+}
+function greeting(){ const h=new Date().getHours(); return h<5?"Up late.":h<12?"Good morning.":h<17?"Good afternoon.":"Good evening."; }
+
+/* rendering ------------------------------------------------------------------------------------------ */
+function stepIcon(t){ return /^Searching/.test(t)?"search":/web page/.test(t)?"globe":/news/.test(t)?"news":/^Checking/.test(t)?"chart":"term"; }
+const stepRow=(t,now)=>`<div class="stp${now?" now":""}"><i class="sb">${now?"":ic(stepIcon(t),12)}</i><span>${esc(t)}</span></div>`;
+const dur=s=>s<60?s+"s":Math.floor(s/60)+"m "+(s%60)+"s";
 function askRender(){
   if(!$("#ask")) return;
   const c=ASK.ctx, info=ASK.info, p=askProv();
-  $("#askCtx").innerHTML=`${esc(ctxLabel(c))}${ic("chev",14)}`;
-  const who=p?`Ask ${askAgentName(p)}`:"Ask"; $("#askQ").placeholder=c.scope==="stock"?`${who} about ${c.t}`:c.scope==="portfolio"?`${who} about your stocks`:`${who} about the market`;
-  $("#askProv").innerHTML=`<i class="pdot ${p?"on":""}"></i>${esc(askProvLabel(p))}${ic("chev",13)}`;
-  $("#askNote").textContent=p?p.note:"";
-  $("#askSend").innerHTML=ASK.run?ic("stop",15):ic("send",17); $("#askSend").setAttribute("aria-label",ASK.run?"Stop":"Send"); $("#askSend").classList.toggle("stop",!!ASK.run);
+  renderCtx(); renderPlaceholder();
+  const pv=$("#askProv"); pv.innerHTML=`<i class="pdot ${p?"on":""}"></i><span>${esc(p?askProvLabel(p):info?"Choose an agent":"Connecting")}</span>${ic("chev",12)}`; pv.title=p?`${TICK} thinks with ${askAgentName(p)}. ${p.note}`:"";
+  $("#askHist").classList.toggle("on",ASK.view==="history");
+  paintSend();
+  if(ASK.run) say((ASK.conv[ASK.conv.length-1]?.status||"Thinking")+"…");
   const B=$("#askB");
-  if(info&&!info.allowed){ B.innerHTML=`<div class="ask-empty"><div class="ask-hero">${ic("phone",26)}</div><h3>Ask runs on your Mac</h3><p>Answers come from the AI agents signed in on your Mac, such as Claude Code or Codex, so they use your own plan. To ask from this phone, open Ask on the Mac, tap the agent name at the bottom, then <b>Use on your phone</b>.</p></div>`; $("#askF").classList.add("off"); return; }
+  if(info&&!info.allowed){ B.innerHTML=`<div class="tk-hi"><p class="tk-greet">${TICK} lives on your Mac.</p><p class="tk-sub">${TICK} answers with the AI agents signed in on your Mac, such as Claude Code or Codex, so they use your own plan. To talk to ${TICK} from this phone, open OpenTicker on the Mac, click the agent name at the top of this panel, then <b>Use on your phone</b>.</p></div>`; $("#askF").classList.add("off"); return; }
   $("#askF").classList.toggle("off",!!info&&!p);
+  if(ASK.view==="history") return void historyView();
   if(info&&(!p||ASK.view==="agents")){ B.innerHTML=askAgentsView(); return; }
   if(!ASK.conv.length){
-    const S=askSkills(c.scope);
-    B.innerHTML=`<div class="ask-empty"><h3>${c.scope==="stock"?`What do you want to know about ${esc(c.t)}?`:c.scope==="portfolio"?"What do you want to know about your stocks?":"What do you want to know about the market?"}</h3>
-      <p>${p?`<b>${esc(askProvLabel(p))}</b> answers using OpenTicker's live data${p.tools?", and can look up more as it goes":""}.`:"Checking which agents are on this Mac…"}</p>
-      <div class="ask-sk">${S.map(s=>`<button class="ask-skb" data-ask-skill="${esc(s.name)}">${ic("spark",14)}<span><b>${esc(s.label)}</b>${s.blurb||s.description?`<small>${esc(s.blurb||s.description.split(/ - |\. /)[0])}</small>`:""}</span></button>`).join("")}</div></div>`;
-    return;
+    const S=askSkills(c.scope), N=noticings(c);
+    const head=c.scope==="stock"?`Let's look at ${esc(c.t)}.`:c.scope==="portfolio"?"Let's look at your stocks.":N.length?"Here's what I'm noticing.":"Where shall we start?";
+    B.innerHTML=`<div class="tk-hi"><p class="tk-greet">${greeting()} ${head}</p>
+      <p class="tk-sub">I read OpenTicker's live numbers and think with ${p?esc(askAgentName(p)):"your own AI agent"}. Ask anything, or start here.</p>
+      ${N.length?`<div class="notes">${N.map((n,i)=>`<button class="nt" data-nt="${i}"><i class="${n.dir||""}"></i><span>${n.text}</span><em>${esc(n.act)}${ic("chevr",12)}</em></button>`).join("")}</div>`:""}
+      <div class="tk-lab">${c.scope==="stock"?`Playbooks for ${esc(c.t)}`:c.scope==="portfolio"?"Playbooks for your stocks":"Playbooks for the market"}</div>
+      <div class="pbs">${S.map(s=>`<button class="pb" data-ask-skill="${esc(s.name)}" title="${esc(s.blurb||"")}">${esc(s.label)}</button>`).join("")}</div></div>`;
+    ASK.notes=N; return;
   }
-  B.innerHTML=ASK.conv.map((m,i)=>m.role==="user"?`<div class="am u"><p>${esc(m.text)}</p></div>`
-    :`<div class="am a${m.done?"":" live"}" data-i="${i}">${!m.done&&m.status&&!m.text?`<div class="as"><i class="dot on"></i>${esc(m.status)}…</div>`:""}
-       <div class="md">${mdToHtml(m.text)}${!m.done&&m.text?`<span class="caret"></span>`:""}</div>
-       ${m.error?`<div class="aerr">${esc(m.error)}</div>`:""}
-       ${!m.done&&m.text&&m.status?`<div class="as sm"><i class="dot on"></i>${esc(m.status)}…</div>`:""}
-       ${m.done&&m.text?`<div class="af"><span>${esc(m.by||"")}${m.secs?` · ${m.secs}s`:""}</span><button class="lnk" data-ask-copy="${i}">${ic("copy",13)}Copy</button></div>`:""}</div>`).join("");
+  let lastCtx=null;
+  B.innerHTML=ASK.conv.map((m,i)=>{
+    if(m.role==="user"){ const k=m.ctx?ctxLabel(m.ctx):null, show=k&&k!==lastCtx; lastCtx=k||lastCtx;
+      return `${show?`<div class="ctxsep"><span>${esc(k)}</span></div>`:""}<div class="am u"><p>${esc(m.text)}</p></div>`; }
+    const live=!m.done, steps=(m.steps||[]).filter(Boolean);
+    return `<div class="am a${live?" live":""}" data-i="${i}">
+      ${live&&!m.text?`<div class="log">${steps.slice(-5).map((s,k,a)=>stepRow(s,k===a.length-1)).join("")||stepRow(m.status||"Thinking",true)}</div>`
+        :steps.length?`<details class="how"><summary>How I got there${ic("chevr",13)}</summary><div class="log">${steps.map(s=>stepRow(s)).join("")}</div></details>`:""}
+      <div class="md">${mdToHtml(m.text,m)}${live&&m.text?`<span class="caret"></span>`:""}</div>
+      ${m.error?`<div class="aerr">${esc(m.error)}</div>`:""}
+      ${m.done?`<div class="af">${m.text?`<button class="ib" data-ask-copy="${i}" title="Copy" aria-label="Copy">${ic("copy",14)}</button>`:""}${i===ASK.conv.length-1?`<button class="ib" data-ask-retry title="Ask again" aria-label="Ask again">${ic("retry",14)}</button>`:""}<span>${m.secs!=null?`Worked for <b>${dur(m.secs)}</b>`:""}${m.by?` · ${esc(m.by)}`:""}</span></div>`:""}</div>`;
+  }).join("");
   if(ASK.stick!==false) B.scrollTop=B.scrollHeight;
 }
+document.addEventListener("click",e=>{ const b=e.target.closest("[data-nt]"); if(!b) return; const n=ASK.notes?.[+b.dataset.nt]; if(!n) return; ASK.ctx={scope:n.go.scope,t:n.go.t||null}; ASK.pinned=n.go.scope==="stock"; askSend({skill:n.go.skill}); });
+
 const ST={ready:["Ready","ok"],signin:["Not signed in","warn"],off:["Not running","warn"],missing:["Not installed",""]};
 function askAgentsView(){
   const P=ASK.info?.providers||[], local=ASK.info?.local, cur=askProv();
-  return `<div class="ask-agents"><h3>${cur?"Your agents":"Connect an agent"}</h3>
-    <p>Ask works with an AI agent on your Mac, signed in with your own account. Each run bills that agent's plan, or costs nothing with OpenCode's free models or Ollama.</p>
+  return `<div class="ask-agents">${cur?"":tickFace(48,"idle")}<h3>${cur?`Who answers as ${TICK}`:`Give ${TICK} a brain`}</h3>
+    <p>${TICK} thinks with an AI agent on your Mac, signed in with your own account. Each answer bills that agent's plan, or costs nothing with OpenCode's free models or Ollama.</p>
     <ul class="agl">${P.map(p=>{ const [lab,cls]=ST[p.state]||["",""]; const act=p.state==="ready"?`<button class="btn ${cur?.id===p.id?"":"ghost"}" data-ag-use="${p.id}">${cur?.id===p.id?"In use":"Use"}</button>`
         :local?`<button class="btn ghost" data-ag-act="${p.state==="missing"?"install":"login"}" data-ag="${p.id}">${p.state==="missing"?"Install":p.id==="ollama"?(p.state==="off"?"Start":"Get a model"):"Sign in"}</button>`:"";
       return `<li><div><b>${esc(p.label)}</b><small>${esc(p.state==="ready"?p.note:p.why||p.note)}</small></div><span class="st ${cls}">${lab}</span>${act}</li>`; }).join("")}</ul>
     <div class="agcmd" id="agCmd" hidden></div>
-    ${cur?`<button class="lnk" data-ag-done>Back to your conversation</button>`:`<button class="lnk" data-ag-refresh>Check again</button>`}</div>`;
+    ${cur?`<button class="lnk" data-ag-done>Back to the conversation</button>`:`<button class="lnk" data-ag-refresh>Check again</button>`}</div>`;
 }
 document.addEventListener("click",async e=>{
   const b=e.target.closest("[data-ag-use],[data-ag-act],[data-ag-refresh],[data-ag-done],[data-ag-copy]"); if(!b) return;
@@ -149,36 +354,34 @@ function askProvMenu(){
     if(p.id==="ollama"&&p.available){ for(const mod of p.models) rows.push(`<button role="menuitemradio" aria-checked="${cur?.id==="ollama"&&ASK.model===mod}" data-prov="ollama" data-model="${esc(mod)}"><b>Ollama · ${esc(mod.replace(/:latest$/,""))}</b><small>Free and private, on this Mac</small></button>`); continue; }
     rows.push(`<button role="menuitemradio" aria-checked="${cur?.id===p.id}" data-prov="${p.id}" ${p.available?"":"disabled"}><b>${esc(p.label)}</b><small>${esc(p.available?p.note:(ST[p.state]||[""])[0])}</small></button>`);
   }
-  m.innerHTML=`<div class="mh">Answer with</div>${rows.join("")}<hr><button data-ask-agents>${ic("spark",15)}<b>Manage agents</b></button>${info.pair?`<button data-ask-pair>${ic("phone",15)}<b>Use on your phone</b></button><div class="pairbox" id="pairBox" hidden></div>`:""}`;
+  m.innerHTML=`<div class="mh">${TICK} answers with</div>${rows.join("")}<hr><button data-ask-agents>${ic("spark",15)}<b>Manage agents</b></button>${info.pair?`<button data-ask-pair>${ic("phone",15)}<b>Use on your phone</b></button><div class="pairbox" id="pairBox" hidden></div>`:""}`;
   m.querySelector("[data-ask-agents]").onclick=e=>{ e.stopPropagation(); m.hidden=true; ASK.view="agents"; askRender(); };
   m.querySelectorAll("[data-prov]").forEach(b=>b.onclick=()=>{ ASK.prov=b.dataset.prov; ASK.model=b.dataset.model||""; save("askProv",ASK.prov); save("askModel",ASK.model); m.hidden=true; askRender(); });
   const pb=m.querySelector("[data-ask-pair]"); if(pb) pb.onclick=e=>{ e.stopPropagation(); const box=$("#pairBox"); box.hidden=false;
-    box.innerHTML=`<p>Open this link on your phone (same Wi-Fi). It pairs the phone so Ask works there too.</p><div class="pairl"><code>${esc(info.pair)}</code><button class="btn ghost" id="pairCopy">${ic("copy",13)}Copy</button></div><p class="hint">Send it with AirDrop or Messages. Anyone with this link on your Wi-Fi can use Ask, so keep it to yourself.</p>`;
+    box.innerHTML=`<p>Open this link on your phone (same Wi-Fi). It pairs the phone so ${TICK} works there too.</p><div class="pairl"><code>${esc(info.pair)}</code><button class="btn ghost" id="pairCopy">${ic("copy",13)}Copy</button></div><p class="hint">Send it with AirDrop or Messages. Anyone with this link on your Wi-Fi can talk to ${TICK}, so keep it to yourself.</p>`;
     $("#pairCopy").onclick=ev=>{ ev.stopPropagation(); navigator.clipboard?.writeText(info.pair); $("#pairCopy").innerHTML=ic("check",13)+"Copied"; }; };
 }
-function askCtxMenu(){
-  const m=$("#askCtxM"), opts=[];
-  if(drawerOpen&&sel) opts.push({scope:"stock",t:sel});
-  if(ASK.ctx.scope==="stock"&&ASK.ctx.t&&ASK.ctx.t!==sel) opts.push({scope:"stock",t:ASK.ctx.t});
-  opts.push({scope:"portfolio",t:null},{scope:"market",t:null});
-  m.innerHTML=`<div class="mh">Ask about</div>`+opts.map(o=>`<button role="menuitemradio" aria-checked="${o.scope===ASK.ctx.scope&&o.t===ASK.ctx.t}" data-cs="${o.scope}" data-ct="${o.t||""}"><b>${esc(ctxLabel(o))}</b><small>${o.scope==="stock"?(base?esc(nameOf(o.t)):""):o.scope==="portfolio"?"Positions, watchlist and your brief":"Funds, macro and today's movers"}</small></button>`).join("");
-  m.querySelectorAll("[data-cs]").forEach(b=>b.onclick=()=>{ const c={scope:b.dataset.cs,t:b.dataset.ct||null}; m.hidden=true; if(c.scope!==ASK.ctx.scope||c.t!==ASK.ctx.t){ askStop(); ASK.conv=[]; ASK.ctx=c; } askRender(); });
-}
 
-/* streaming ------------------------------------------------------------------------------------ */
-async function askSend({q,skill}){
+/* streaming ------------------------------------------------------------------------------------------ */
+async function askSend({q,skill,retry}){
   if(ASK.run) return;
-  const p=askProv(); if(!p){ await askInfo(true); askRender(); if(!askProv()) return; }
-  const prov=askProv(), c=ASK.ctx, sk=skill?askSkills(c.scope).find(s=>s.name===skill)||(ASK.info?.skills||[]).find(s=>s.name===skill):null;
-  const text=q||(sk?(sk.prompt||sk.label).replace("{t}",c.t||"this stock"):"");
-  const history=ASK.conv.filter(m=>m.text&&!m.error).map(m=>({role:m.role,text:m.text}));
-  ASK.conv.push({role:"user",text});
-  const msg={role:"assistant",text:"",status:"Starting",done:false,by:askProvLabel(prov)}; ASK.conv.push(msg); ASK.stick=true;
-  const ctl=new AbortController(), t0=Date.now(); ASK.run=ctl; askRender();
-  let toolSince=false, raf=0; const paint=()=>{ if(!raf) raf=requestAnimationFrame(()=>{ raf=0; askRender(); }); };
+  if(!askProv()){ await askInfo(true); askRender(); if(!askProv()) return; }
+  if(!ASK.chat){ ASK.chat=newChatId(); save("tickChat",ASK.chat); }
+  ASK.view=null;
+  const prov=askProv(), c={...ASK.ctx}, also=[...ASK.also], sk=skill?askSkill(skill):null;
+  if(sk&&sk.scope!==c.scope&&sk.scope!=="stock"){ c.scope=sk.scope; c.t=null; }
+  const shown=q||(sk?(sk.prompt||sk.label).replace("{t}",c.t||"this stock"):"");
+  const full=q&&also.length?`${q}\n\n(Also bring in: ${also.join(", ")}. Use openticker for their data.)`:q;
+  const history=ASK.conv.filter(m=>m.text&&!m.error).map(m=>({role:m.role,text:m.text})).slice(-6);
+  if(!retry) ASK.conv.push({role:"user",text:shown,ctx:c,skill:sk?.name||null});
+  const msg={role:"assistant",text:"",status:"Gathering the data",steps:[],done:false,by:askProvLabel(prov)}; ASK.conv.push(msg); ASK.stick=true;
+  ASK.also=[];
+  const ctl=new AbortController(), t0=Date.now(); ASK.run=ctl; setMood("think"); askRender();
+  let toolSince=false, raf=0, started=false; const paint=()=>{ if(!raf) raf=requestAnimationFrame(()=>{ raf=0; askRender(); }); };
   try{
-    const r=await fetch("/api/ask",{method:"POST",headers:askHeaders(),signal:ctl.signal,body:JSON.stringify({provider:prov.id,model:prov.id==="ollama"?ASK.model:undefined,scope:c.scope,t:c.t,skill:sk&&!q?sk.name:skill||undefined,q:q||undefined,history})});
-    if(!r.ok){ const d=await r.json().catch(()=>({})); throw new Error(d.error||"Ask didn't answer."); }
+    const r=await fetch("/api/ask",{method:"POST",headers:askHeaders(),signal:ctl.signal,body:JSON.stringify({provider:prov.id,model:prov.id==="ollama"?ASK.model:undefined,scope:c.scope,t:c.t,
+      skill:sk&&!q?sk.name:undefined,q:full||undefined,show:shown,history,chat:ASK.chat})});
+    if(!r.ok){ const d=await r.json().catch(()=>({})); throw new Error(d.error||`${TICK} didn't answer.`); }
     const rd=r.body.getReader(), dec=new TextDecoder(); let buf="";
     for(;;){
       const {value,done}=await rd.read(); if(done) break;
@@ -186,8 +389,8 @@ async function askSend({q,skill}){
       while((k=buf.indexOf("\n\n"))>=0){
         const block=buf.slice(0,k); buf=buf.slice(k+2);
         const ev=(block.match(/^event: (.*)$/m)||[])[1]||"message", data=JSON.parse((block.match(/^data: (.*)$/m)||[])[1]||"{}");
-        if(ev==="text"){ msg.text+=data.text; toolSince=false; }
-        else if(ev==="status"){ msg.status=data.text; if(msg.text) toolSince=true; }
+        if(ev==="text"){ msg.text+=data.text; toolSince=false; msg.status="Writing"; }
+        else if(ev==="status"){ msg.status=data.text; if(started) msg.steps.push(data.text); else if(/^Asking /.test(data.text)){ started=true; msg.status="Reading the numbers"; } if(msg.text) toolSince=true; }
         else if(ev==="turn"){ if(toolSince){ msg.text=""; toolSince=false; } }   // drop "let me check…" narration once the agent has looked something up
         else if(ev==="meta"&&data.model) msg.by=`${askProvLabel(prov).split(" · ")[0]} · ${data.model}`;
         else if(ev==="error") msg.error=data.message;
@@ -195,11 +398,20 @@ async function askSend({q,skill}){
       }
     }
   }catch(e){ if(e.name!=="AbortError") msg.error=e.message==="Failed to fetch"?"Couldn't reach OpenTicker on your Mac.":e.message; }
-  msg.done=true; msg.status=""; msg.secs=Math.round((Date.now()-t0)/1000); if(!msg.text&&!msg.error) msg.error=ctl.signal.aborted?"Stopped.":"No answer came back. Try again, or pick another agent.";
-  ASK.run=null; askRender();
+  msg.done=true; msg.status=""; msg.secs=Math.round((Date.now()-t0)/1000);
+  if(!msg.text&&!msg.error) msg.error=ctl.signal.aborted?"Stopped.":"No answer came back. Try again, or pick another agent.";
+  ASK.run=null; const bad=msg.error&&!msg.text; setMood(bad?"err":"done"); askRender();
+  say(bad?(ctl.signal.aborted?"Stopped.":"I hit a snag."):`Done in ${dur(msg.secs)}.`,bad?"err":null,2400);
+  setTimeout(()=>{ if(!ASK.run) setMood("idle"); },1600);
+  if(!ASK.open||document.hidden) tickPing(msg);
 }
 function askStop(){ if(ASK.run){ ASK.run.abort(); ASK.run=null; } }
-/* "Ask about this": any insight or brief line gets a quiet Ask button; A while hovering does the same */
+function askRetry(){ if(ASK.run) return; const i=ASK.conv.length-1; if(ASK.conv[i]?.role!=="assistant") return; ASK.conv.pop(); const u=ASK.conv[ASK.conv.length-1]; if(!u) return;
+  ASK.ctx=u.ctx||ASK.ctx; askSend(u.skill?{skill:u.skill,retry:true}:{q:u.text,retry:true}); }
+/* when an answer lands while Tick is hidden, the header button says so */
+function tickPing(m){ const b=$("#askOpen"); if(!b||ASK.open) return; b.classList.add("ping"); b.title=m.error?`${TICK} hit a problem`:`${TICK} has an answer`; }
+
+/* "Ask Tick about this": any insight or brief line gets a quiet button; A while hovering does the same */
 let askHover=null;
 function askAbout(li){
   const clone=li.cloneNode(true); clone.querySelectorAll("button.askthis,.lnk,a,.bw").forEach(x=>x.remove());
@@ -209,25 +421,24 @@ function askAbout(li){
 }
 const ASK_SPOTS=".ins li,.brief li";
 new MutationObserver(()=>{ document.querySelectorAll(ASK_SPOTS).forEach(li=>{ if(li.querySelector(":scope>.askthis")||li.closest("#ask")) return;
-  const b=document.createElement("button"); b.className="askthis"; b.type="button"; b.title="Ask about this (A)"; b.setAttribute("aria-label","Ask about this"); b.innerHTML=ic("spark",14); li.appendChild(b); }); })
+  const b=document.createElement("button"); b.className="askthis"; b.type="button"; b.title=`Ask ${TICK} about this (A)`; b.setAttribute("aria-label",`Ask ${TICK} about this`); b.innerHTML=tickFace(16); li.appendChild(b); }); })
   .observe(document.body,{childList:true,subtree:true});
 document.addEventListener("click",e=>{ const b=e.target.closest(".askthis"); if(!b) return; e.preventDefault(); e.stopPropagation(); askAbout(b.closest("li")); },true);
 document.addEventListener("mouseover",e=>{ askHover=e.target.closest?.(ASK_SPOTS)||null; });
 
-/* small, safe Markdown: escape first, then format; tickers become links ------------------------- */
+/* small, safe Markdown: escape first, then format; tickers become links ----------------------------------- */
 const ASK_STOP=new Set("A I AI AM AN AND ARE AS AT BE BUT BY CEO CFO CPI DO EPS ETF EU FED FOR FY GDP GO HAS HE HOLD IF IN IPO IS IT ITS ME MY NO NOT NOW OF OK ON OR OUR PE PEG Q QOQ SO TO TTM UK UP US USA USD VS WE YOY YTD BUY SELL EV EBIT EBITDA ROE ROI SEC SMA RSI ATH API GPU CPU NEW ONE TWO ALL ANY CAN SEE".split(" "));
 function mdInline(s){
-  s=s.replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/(^|[\s(])\*([^*\s][^*]*)\*/g,"$1<i>$2</i>")
+  return s.replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/(^|[\s(])\*([^*\s][^*]*)\*/g,"$1<i>$2</i>")
      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-  return s;
 }
 function linkTickers(html,skip){
   if(!base?.px) return html;
-  const seen=new Set(skip?[skip]:[]);   // link each ticker once, and never the one the conversation is about
+  const seen=new Set(skip?[skip]:[]);   // link each ticker once, and never the one the answer is about
   return html.replace(/(<a\b[^>]*>.*?<\/a>|<code>.*?<\/code>|<th>.*?<\/th>|<[^>]+>)|\b([A-Z]{2,5})\b/g,(m,tag,t)=>{
     if(tag||!t||!base.px[t]||ASK_STOP.has(t)||seen.has(t)) return m; seen.add(t); return `<button class="tkl" data-ask-open="${t}" title="Open ${t}">${t}</button>`; });
 }
-function mdToHtml(src){
+function mdToHtml(src,msg){
   if(!src) return "";
   const L=esc(src).split("\n"), out=[]; let list=null, para=[];
   const flushP=()=>{ if(para.length){ out.push(`<p>${mdInline(para.join(" "))}</p>`); para=[]; } };
@@ -249,34 +460,42 @@ function mdToHtml(src){
     flushL(); para.push(tr);
   }
   flushP(); flushL();
-  return linkTickers(out.join(""),ASK.ctx.scope==="stock"?ASK.ctx.t:null);
+  const i=msg?ASK.conv.indexOf(msg):-1, u=i>0?ASK.conv[i-1]:null;
+  return linkTickers(out.join(""),u?.ctx?.scope==="stock"?u.ctx.t:null);
 }
 
-/* wiring ---------------------------------------------------------------------------------------- */
+/* wiring --------------------------------------------------------------------------------------------- */
 document.addEventListener("click",e=>{
-  const b=e.target.closest("[data-ask-skill],[data-ask-scope],[data-ask-open],[data-ask-copy],#askOpen"); if(!b) return;
-  if(b.id==="askOpen") return ASK.open?closeAsk():openAsk();
-  if(b.dataset.askOpen){ e.preventDefault(); if(innerWidth<=760) closeAsk(); return openStock(b.dataset.askOpen); }
-  if(b.dataset.askCopy){ const m=ASK.conv[+b.dataset.askCopy]; navigator.clipboard?.writeText(m?.text||""); b.innerHTML=ic("check",13)+"Copied"; return; }
+  const b=e.target.closest("[data-ask-skill],[data-ask-scope],[data-ask-open],[data-ask-copy],[data-ask-retry],#askOpen"); if(!b) return;
+  if(b.id==="askOpen"){ b.classList.remove("ping"); return ASK.open?closeAsk():openAsk(); }
+  if(b.dataset.askOpen){ e.preventDefault(); if(!canDock()&&innerWidth<=760) closeAsk(); return openStock(b.dataset.askOpen); }
+  if(b.dataset.askCopy){ const m=ASK.conv[+b.dataset.askCopy]; navigator.clipboard?.writeText(m?.text||""); b.innerHTML=ic("check",14); b.title="Copied"; setTimeout(()=>{ b.innerHTML=ic("copy",14); b.title="Copy"; },1600); return; }
+  if(b.hasAttribute("data-ask-retry")) return askRetry();
   if(b.closest("#ask")&&b.dataset.askSkill) return askSend({skill:b.dataset.askSkill});
   openAsk({scope:b.dataset.askScope,t:b.dataset.askT,skill:b.dataset.askSkill});
 });
 document.addEventListener("keydown",e=>{
-  if(e.key==="Escape"&&ASK.open){ if(!$("#askMenu").hidden||!$("#askCtxM").hidden){ $("#askMenu").hidden=true; $("#askCtxM").hidden=true; } else closeAsk(); e.stopImmediatePropagation(); e.preventDefault(); return; }
+  if(e.key==="Escape"&&ASK.open){
+    if(["askMenu","askCtxM","askPop"].some(id=>!$("#"+id).hidden)){ hideMenus(); }
+    else if(ASK.view){ ASK.view=null; askRender(); }
+    else if(canDock()){ if(document.activeElement?.closest("#ask")) document.activeElement.blur(); else return; }
+    else closeAsk();
+    e.stopImmediatePropagation(); e.preventDefault(); return;
+  }
   if(e.target.matches("input,textarea,select")||e.metaKey||e.ctrlKey||e.altKey) return;
   if(e.key==="a"||e.key==="A"){ e.preventDefault(); if(askHover&&document.contains(askHover)&&!askHover.closest("#ask")) return askAbout(askHover); ASK.open?$("#askQ").focus():openAsk(); }
 },true);
 document.addEventListener("scroll",e=>{ const B=e.target; if(B.id==="askB") ASK.stick=B.scrollHeight-B.scrollTop-B.clientHeight<40; },true);
 
 /* header button and command bar */
-{ const bell=$("#bell"); if(bell&&!$("#askOpen")){ const b=document.createElement("button"); b.className="askbtn"; b.id="askOpen"; b.title="Ask an AI agent (A)"; b.setAttribute("aria-label","Ask an AI agent"); b.innerHTML=`${ic("spark",16)}<span>Ask</span>`; bell.before(b); } }
+{ const bell=$("#bell"); if(bell&&!$("#askOpen")){ const b=document.createElement("button"); b.className="askbtn"; b.id="askOpen"; b.title=`${TICK}, your analyst (A)`; b.setAttribute("aria-label",`Show ${TICK}`); b.innerHTML=`${tickFace(20)}<span>${TICK}</span>`; b.querySelector(".tick").classList.add("live"); bell.before(b); } }
 if(typeof COMMANDS!=="undefined"){
-  COMMANDS.push({cmd:"ask:free",label:"Ask…",hint:"Ask",icon:"spark",keys:"ask ai agent claude codex question",run:()=>openAsk({q:ASK.pendingQ,send:!!ASK.pendingQ})});
-  for(const s of ASK_SKILLS_FALLBACK) COMMANDS.push({cmd:"skill:"+s.name,label:s.scope==="stock"?`${s.label} (open stock)`:s.label,hint:"Ask",icon:"spark",keys:"ask "+s.label+" "+s.name.replace(/-/g," "),
+  COMMANDS.push({cmd:"ask:free",label:`Ask ${TICK}…`,hint:TICK,icon:"spark",keys:"ask tick ai agent claude codex question chat",run:()=>openAsk({q:ASK.pendingQ,send:!!ASK.pendingQ})});
+  COMMANDS.push({cmd:"tick:new",label:`New conversation with ${TICK}`,hint:TICK,icon:"compose",keys:"new chat conversation tick",run:()=>{ openAsk(); newChat(); }});
+  for(const s of ASK_SKILLS_FALLBACK) COMMANDS.push({cmd:"skill:"+s.name,label:s.scope==="stock"?`${s.label} (open stock)`:s.label,hint:TICK,icon:"spark",keys:"ask tick "+s.label+" "+s.name.replace(/-/g," "),
     run:()=>{ if(s.scope==="stock"&&!(drawerOpen&&sel)) return openAsk({scope:"market"}); openAsk({scope:s.scope,t:s.scope==="stock"?sel:null,skill:s.name}); }});
 }
-askInfo();
-if(ASK.paired) setTimeout(()=>openAsk(),400);
+askInfo().then(()=>{ const pref=load("tickOpen",""); if(ASK.paired) openAsk(); else if(pref==="1"||(pref===""&&innerWidth>=1280)) openAsk({focus:false}); });
 
 /* ---- Mac app: let the native window match the page (title bar color, light/dark) ---- */
 (function(){

@@ -36,6 +36,9 @@ create table if not exists alerts(id integer primary key, user_id text, kind tex
 create table if not exists events(id integer primary key, user_id text, ts real, t text, kind text,
     title text, body text, dedup text, read integer default 0, unique(user_id, dedup));
 create table if not exists settings(user_id text, key text, value text, primary key(user_id, key));
+create table if not exists chats(id text primary key, user_id text, title text, created real, updated real);
+create table if not exists chat_msgs(id integer primary key, chat_id text, ts real, body text);
+create index if not exists chat_msgs_chat on chat_msgs(chat_id, id);
 """
 
 # Alert kinds. "scope" rules apply to a group of tickers; "t" rules to one ticker.
@@ -293,3 +296,37 @@ def _next_day(day):
     while d.weekday() >= 5:
         d += dt.timedelta(days=1)
     return d.isoformat()
+
+
+# ---------------------------------------------------------------- conversations with Tick
+def chats(uid, limit=40):
+    return _q("select c.id, c.title, c.updated, (select count(*) from chat_msgs m where m.chat_id=c.id) as n "
+              "from chats c where user_id=? order by updated desc limit ?", (uid, limit))
+
+
+def chat(uid, cid):
+    c = _q("select id, title, updated from chats where id=? and user_id=?", (cid, uid), one=True)
+    if not c:
+        return None
+    c["messages"] = [json.loads(r["body"]) for r in _q("select body from chat_msgs where chat_id=? order by id", (cid,))]
+    return c
+
+
+def chat_add(uid, cid, msg):
+    now = time.time()
+    c = _q("select user_id from chats where id=?", (cid,), one=True)
+    if c and c["user_id"] != uid:
+        raise PermissionError("not your conversation")
+    if not c:
+        title = " ".join(str(msg.get("text") or "New conversation").split())
+        _exec("insert into chats(id, user_id, title, created, updated) values(?,?,?,?,?)",
+              (cid, uid, title[:80] + ("…" if len(title) > 80 else ""), now, now))
+    else:
+        _exec("update chats set updated=? where id=?", (now, cid))
+    _exec("insert into chat_msgs(chat_id, ts, body) values(?,?,?)", (cid, now, json.dumps(msg)))
+
+
+def chat_delete(uid, cid):
+    if _q("select id from chats where id=? and user_id=?", (cid, uid), one=True):
+        _exec("delete from chat_msgs where chat_id=?", (cid,))
+        _exec("delete from chats where id=?", (cid,))
