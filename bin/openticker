@@ -1,0 +1,723 @@
+#!/bin/sh
+"true" '''\'
+# Runs with OpenTicker's own Python (installed next to this file), so it never depends on the system's.
+F="$0"; while [ -L "$F" ]; do L="$(readlink "$F")"; case "$L" in /*) F="$L";; *) F="$(dirname "$F")/$L";; esac; done
+D="$(cd "$(dirname "$F")/.." && pwd)"
+for P in "$D/.venv/bin/python" "$D/app/.venv/bin/python" python3; do command -v "$P" >/dev/null 2>&1 && exec "$P" "$F" "$@"; done
+echo "openticker: Python 3 not found" >&2; exit 1
+'''
+HELP = """openticker: a market dashboard that runs on your Mac, with your own AI agent built in.
+
+App
+  openticker start [--lan|--local]   start in the background (and at login); --lan lets your phone connect
+  openticker open                    open the app window (or your browser)
+  openticker stop | restart | status
+  openticker logs                    follow the server log
+  openticker pair                    link for using the app and Ask from your phone
+  openticker setup [--lan]           first-run setup: background service, Mac app, agent skills
+  openticker update                  pull the latest version and restart
+  openticker doctor                  check Python, the service, the Mac app and your AI agents
+
+Data, as Markdown (for you or any agent)
+  openticker stock NVDA              company, price and trend, analysts, earnings, insiders, options, news
+  openticker analysts NVDA           one section (also: earnings, ownership, options, news, financials, events)
+  openticker portfolio               your positions, watchlist, upcoming earnings and brief
+  openticker brief                   what changed for your stocks
+  openticker market                  SPY, QQQ, SMH, SOXX, sectors, macro and today's movers
+  openticker fund SPY --h 1M         what drove a fund over 1D 1W 1M 3M 6M or 1Y
+  openticker compare NVDA AMD        side by side
+  openticker calendar                earnings and economic events in the next two weeks
+  openticker search palantir         find a ticker
+
+Agents
+  openticker skills                  list the built-in playbooks
+  openticker skills install          install them for Claude Code and other agents (~/.claude, ~/.agents)
+  openticker mcp                     run as an MCP server over stdio (tools + skills as prompts)
+"""
+import json
+import os
+import plistlib
+import re
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+BIN = Path(__file__).resolve().parent
+ROOT = BIN.parent
+APP = ROOT / "app" if (ROOT / "app" / "server.py").exists() else ROOT
+sys.path.insert(0, str(APP))
+import paths  # noqa: E402
+
+VERSION = (ROOT / "VERSION").read_text().strip() if (ROOT / "VERSION").exists() else "0.1.0"
+LABEL = "dev.openticker.server"
+PLIST = Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
+CONFIG = paths.HOME / "config.json"
+LOG = paths.LOGS / "server.log"
+MAC = sys.platform == "darwin"
+INSTALLED = any((v / "bin" / "python").exists() for v in (ROOT / ".venv", APP / ".venv"))
+SECTIONS = ("analysts", "earnings", "ownership", "options", "news", "financials", "events")
+DATA_CMDS = {"stock", "portfolio", "brief", "market", "fund", "compare", "calendar", "search"} | set(SECTIONS)
+
+# --------------------------------------------------------------------------- output
+TTY = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+
+
+def _c(code, s):
+    return f"\033[{code}m{s}\033[0m" if TTY else s
+
+
+def ok(s):
+    print(f"  {_c('32', '✓')} {s}")
+
+
+def warn(s):
+    print(f"  {_c('33', '!')} {s}")
+
+
+def bad(s):
+    print(f"  {_c('31', '✗')} {s}")
+
+
+def dim(s):
+    return _c("2", s)
+
+
+def die(msg, code=1):
+    print(f"openticker: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+# --------------------------------------------------------------------------- config
+def config():
+    c = {"port": 8765, "lan": False}
+    try:
+        c.update(json.loads(CONFIG.read_text()))
+    except Exception:
+        pass
+    return c
+
+
+def save_config(c):
+    CONFIG.write_text(json.dumps(c, indent=2) + "\n")
+
+
+def port():
+    if os.environ.get("OPENTICKER_URL"):
+        return urllib.parse.urlsplit(os.environ["OPENTICKER_URL"]).port or 8765
+    return int(config()["port"])
+
+
+def base():
+    return os.environ.get("OPENTICKER_URL", f"http://127.0.0.1:{port()}").rstrip("/")
+
+
+def py():
+    for v in (ROOT / ".venv", APP / ".venv"):
+        p = v / "bin" / "python"
+        if p.exists():
+            return str(p)
+    return sys.executable
+
+
+def up(timeout=1.5):
+    try:
+        with urllib.request.urlopen(base() + "/api/ask/info", timeout=timeout) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+def wait_up(secs=40):
+    end = time.time() + secs
+    while time.time() < end:
+        if up():
+            return True
+        time.sleep(0.4)
+    return False
+
+
+def lan_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("10.255.255.255", 1))
+        return s.getsockname()[0]
+    except Exception:
+        return None
+    finally:
+        s.close()
+
+
+def listener_pids(p):
+    try:
+        out = subprocess.run(["lsof", "-ti", f"tcp:{p}", "-sTCP:LISTEN"], capture_output=True, text=True).stdout
+        return [int(x) for x in out.split()]
+    except Exception:
+        return []
+
+
+# --------------------------------------------------------------------------- service
+def server_args(c=None):
+    c = c or config()
+    return [py(), "-W", "ignore", str(APP / "server.py"), "--port", str(c["port"]),
+            "--host", "0.0.0.0" if c.get("lan") else "127.0.0.1"]
+
+
+def write_plist(c=None):
+    PLIST.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "Label": LABEL,
+        "ProgramArguments": server_args(c),
+        "WorkingDirectory": str(APP),
+        "EnvironmentVariables": {"PYTHONWARNINGS": "ignore", "OPENTICKER_HOME": str(paths.HOME),
+                                 "PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"},
+        "RunAtLoad": True,
+        "KeepAlive": {"SuccessfulExit": False},
+        "ThrottleInterval": 5,
+        "ProcessType": "Interactive",
+        "StandardOutPath": str(LOG),
+        "StandardErrorPath": str(LOG),
+    }
+    new = plistlib.dumps(data)
+    changed = not PLIST.exists() or PLIST.read_bytes() != new
+    if changed:
+        PLIST.write_bytes(new)
+    return changed
+
+
+def launchctl(*a):
+    return subprocess.run(["launchctl", *a], capture_output=True, text=True)
+
+
+def domain():
+    return f"gui/{os.getuid()}"
+
+
+def loaded():
+    return MAC and launchctl("print", f"{domain()}/{LABEL}").returncode == 0
+
+
+def free_port(p):
+    """Stop whatever else is serving our port (an old checkout started by hand)."""
+    for pid in listener_pids(p):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    for _ in range(30):
+        if not listener_pids(p):
+            return
+        time.sleep(0.1)
+
+
+def start(c=None, quiet=False):
+    c = c or config()
+    if MAC:
+        changed = write_plist(c)
+        if loaded() and changed:
+            launchctl("bootout", f"{domain()}/{LABEL}")
+            time.sleep(0.5)
+        if not loaded():
+            if not up():
+                free_port(c["port"])
+            r = launchctl("bootstrap", domain(), str(PLIST))
+            if r.returncode != 0 and not loaded():
+                die(f"launchctl couldn't load the service: {r.stderr.strip()}")
+        elif not up():
+            launchctl("kickstart", "-k", f"{domain()}/{LABEL}")
+    elif not up():
+        LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(LOG, "ab") as log:
+            subprocess.Popen(server_args(c), cwd=str(APP), stdout=log, stderr=log, stdin=subprocess.DEVNULL,
+                             start_new_session=True, env={**os.environ, "PYTHONWARNINGS": "ignore"})
+    if not wait_up():
+        die(f"the server didn't come up. See {LOG}")
+    if not quiet:
+        url = f"http://127.0.0.1:{c['port']}"
+        ok(f"OpenTicker is running at {_c('1', url)}")
+        if c.get("lan"):
+            ip = lan_ip()
+            if ip:
+                print(f"    {dim('On your Wi-Fi:')} http://{ip}:{c['port']}  {dim('(run openticker pair for Ask on your phone)')}")
+
+
+def stop(quiet=False):
+    if MAC and loaded():
+        launchctl("bootout", f"{domain()}/{LABEL}")
+    free_port(port())
+    if not quiet:
+        ok("Stopped")
+
+
+def cmd_start(args):
+    c = config()
+    if "--lan" in args:
+        c["lan"] = True
+    if "--local" in args:
+        c["lan"] = False
+    for a in args:
+        if a.startswith("--port="):
+            c["port"] = int(a.split("=", 1)[1])
+    save_config(c)
+    start(c, quiet="--quiet" in args)
+
+
+def cmd_restart(args):
+    if MAC and loaded():
+        write_plist()
+        launchctl("kickstart", "-k", f"{domain()}/{LABEL}")
+        if not wait_up():
+            die(f"the server didn't come back. See {LOG}")
+        ok("Restarted")
+    else:
+        stop(quiet=True)
+        start()
+
+
+def cmd_status(args):
+    c = config()
+    if up():
+        ok(f"Running at http://127.0.0.1:{c['port']}" + (f"  and http://{lan_ip()}:{c['port']}" if c.get("lan") and lan_ip() else ""))
+    else:
+        bad("Not running. Start it with: openticker start")
+    if MAC:
+        print(f"    {dim('Starts at login:')} {'yes' if PLIST.exists() else 'no'}")
+    print(f"    {dim('Your data:')} {paths.HOME}")
+    print(f"    {dim('Code:')} {ROOT}  {dim('v' + VERSION)}")
+
+
+def app_path():
+    for d in (Path("/Applications"), Path.home() / "Applications"):
+        if (d / "OpenTicker.app").exists():
+            return d / "OpenTicker.app"
+    return None
+
+
+def cmd_open(args):
+    if not up():
+        start(quiet=True)
+    a = app_path()
+    if MAC and a and "--browser" not in args:
+        subprocess.run(["open", str(a)])
+    else:
+        url = f"http://127.0.0.1:{port()}"
+        subprocess.run(["open" if MAC else "xdg-open", url], stderr=subprocess.DEVNULL)
+
+
+def cmd_logs(args):
+    if not LOG.exists():
+        die(f"no log yet at {LOG}")
+    os.execvp("tail", ["tail", "-n", "60", "-f", str(LOG)])
+
+
+def cmd_pair(args):
+    c = config()
+    if not c.get("lan"):
+        print("Your phone can't reach OpenTicker yet: it only listens on this Mac.")
+        print(f"Turn that on with {_c('1', 'openticker start --lan')}, then run openticker pair again.")
+        return 1
+    if not up():
+        start(quiet=True)
+    ip = lan_ip()
+    try:
+        info = json.loads(urllib.request.urlopen(f"{base()}/api/ask/info", timeout=5).read())
+        tok = (info.get("pair") or "").split("#pair=")[-1]
+    except Exception:
+        tok = ""
+    url = f"http://{ip}:{c['port']}/" + (f"#pair={tok}" if tok else "")
+    print("Open this on your phone (same Wi-Fi), then Share → Add to Home Screen:\n")
+    print(f"  {_c('1', url)}\n")
+    print(dim("The link lets that phone ask your AI agent. Keep it to yourself."))
+    return 0
+
+
+# --------------------------------------------------------------------------- Mac app
+def build_app(quiet=False):
+    """Compile the small native window (WKWebView) and put it in Applications."""
+    src = ROOT / "mac" / "OpenTicker.swift"
+    if not MAC or not src.exists():
+        return None
+    swiftc = shutil.which("swiftc") or "/usr/bin/swiftc"
+    if subprocess.run(["xcrun", "--find", "swiftc"], capture_output=True).returncode != 0 and not shutil.which("swiftc"):
+        if not quiet:
+            warn("No Swift compiler, so no Mac app (OpenTicker still runs in your browser). "
+                 "Install it with: xcode-select --install")
+        return None
+    out = paths.HOME / "build" / "OpenTicker.app"
+    if out.exists():
+        shutil.rmtree(out)
+    (out / "Contents" / "MacOS").mkdir(parents=True)
+    (out / "Contents" / "Resources").mkdir(parents=True)
+    r = subprocess.run([swiftc, "-O", "-swift-version", "5", "-target", f"{os.uname().machine}-apple-macos12",
+                        "-o", str(out / "Contents" / "MacOS" / "OpenTicker"), str(src)],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        if not quiet:
+            warn("Couldn't build the Mac app:\n" + r.stderr.strip()[-1500:])
+        return None
+    plist = (ROOT / "mac" / "Info.plist").read_text()
+    plist = plist.replace("__VERSION__", VERSION).replace("__CLI__", str(BIN / "openticker"))
+    (out / "Contents" / "Info.plist").write_text(plist)
+    icns = ROOT / "mac" / "AppIcon.icns"
+    if icns.exists():
+        shutil.copy(icns, out / "Contents" / "Resources" / "AppIcon.icns")
+    subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(out)], capture_output=True)
+    for d in (Path("/Applications"), Path.home() / "Applications"):
+        try:
+            d.mkdir(exist_ok=True)
+            dest = d / "OpenTicker.app"
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(out, dest, symlinks=True)
+            subprocess.run(["/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/"
+                            "Support/lsregister", "-f", str(dest)], capture_output=True)
+            return dest
+        except PermissionError:
+            continue
+    return None
+
+
+# --------------------------------------------------------------------------- skills
+def skill_dirs():
+    return sorted(p.parent for p in paths.SKILLS.glob("*/SKILL.md"))
+
+
+def install_skills(quiet=False):
+    """Copy the playbooks where agents look for them. Claude Code reads ~/.claude/skills; Codex, Cursor,
+    OpenCode, Gemini and others read ~/.agents/skills."""
+    targets = [Path.home() / ".agents" / "skills"]
+    if (Path.home() / ".claude").exists():
+        targets.insert(0, Path.home() / ".claude" / "skills")
+    done = []
+    for t in targets:
+        t.mkdir(parents=True, exist_ok=True)
+        for d in skill_dirs():
+            dest = t / f"openticker-{d.name}" if not d.name.startswith("openticker") else t / d.name
+            if dest.is_symlink() or dest.is_file():
+                dest.unlink()
+            elif dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(d, dest)
+            md = dest / "SKILL.md"       # the Agent Skills spec wants name == folder name
+            md.write_text(re.sub(r"^name:.*$", f"name: {dest.name}", md.read_text(), count=1, flags=re.M))
+        done.append(t)
+    if not quiet:
+        for t in done:
+            ok(f"{len(skill_dirs())} skills → {str(t).replace(str(Path.home()), '~')}")
+    return done
+
+
+def cmd_skills(args):
+    if args[:1] == ["install"]:
+        install_skills()
+        print(dim("  Ask your agent things like “explain NVDA's move today” or “check up on my portfolio”."))
+        return 0
+    try:
+        sys.stdout.write(fetch("skills", {}))
+    except SystemExit:
+        for d in skill_dirs():
+            m = re.search(r"^description:\s*\"?(.+?)\"?$", (d / "SKILL.md").read_text(), re.M)
+            print(f"- {d.name}: {m.group(1) if m else ''}")
+    return 0
+
+
+# --------------------------------------------------------------------------- setup / update / doctor
+def import_old(src):
+    """Bring the data (watchlist, positions, alerts, caches) from an older copy into the new home, once."""
+    src = Path(src).expanduser()
+    if not (src / "data" / "app.db").exists() or (paths.DATA / "app.db").exists() or src.resolve() == paths.HOME.resolve():
+        return False
+    shutil.copy2(src / "data" / "app.db", paths.DATA / "app.db")
+    for f in (src / "cache").glob("*") if (src / "cache").exists() else []:
+        if f.is_file() and not (paths.CACHE / f.name).exists():
+            shutil.copy2(f, paths.CACHE / f.name)
+    return True
+
+
+def cmd_setup(args):
+    print(_c("1", f"\nSetting up OpenTicker {VERSION}\n"))
+    c = config()
+    if "--import" in args:
+        i = args.index("--import")
+        src = args[i + 1] if i + 1 < len(args) else ""
+        if import_old(src):
+            ok(f"Imported your watchlist, positions and alerts from {src}")
+        else:
+            warn(f"Nothing to import from {src} (no data/app.db there, or you already have data)")
+    if "--lan" in args:
+        c["lan"] = True
+    save_config(c)
+    if MAC:
+        free_port(c["port"]) if not loaded() else None
+        start(c, quiet=True)
+        ok("Server runs in the background and starts at login")
+        a = build_app(quiet=False)
+        if a:
+            ok(f"Mac app → {str(a).replace(str(Path.home()), '~')}")
+    else:
+        start(c, quiet=True)
+        ok("Server started")
+    install_skills()
+    print()
+    agents = []
+    try:
+        info = json.loads(urllib.request.urlopen(base() + "/api/ask/info?refresh=1", timeout=20).read())
+        agents = info.get("providers") or []
+    except Exception:
+        pass
+    ready = [a["label"] for a in agents if a.get("state") == "ready"]
+    if ready:
+        ok("Ask is ready with " + ", ".join(ready))
+    else:
+        warn("No AI agent found yet. Open Ask (press /) in the app to connect Claude Code, Codex, OpenCode or Ollama.")
+    print(f"\n  Open it any time with {_c('1', 'openticker open')}" + (" or from Applications." if MAC else "."))
+    if "--no-open" not in args:
+        cmd_open([])
+    return 0
+
+
+def cmd_update(args):
+    if not (ROOT / ".git").exists():
+        die("this copy wasn't installed with git; reinstall with the one-line installer")
+    r = subprocess.run(["git", "-C", str(ROOT), "pull", "--ff-only"], capture_output=True, text=True)
+    if r.returncode != 0:
+        die(r.stderr.strip() or "git pull failed")
+    print(r.stdout.strip())
+    if shutil.which("uv"):
+        subprocess.run(["uv", "pip", "install", "-q", "--python", py(), "-r", str(ROOT / "requirements.txt")])
+    else:
+        subprocess.run([py(), "-m", "pip", "install", "-q", "-r", str(ROOT / "requirements.txt")])
+    if MAC:
+        build_app(quiet=True)
+    install_skills(quiet=True)
+    cmd_restart([])
+    return 0
+
+
+def cmd_doctor(args):
+    print(_c("1", f"\nOpenTicker {VERSION}\n"))
+    v = subprocess.run([py(), "-c", "import sys,yfinance;print(f'Python {sys.version.split()[0]}, yfinance {yfinance.__version__}')"],
+                       capture_output=True, text=True)
+    (ok if v.returncode == 0 else bad)(v.stdout.strip() if v.returncode == 0
+                                       else f"Python environment is missing packages: {py()}")
+    (ok if up() else bad)(f"Server at {base()}" if up() else "Server isn't running (openticker start)")
+    if MAC:
+        (ok if PLIST.exists() else warn)("Starts at login" if PLIST.exists() else "Not set to start at login (openticker setup)")
+        a = app_path()
+        (ok if a else warn)(f"Mac app at {a}" if a else "No Mac app (openticker setup builds it; needs Xcode command line tools)")
+    n = len(skill_dirs())
+    inst = [t for t in (Path.home() / ".claude" / "skills", Path.home() / ".agents" / "skills")
+            if any(t.glob("openticker-*/SKILL.md"))]
+    (ok if inst else warn)(f"{n} skills" + (" installed in " + ", ".join(str(t).replace(str(Path.home()), "~") for t in inst)
+                                             if inst else " (not installed for agents: openticker skills install)"))
+    if up():
+        try:
+            info = json.loads(urllib.request.urlopen(base() + "/api/ask/info?refresh=1", timeout=30).read())
+            for a in info.get("providers") or []:
+                st = a.get("state")
+                f = ok if st == "ready" else warn if st in ("signin", "off") else (lambda s: print(f"  {dim('·')} {dim(s)}"))
+                f(f"{a['label']}: " + {"ready": "ready" + (f" ({a.get('model')})" if a.get("model") else ""),
+                                       "signin": a.get("why") or "installed, not signed in", "off": "installed, not running",
+                                       "missing": "not installed"}.get(st, st))
+        except Exception as e:
+            warn(f"Couldn't check agents: {e}")
+    print(f"\n  {dim('Data')} {paths.HOME}\n  {dim('Logs')} {LOG}\n")
+    return 0
+
+
+# --------------------------------------------------------------------------- data
+def fetch(cmd, q, autostart=False):
+    url = f"{base()}/api/agent/{urllib.parse.quote(cmd)}?{urllib.parse.urlencode(q)}"
+    for attempt in (0, 1):
+        try:
+            with urllib.request.urlopen(url, timeout=120) as r:
+                return r.read().decode()
+        except urllib.error.HTTPError as e:
+            try:
+                msg = json.loads(e.read()).get("error")
+            except Exception:
+                msg = str(e)
+            die(msg)
+        except urllib.error.URLError:
+            if autostart and attempt == 0 and INSTALLED and "OPENTICKER_URL" not in os.environ:
+                start(quiet=True)
+                continue
+            die(f"OpenTicker isn't running at {base()}. Start it with: openticker start")
+    return ""
+
+
+def data_query(cmd, rest):
+    q = {}
+    if "--h" in rest:
+        i = rest.index("--h")
+        q["h"] = rest[i + 1] if i + 1 < len(rest) else "1D"
+        rest = rest[:i] + rest[i + 2:]
+    if cmd in ("stock",) + SECTIONS:
+        if not rest:
+            die(f"usage: openticker {cmd} TICKER", 2)
+        q["t"] = rest[0].upper()
+    elif cmd == "fund":
+        q["t"] = (rest[0] if rest else "SPY").upper()
+    elif cmd == "compare":
+        q["t"] = ",".join(rest).upper()
+    elif cmd == "search":
+        q["q"] = " ".join(rest)
+    return q
+
+
+# --------------------------------------------------------------------------- MCP (stdio)
+TICKER = {"type": "string", "description": "Ticker symbol, e.g. NVDA, AAPL, BRK-B, ^VIX"}
+MCP_TOOLS = [
+    ("stock", "Everything OpenTicker knows about one stock as Markdown: company, price and trend vs the S&P 500, "
+              "fund membership, analysts and price targets, earnings history and the next date, insider and fund "
+              "ownership, options positioning, news and events.", {"ticker": TICKER}, ["ticker"]),
+    ("stock_section", "One section for a stock, when you only need part of the picture.",
+     {"ticker": TICKER, "section": {"type": "string", "enum": list(SECTIONS)}}, ["ticker", "section"]),
+    ("portfolio", "The user's positions (with P&L), watchlist, upcoming earnings for them and what changed recently.", {}, []),
+    ("brief", "What changed recently for the user's stocks: rating changes, target moves, insider trades, unusual options, earnings.", {}, []),
+    ("market", "Market overview: SPY, QQQ, SMH, SOXX, sector ETFs, rates, oil, dollar, VIX and today's biggest S&P 500 movers.", {}, []),
+    ("fund", "Which holdings drove an index fund over a period.",
+     {"fund": {"type": "string", "enum": ["SPY", "QQQ", "SMH", "SOXX"]},
+      "period": {"type": "string", "enum": ["1D", "1W", "1M", "3M", "6M", "1Y"]}}, ["fund"]),
+    ("compare", "Two to five stocks side by side: returns, valuation, growth, analyst view.",
+     {"tickers": {"type": "array", "items": TICKER, "minItems": 2, "maxItems": 5}}, ["tickers"]),
+    ("calendar", "Earnings for the user's stocks and major economic events in the next two weeks.", {}, []),
+    ("search", "Find ticker symbols by company name.", {"query": {"type": "string"}}, ["query"]),
+]
+
+
+def _tool_call(name, a):
+    if name == "stock":
+        return fetch("stock", {"t": str(a["ticker"]).upper()}, autostart=True)
+    if name == "stock_section":
+        if a.get("section") not in SECTIONS:
+            raise ValueError("section must be one of " + ", ".join(SECTIONS))
+        return fetch(a["section"], {"t": str(a["ticker"]).upper()}, autostart=True)
+    if name == "fund":
+        return fetch("fund", {"t": str(a.get("fund", "SPY")).upper(), "h": a.get("period", "1D")}, autostart=True)
+    if name == "compare":
+        return fetch("compare", {"t": ",".join(str(t).upper() for t in a["tickers"])}, autostart=True)
+    if name == "search":
+        return fetch("search", {"q": a["query"]}, autostart=True)
+    if name in ("portfolio", "brief", "market", "calendar"):
+        return fetch(name, {}, autostart=True)
+    raise ValueError(f"Unknown tool {name}")
+
+
+def _skills_meta():
+    out = []
+    for d in skill_dirs():
+        raw = (d / "SKILL.md").read_text()
+        m = re.match(r"^---\n(.*?)\n---\n(.*)$", raw, re.S)
+        if not m:
+            continue
+        desc = re.search(r"^description:\s*\"?(.*?)\"?\s*$", m.group(1), re.M)
+        scope = re.search(r"^\s+scope:\s*\"?(\w+)", m.group(1), re.M)
+        if re.search(r"^\s+hidden:\s*\"?true", m.group(1), re.M):
+            continue
+        out.append({"name": d.name, "description": desc.group(1) if desc else d.name,
+                    "scope": scope.group(1) if scope else "stock", "body": m.group(2).strip()})
+    return out
+
+
+def cmd_mcp(args):
+    """Minimal MCP server (JSON-RPC 2.0, one message per line). Tools are read-only data; skills are prompts."""
+    def send(obj):
+        sys.stdout.write(json.dumps(obj) + "\n")
+        sys.stdout.flush()
+
+    def fail(mid, code, msg):
+        send({"jsonrpc": "2.0", "id": mid, "error": {"code": code, "message": msg}})
+
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            msg = json.loads(line)
+        except ValueError:
+            fail(None, -32700, "Parse error")
+            continue
+        mid, method, p = msg.get("id"), msg.get("method"), msg.get("params") or {}
+        if mid is None:          # notification
+            continue
+        try:
+            if method == "initialize":
+                send({"jsonrpc": "2.0", "id": mid, "result": {
+                    "protocolVersion": p.get("protocolVersion") or "2025-06-18",
+                    "capabilities": {"tools": {}, "prompts": {}},
+                    "serverInfo": {"name": "openticker", "title": "OpenTicker", "version": VERSION},
+                    "instructions": "Live market data from the user's OpenTicker app. Use `stock` for anything about one "
+                                    "company, `portfolio` for the user's own holdings, `market` for the big picture. "
+                                    "Prices are live or last close. Not investment advice: present facts and tradeoffs."}})
+            elif method == "ping":
+                send({"jsonrpc": "2.0", "id": mid, "result": {}})
+            elif method == "tools/list":
+                send({"jsonrpc": "2.0", "id": mid, "result": {"tools": [
+                    {"name": n, "description": d, "inputSchema": {"type": "object", "properties": props, "required": req},
+                     "annotations": {"readOnlyHint": True, "openWorldHint": True}} for n, d, props, req in MCP_TOOLS]}})
+            elif method == "tools/call":
+                try:
+                    text = _tool_call(p.get("name"), p.get("arguments") or {})
+                    send({"jsonrpc": "2.0", "id": mid, "result": {"content": [{"type": "text", "text": text}]}})
+                except (SystemExit, Exception) as e:
+                    send({"jsonrpc": "2.0", "id": mid, "result": {
+                        "content": [{"type": "text", "text": f"OpenTicker: {e}"}], "isError": True}})
+            elif method == "prompts/list":
+                send({"jsonrpc": "2.0", "id": mid, "result": {"prompts": [
+                    {"name": s["name"], "description": s["description"],
+                     "arguments": [{"name": "ticker", "description": "Ticker symbol", "required": True}] if s["scope"] == "stock" else []}
+                    for s in _skills_meta()]}})
+            elif method == "prompts/get":
+                s = next((x for x in _skills_meta() if x["name"] == p.get("name")), None)
+                if not s:
+                    fail(mid, -32602, "Unknown prompt")
+                    continue
+                t = ((p.get("arguments") or {}).get("ticker") or "").upper()
+                body = re.sub(r"\bTICKER\b", t, s["body"]) if t else s["body"]
+                ask = f"Run the {s['name']} playbook" + (f" for {t}" if t else "") + \
+                      ". Use the OpenTicker tools for data (they mirror the `openticker` commands below).\n\n" + body
+                send({"jsonrpc": "2.0", "id": mid, "result": {"description": s["description"],
+                                                              "messages": [{"role": "user", "content": {"type": "text", "text": ask}}]}})
+            else:
+                fail(mid, -32601, f"Method not found: {method}")
+        except Exception as e:  # never let one bad request kill the server
+            fail(mid, -32603, str(e))
+    return 0
+
+
+# --------------------------------------------------------------------------- main
+COMMANDS = {"start": cmd_start, "stop": lambda a: stop(), "restart": cmd_restart, "status": cmd_status,
+            "open": cmd_open, "logs": cmd_logs, "pair": cmd_pair, "setup": cmd_setup, "update": cmd_update,
+            "doctor": cmd_doctor, "skills": cmd_skills, "mcp": cmd_mcp}
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(HELP.strip())
+        return 0
+    if argv[0] in ("-v", "--version", "version"):
+        print(VERSION)
+        return 0
+    cmd, rest = argv[0].lower(), argv[1:]
+    if cmd in COMMANDS:
+        return COMMANDS[cmd](rest) or 0
+    if cmd in DATA_CMDS:
+        sys.stdout.write(fetch(cmd, data_query(cmd, rest)))
+        return 0
+    die(f"unknown command “{cmd}”. Run openticker --help", 2)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except BrokenPipeError:
+        sys.exit(0)

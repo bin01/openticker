@@ -1,0 +1,14 @@
+{
+  "name": "openticker",
+  "owner": { "name": "OpenTicker", "url": "https://github.com/bin01/openticker" },
+  "description": "OpenTicker skills and data tools for AI agents.",
+  "plugins": [
+    {
+      "name": "openticker",
+      "source": "./",
+      "description": "Live market data and your own portfolio for any AI agent: stock deep-dives, why a stock moved, bull vs bear, earnings previews, analyst and insider moves, portfolio checkups and market recaps, from the OpenTicker app on your Mac.",
+      "homepage": "https://github.com/bin01/openticker",
+      "license": "Apache-2.0"
+    }
+  ]
+}
