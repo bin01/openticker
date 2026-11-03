@@ -693,6 +693,7 @@ def earnings_history(sym):
 
 # ---------------------------------------------------------------- alerts
 LINK_BASE = ""
+HOST = "127.0.0.1"
 
 
 def symbol_names():
@@ -967,6 +968,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(400, b"bad json", "text/plain")
             personal.chat_delete(user_for(self), str(body.get("id") or ""))
             return self.send(200, b'{"ok":true}', "application/json")
+        if self.path.split("?")[0] == "/api/app/terminal":
+            if not (agent.is_local(self) and agent.host_ok(self)):
+                return self.send(403, b'{"error":"Only on the Mac itself."}', "application/json")
+            try:
+                body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 10_000)) or b"{}")
+                ok = agent.open_app_terminal(str(body.get("step")))
+                return self.send(200, json.dumps({"ok": ok}).encode(), "application/json")
+            except ValueError as e:
+                return self.send(400, json.dumps({"error": str(e)}).encode(), "application/json")
         if self.path.split("?")[0] == "/api/ask/terminal":
             if not (agent.is_local(self) and agent.host_ok(self)):
                 return self.send(403, b'{"error":"Only on the Mac itself."}', "application/json")
@@ -1163,6 +1173,14 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 log(f"{path} failed: {e!r}")
                 self.send(502, json.dumps({"error": "Yahoo didn't return this just now. Try again in a minute."}).encode(), "application/json")
+        elif path == "/api/app":
+            local = agent.is_local(self)
+            ver = paths.ROOT / "VERSION"
+            self.send(200, json.dumps({
+                "version": ver.read_text().strip() if ver.exists() else "0.1.0",
+                "local": local, "phone": HOST == "0.0.0.0", "port": PORT,
+                "data": str(paths.HOME) if local else None, "mac": sys.platform == "darwin",
+            }).encode(), "application/json")
         elif path == "/api/ask/info":
             ok = agent.may_ask(self)
             self.send(200, json.dumps({
@@ -1232,8 +1250,8 @@ def main():
     ap.add_argument("--no-stream", action="store_true")
     args = ap.parse_args()
 
-    global LINK_BASE, PORT
-    PORT = args.port
+    global LINK_BASE, PORT, HOST
+    PORT, HOST = args.port, args.host
     personal.init()
     agent.bind(sys.modules[__name__])
     S.holdings = {k: v for k, v in load_holdings().items() if not k.startswith("_")}

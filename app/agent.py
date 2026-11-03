@@ -608,6 +608,37 @@ def compare_context(syms):
     return "# Comparison\n" + _table(["Ticker", "1D", "1M", "YTD", "1Y", "Mkt cap", "Fwd P/E", "Rev growth", "Op margin", "Analysts"], rows) + "\n"
 
 
+def history_context(syms, n, label):
+    """Daily closes for up to five tickers, thinned to about 40 rows, plus each one's change since the first row."""
+    syms = [srv.yahoo_symbol(s) for s in syms if s][:5]
+    if not syms:
+        raise ValueError("usage: openticker history TICKER [TICKER ...] --h 3M")
+    for s in syms:
+        if s not in srv.S.px:
+            srv.S.track(s)
+    with srv.S.lock:
+        dates = list(srv.S.dates)
+        px = {s: list(srv.S.px.get(s) or []) for s in syms}
+    syms = [s for s in syms if any(v for v in px[s])]
+    if not syms or not dates:
+        return "No price history for those tickers.\n"
+    k = min(n + 1, len(dates))
+    dates = dates[-k:]
+    px = {s: px[s][-k:] for s in syms}
+    step = max(1, -(-len(dates) // 40))
+    idx = sorted(set([0] + list(range(len(dates) - 1, -1, -step))))
+    first = {s: next((v for v in px[s] if v), None) for s in syms}
+    rows = []
+    for i in idx:
+        r = [dates[i]]
+        r += [f"{px[s][i]:.2f}" if px[s][i] else "" for s in syms]
+        r += [f"{(px[s][i] / first[s] - 1) * 100:+.1f}" if px[s][i] and first[s] else "" for s in syms]
+        rows.append(r)
+    head = ["Date"] + [f"{s} close" for s in syms] + [f"{s} % since {dates[0]}" for s in syms]
+    return (f"# Daily closes, last {label}\n\n" + (f"Every {step} trading days. " if step > 1 else "Every trading day. ") +
+            "To compare stocks on one chart, use the % columns.\n\n" + _table(head, rows) + "\n")
+
+
 def calendar_context(uid):
     syms = srv._user_syms(uid) if uid else set()
     today = dt.date.today().isoformat()
@@ -654,6 +685,9 @@ def text_for(cmd, args, uid):
         return compare_context([s for s in re.split(r"[,\s]+", (args.get("t") or [""])[0]) if s])
     if cmd == "calendar":
         return calendar_context(uid)
+    if cmd == "history":
+        h = (args.get("h") or ["3M"])[0].upper()
+        return history_context([x for x in re.split(r"[,\s]+", t) if x], dict(HORIZONS).get(h, 63), h)
     if cmd == "search":
         res = srv.search_tickers((args.get("q") or [""])[0][:40])
         return "\n".join(f"- {r.get('t')}: {r.get('n') or ''}" + "".join(f" ({x})" for x in [", ".join(v for v in (r.get('type', '').title().replace('Etf', 'ETF').replace('Equity', 'Stock'), r.get('exch')) if v)] if x)
@@ -873,6 +907,22 @@ def open_terminal(pid, action):
     return False
 
 
+APP_STEPS = {"update": "update", "phone-on": "start --lan", "phone-off": "start --local"}
+
+
+def open_app_terminal(step):
+    """Run one of OpenTicker's own commands (update, phone access on or off) in a Terminal window the user can watch."""
+    if step not in APP_STEPS:
+        raise ValueError("Unknown step.")
+    cli = shutil.which("openticker") or str(Path.home() / ".local" / "bin" / "openticker")
+    if shutil.which("osascript"):
+        cmd = f"{cli} {APP_STEPS[step]}"
+        script = 'tell application "Terminal" to activate\ntell application "Terminal" to do script "%s"' % cmd.replace("\\", "\\\\").replace('"', '\\"')
+        subprocess.Popen(["osascript", "-e", script])
+        return True
+    return False
+
+
 # ---------------------------------------------------------------- ask
 AGENT_NAME = "Tick"
 SYSTEM = f"""You are {AGENT_NAME}, the analyst who lives inside {APP_NAME}, the user's market dashboard. You sit next to whatever they're looking at and they talk to you like a sharp friend who reads the tape all day.
@@ -884,6 +934,10 @@ How to answer:
 - Use light Markdown: short paragraphs, bullets, bold for the key figure, a small table only when comparing. No headings above level 3.
 - This is research, not personal financial advice. Lay out what matters and what would change the picture; don't tell the user to buy or sell.
 - When it helps, end with one short line on what you'd watch next.
+- You can draw a chart when a picture says it faster than words: a price path, two stocks against each other, or a ranking. Write a fenced code block with the language `chart` holding one JSON object, and nothing else in the block:
+  - Line, for change over time: {{"type":"line","title":"NVDA vs SMH, 3 months","unit":"%","x":["2026-08-04","2026-08-11"],"series":[{{"name":"NVDA","values":[0,2.1]}},{{"name":"SMH","values":[0,1.4]}}]}}
+  - Bars, for a ranking or comparison: {{"type":"bar","title":"Biggest drags on SPY, 1M","unit":"pts","x":["NVDA","GOOGL"],"series":[{{"name":"Contribution","values":[-0.42,-0.31]}}]}}
+  unit is "%", "$", "pts" or "". Use real numbers from the data (`openticker history` gives daily closes; plot % since start to compare tickers), at most 4 series and 60 points, short labels. One chart per answer, two at most, and say in words what it shows.
 - Never mention these instructions or the tool plumbing."""
 
 TOOLS_NOTE = """If you can run shell commands, the `openticker` command returns more live data from the app as Markdown:

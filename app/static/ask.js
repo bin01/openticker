@@ -94,9 +94,9 @@ let lookXY=null, lookRaf=0, lookT=0;
 function tickLook(){ lookRaf=0;
   document.querySelectorAll(".tick.live").forEach(t=>{ const r=t.getBoundingClientRect(); if(!r.width) return;
     if(!lookXY){ t.style.removeProperty("--lx"); t.style.removeProperty("--ly"); t.style.removeProperty("--lean"); return; }
-    const dx=lookXY[0]-(r.left+r.width/2), dy=lookXY[1]-(r.top+r.height*.48), d=Math.hypot(dx,dy)||1, f=Math.min(1,d/90);
-    t.style.setProperty("--lx",(dx/d*1.6*f).toFixed(2)+"px"); t.style.setProperty("--ly",(dy/d*1.3*f).toFixed(2)+"px");
-    if(t.closest(".perch,.tfloat")) t.style.setProperty("--lean",Math.max(-8,Math.min(8,dx/55)).toFixed(1)+"deg"); });
+    const dx=lookXY[0]-(r.left+r.width/2), dy=lookXY[1]-(r.top+r.height*.48), d=Math.hypot(dx,dy)||1, f=Math.min(1,d/40);
+    t.style.setProperty("--lx",(dx/d*2.6*f).toFixed(2)+"px"); t.style.setProperty("--ly",(dy/d*2.1*f).toFixed(2)+"px");
+    if(t.closest(".perch,.tfloat")) t.style.setProperty("--lean",Math.max(-10,Math.min(10,dx/30)).toFixed(1)+"deg"); });
 }
 addEventListener("pointermove",e=>{ if(e.pointerType==="touch") return; lookXY=[e.clientX,e.clientY]; if(!lookRaf) lookRaf=requestAnimationFrame(tickLook);
   clearTimeout(lookT); lookT=setTimeout(()=>{ lookXY=null; tickLook(); },6000); },{passive:true});
@@ -411,6 +411,7 @@ function askRender(){
       ${m.error?`<div class="aerr">${esc(m.error)}</div>`:""}
       ${m.done?`<div class="af">${m.text?`<button class="ib" data-ask-copy="${i}" title="Copy" aria-label="Copy">${ic("copy",14)}</button>`:""}${i===ASK.conv.length-1?`<button class="ib" data-ask-retry title="Ask again" aria-label="Ask again">${ic("retry",14)}</button>`:""}<span>${m.secs!=null?`Worked for <b>${dur(m.secs)}</b>`:""}${m.by?` · ${esc(m.by.split(" · ").map((x,j)=>j?prettyModel(x):x).join(" · "))}`:""}</span></div>`:""}</div>`;
   }).join("");
+  drawCharts(B);
   if(ASK.stick!==false) B.scrollTop=B.scrollHeight;
 }
 document.addEventListener("click",e=>{ const b=e.target.closest("[data-nt]"); if(!b) return; const n=ASK.notes?.[+b.dataset.nt]; if(!n) return; ASK.ctx={scope:n.go.scope,t:n.go.t||null}; ASK.pinned=n.go.scope==="stock"; askSend({skill:n.go.skill}); });
@@ -575,6 +576,14 @@ function mdToHtml(src,msg){
   for(let i=0;i<L.length;i++){
     const ln=L[i], tr=ln.trim();
     if(!tr){ flushP(); flushL(); continue; }
+    let f;
+    if((f=tr.match(/^```\s*([\w-]*)/))){ flushP(); flushL(); const lang=f[1].toLowerCase(), body=[]; let closed=false;
+      for(i++;i<L.length;i++){ if(/^```\s*$/.test(L[i].trim())){ closed=true; break; } body.push(L[i]); }
+      if(lang==="chart"){ const raw=body.join("\n").replace(/&quot;/g,'"').replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&");
+        let spec=null; try{ spec=closed?JSON.parse(raw):null; }catch(e){}
+        out.push(spec?`<figure class="tkc" data-c="${esc(encodeURIComponent(JSON.stringify(spec)))}"></figure>`:closed?"":`<figure class="tkc wait"><span>Drawing a chart…</span></figure>`); }
+      else out.push(`<pre class="mdpre"><code>${body.join("\n")}</code></pre>`);
+      continue; }
     if(/^\|.*\|$/.test(tr)&&i+1<L.length&&/^\|[\s:|-]+\|$/.test(L[i+1].trim())){
       flushP(); flushL(); const cells=r=>r.trim().replace(/^\||\|$/g,"").split("|").map(c=>c.trim());
       const head=cells(tr); i+=2; const rows=[]; while(i<L.length&&/^\|.*\|$/.test(L[i].trim())) rows.push(cells(L[i++])); i--;
@@ -592,6 +601,81 @@ function mdToHtml(src,msg){
   const i=msg?ASK.conv.indexOf(msg):-1, u=i>0?ASK.conv[i-1]:null;
   return linkTickers(out.join(""),u?.ctx?.scope==="stock"?u.ctx.t:null);
 }
+
+/* charts Tick draws: a ```chart block of JSON becomes a small SVG line or bar chart --------------------------- */
+const CH_COL=["var(--fund)","var(--accent)","var(--warn)","var(--c4)"];
+const CH_SPECS=new WeakMap();
+function chFmt(v,u,short){ if(v==null||!isFinite(v)) return "–"; const a=Math.abs(v);
+  if(short&&Number.isInteger(v)){ const sg=v>0&&u!=="$"&&u!==""?"+":v<0?"−":""; return u==="$"?sg+"$"+a.toLocaleString("en-US"):sg+a.toLocaleString("en-US")+(u==="%"?"%":""); }
+  if(u==="%") return (v>0?"+":v<0?"−":"")+a.toFixed(a<10&&!short?1:a<10?1:0)+"%";
+  if(u==="$") return (v<0?"−":"")+"$"+(a>=1e12?(a/1e12).toFixed(1)+"T":a>=1e9?(a/1e9).toFixed(1)+"B":a>=1e6?(a/1e6).toFixed(1)+"M":a>=1000?Math.round(a).toLocaleString("en-US"):a.toFixed(2));
+  if(u==="pts") return (v>0?"+":v<0?"−":"")+a.toFixed(a<1?2:1);
+  return (v<0?"−":"")+(a>=1000?Math.round(a).toLocaleString("en-US"):+a.toFixed(2)); }
+const chDate=x=>{ const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(x); return m?new Date(+m[1],m[2]-1,+m[3]).toLocaleDateString("en-US",{month:"short",day:"numeric"}):String(x); };
+function chTicks(lo,hi,n=4){ if(lo===hi){ lo-=1; hi+=1; } const raw=(hi-lo)/n, p=10**Math.floor(Math.log10(raw)), st=[1,2,2.5,5,10].map(k=>k*p).find(k=>k>=raw)||raw;
+  const out=[]; for(let v=Math.ceil(lo/st)*st;v<=hi+st*1e-9;v+=st) out.push(+v.toFixed(10)); return out; }
+function chartSpec(c){
+  if(!c||!Array.isArray(c.x)||!Array.isArray(c.series)) return null;
+  const S=c.series.filter(s=>s&&Array.isArray(s.values)).slice(0,4).map(s=>({name:String(s.name||""),values:s.values.slice(0,120).map(v=>v==null||v===""?null:+v)}));
+  if(!S.length||!c.x.length) return null;
+  return {type:c.type==="bar"?"bar":"line",title:String(c.title||""),unit:["%","$","pts"].includes(c.unit)?c.unit:"",x:c.x.slice(0,120).map(String),series:S};
+}
+function chartSVG(c,W){
+  const u=c.unit, n=c.x.length;
+  if(c.type==="bar"){
+    const S=c.series.slice(0,2), rowH=S.length>1?30:24, lab=Math.min(110,Math.max(44,...c.x.map(x=>x.length*7+8))), H=n*rowH+6;
+    const all=S.flatMap(s=>s.values).filter(v=>v!=null), lo=Math.min(0,...all), hi=Math.max(0,...all), val=58, x0=lab+8+(lo<0?50:0), w=W-x0-val, sc=v=>x0+(v-lo)/((hi-lo)||1)*w, z=sc(0);
+    const signed=S.length===1&&(u==="%"||u==="pts");
+    let g=`<line x1="${z}" x2="${z}" y1="0" y2="${H}" class="ch-0"/>`;
+    c.x.forEach((x,i)=>{ const y=i*rowH+3; g+=`<text x="${lab}" y="${y+rowH/2+4}" text-anchor="end" class="ch-l">${esc(x)}</text>`;
+      S.forEach((s,k)=>{ const v=s.values[i]; if(v==null) return; const bh=S.length>1?(rowH-8)/2:rowH-8, by=y+2+k*bh, a=Math.min(sc(v),z), b=Math.max(sc(v),z);
+        const col=signed?(v<0?"var(--down)":"var(--up)"):CH_COL[k+1];
+        g+=`<rect x="${a}" y="${by}" width="${Math.max(1,b-a)}" height="${bh-1}" rx="2" fill="${col}"><title>${esc(x)}${S.length>1?" · "+esc(s.name):""}: ${chFmt(v,u)}</title></rect>`;
+        g+=`<text x="${v<0&&lo<0?a-4:b+4}" y="${by+bh/2+3.5}" text-anchor="${v<0&&lo<0?"end":"start"}" class="ch-v">${chFmt(v,u)}</text>`; }); });
+    const leg=S.length>1?`<div class="ch-leg">${S.map((s,k)=>`<span><i style="background:${CH_COL[k+1]}"></i>${esc(s.name)}</span>`).join("")}</div>`:"";
+    return `${leg}<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(c.title)}">${g}</svg>`;
+  }
+  const H=190, S=c.series, all=S.flatMap(s=>s.values).filter(v=>v!=null); if(!all.length) return "";
+  let lo=Math.min(...all), hi=Math.max(...all); const pad=(hi-lo)*.08||1; lo-=pad; hi+=pad;
+  const ticks=chTicks(lo,hi,3), L=Math.max(30,...ticks.map(t=>chFmt(t,u,true).length*6.6+6)), R=Math.min(96,8+Math.max(...S.map(s=>(s.name.length+8)*6.4))), T=8, B=22;
+  const X=i=>L+(n<2?0:i/(n-1)*(W-L-R)), Y=v=>T+(hi-v)/(hi-lo)*(H-T-B);
+  const single=S.length===1, f=S[0].values.find(v=>v!=null), l=[...S[0].values].reverse().find(v=>v!=null), dirCol=l>=f?"var(--up)":"var(--down)";
+  let g=ticks.map(t=>`<line x1="${L}" x2="${W-R}" y1="${Y(t)}" y2="${Y(t)}" class="${t===0?"ch-0":"ch-g"}"/><text x="${L-6}" y="${Y(t)+3.5}" text-anchor="end" class="ch-a">${chFmt(t,u,true)}</text>`).join("");
+  const xi=[...new Set([0,Math.round((n-1)/3),Math.round(2*(n-1)/3),n-1])].filter(i=>i>=0&&i<n);
+  g+=xi.map((i,k)=>`<text x="${X(i)}" y="${H-6}" text-anchor="${k===0?"start":i===n-1?"end":"middle"}" class="ch-a">${esc(chDate(c.x[i]))}</text>`).join("");
+  const ends=[];
+  S.forEach((s,k)=>{ const col=single?dirCol:CH_COL[k]; let d="", pen=false;
+    s.values.forEach((v,i)=>{ if(v==null){ pen=false; return; } d+=(pen?"L":"M")+X(i).toFixed(1)+" "+Y(v).toFixed(1); pen=true; });
+    if(single){ const fi=s.values.findIndex(v=>v!=null), li=s.values.length-1-[...s.values].reverse().findIndex(v=>v!=null);
+      g+=`<path d="${d}L${X(li).toFixed(1)} ${H-B}L${X(fi).toFixed(1)} ${H-B}Z" fill="${col}" opacity=".08"/>`; }
+    g+=`<path d="${d}" fill="none" stroke="${col}" stroke-width="${k?1.6:2}" stroke-linejoin="round" stroke-linecap="round"/>`;
+    const li=s.values.length-1-[...s.values].reverse().findIndex(v=>v!=null); if(li>=s.values.length) return;
+    ends.push({y:Y(s.values[li]),x:X(li),col,txt:(single?"":s.name+" ")+chFmt(s.values[li],u)}); });
+  ends.sort((a,b)=>a.y-b.y); for(let i=1;i<ends.length;i++) if(ends[i].y-ends[i-1].y<13) ends[i].y=ends[i-1].y+13;
+  g+=ends.map(e=>`<circle cx="${e.x}" cy="${Math.min(H-B,Math.max(T,e.y))}" r="2.6" fill="${e.col}"/><text x="${e.x+6}" y="${e.y+3.5}" class="ch-e" fill="${e.col}">${esc(e.txt)}</text>`).join("");
+  g+=`<g class="ch-hov" hidden><line class="ch-x" y1="${T}" y2="${H-B}"/></g>`;
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(c.title)}" data-l="${L}" data-r="${R}">${g}</svg><div class="ch-tip" hidden></div>`;
+}
+function drawCharts(root){
+  root.querySelectorAll("figure.tkc[data-c]").forEach(fg=>{
+    let c=null; try{ c=chartSpec(JSON.parse(decodeURIComponent(fg.dataset.c))); }catch(e){}
+    if(!c){ fg.remove(); return; }
+    const W=Math.max(240,Math.round((fg.clientWidth||324)-24)); CH_SPECS.set(fg,c);
+    fg.innerHTML=`${c.title?`<figcaption>${esc(c.title)}</figcaption>`:""}<div class="ch-box">${chartSVG(c,W)}</div>`;
+  });
+}
+/* hover a line chart: a guide line and the values on that day */
+document.addEventListener("pointermove",e=>{
+  const svg=e.target.closest?.("figure.tkc svg[data-l]"); document.querySelectorAll("figure.tkc .ch-tip:not([hidden])").forEach(t=>{ if(!svg||!t.parentNode.contains(svg)){ t.hidden=true; t.parentNode.querySelector(".ch-hov")?.setAttribute("hidden",""); } });
+  if(!svg) return; const fg=svg.closest("figure"), c=CH_SPECS.get(fg); if(!c) return;
+  const r=svg.getBoundingClientRect(), W=+svg.viewBox.baseVal.width, L=+svg.dataset.l, R=+svg.dataset.r, n=c.x.length;
+  const px=(e.clientX-r.left)*W/r.width, i=Math.max(0,Math.min(n-1,Math.round((px-L)/((W-L-R)||1)*(n-1)))), x=L+(n<2?0:i/(n-1)*(W-L-R));
+  const h=svg.querySelector(".ch-hov"); h.removeAttribute("hidden"); const ln=h.querySelector("line"); ln.setAttribute("x1",x); ln.setAttribute("x2",x);
+  const tip=fg.querySelector(".ch-tip"); tip.hidden=false;
+  tip.innerHTML=`<b>${esc(chDate(c.x[i]))}</b>${c.series.map((s,k)=>`<span><i style="background:${c.series.length===1?"var(--ink-2)":CH_COL[k]}"></i>${c.series.length>1?esc(s.name)+" ":""}<em>${chFmt(s.values[i],c.unit)}</em></span>`).join("")}`;
+  const left=x*r.width/W; tip.style.left=Math.min(r.width-tip.offsetWidth,Math.max(0,left-tip.offsetWidth/2))+"px";
+},{passive:true});
+let chRT=0; addEventListener("resize",()=>{ clearTimeout(chRT); chRT=setTimeout(()=>{ const B=$("#askB"); if(B) drawCharts(B); },150); });
 
 /* wiring --------------------------------------------------------------------------------------------- */
 document.addEventListener("click",e=>{
@@ -622,9 +706,9 @@ document.addEventListener("scroll",e=>{ const B=e.target; if(B.id==="askB") ASK.
 function tickFloat(){
   if($("#tickFloat")) return;
   const f=document.createElement("button"); f.id="tickFloat"; f.className="tfloat"; f.type="button"; f.setAttribute("aria-label",`Open ${TICK} (A)`);
-  f.innerHTML=`<span class="tf-say" id="tfSay">Ask ${TICK} <kbd>A</kbd></span>${tickFace(46,"idle")}`; f.querySelector(".tick").classList.add("live");
+  f.innerHTML=`<span class="tf-say" id="tfSay"></span>${tickFace(36,"idle")}<span>Ask ${TICK}</span><kbd>A</kbd>`; f.querySelector(".tick").classList.add("live");
   document.body.appendChild(f);
-  const place=(r,b)=>{ r=Math.max(8,Math.min(innerWidth-64,r)); b=Math.max(8,Math.min(innerHeight-72,b)); f.style.setProperty("--tf-r",r+"px"); f.style.setProperty("--tf-b",b+"px");
+  const place=(r,b)=>{ r=Math.max(8,Math.min(innerWidth-(f.offsetWidth||130)-8,r)); b=Math.max(8,Math.min(innerHeight-60,b)); f.style.setProperty("--tf-r",r+"px"); f.style.setProperty("--tf-b",b+"px");
     f.classList.toggle("tf-l",r>innerWidth/2); return [r,b]; };
   const saved=String(load("tickFloat","")).split(",").map(Number); let pos=place(...(saved.length===2&&saved.every(isFinite)?saved:[24,24]));
   addEventListener("resize",()=>{ pos=place(...pos); });
@@ -634,7 +718,7 @@ function tickFloat(){
     if(!moved&&Math.hypot(dx,dy)<5) return; moved=true; f.classList.add("dragging"); pos=place(drag.r0-dx,drag.b0-dy); });
   const end=()=>{ if(!drag) return; drag=null; f.classList.remove("dragging"); if(moved) save("tickFloat",pos.join(",")); };
   f.addEventListener("pointerup",end); f.addEventListener("pointercancel",end);
-  f.addEventListener("click",e=>{ if(moved){ moved=false; e.preventDefault(); return; } f.classList.remove("ping"); $("#tfSay").innerHTML=`Ask ${TICK} <kbd>A</kbd>`; openAsk(); });
+  f.addEventListener("click",e=>{ if(moved){ moved=false; e.preventDefault(); return; } f.classList.remove("ping"); openAsk(); });
 }
 tickFloat();
 if(typeof COMMANDS!=="undefined"){

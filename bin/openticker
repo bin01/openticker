@@ -26,6 +26,7 @@ Data, as Markdown (for you or any agent)
   openticker market                  SPY, QQQ, SMH, SOXX, sectors, macro and today's movers
   openticker fund SPY --h 1M         what drove a fund over 1D 1W 1M 3M 6M or 1Y
   openticker compare NVDA AMD        side by side
+  openticker history NVDA SMH --h 3M daily closes, for charts
   openticker calendar                earnings and economic events in the next two weeks
   openticker search palantir         find a ticker
 
@@ -63,7 +64,7 @@ LOG = paths.LOGS / "server.log"
 MAC = sys.platform == "darwin"
 INSTALLED = any((v / "bin" / "python").exists() for v in (ROOT / ".venv", APP / ".venv"))
 SECTIONS = ("analysts", "earnings", "ownership", "options", "news", "financials", "events")
-DATA_CMDS = {"stock", "portfolio", "brief", "market", "fund", "compare", "calendar", "search"} | set(SECTIONS)
+DATA_CMDS = {"stock", "portfolio", "brief", "market", "fund", "compare", "history", "calendar", "search"} | set(SECTIONS)
 
 # --------------------------------------------------------------------------- output
 TTY = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
@@ -564,7 +565,7 @@ def data_query(cmd, rest):
         q["t"] = rest[0].upper()
     elif cmd == "fund":
         q["t"] = (rest[0] if rest else "SPY").upper()
-    elif cmd == "compare":
+    elif cmd in ("compare", "history"):
         q["t"] = ",".join(rest).upper()
     elif cmd == "search":
         q["q"] = " ".join(rest)
@@ -587,6 +588,9 @@ MCP_TOOLS = [
       "period": {"type": "string", "enum": ["1D", "1W", "1M", "3M", "6M", "1Y"]}}, ["fund"]),
     ("compare", "Two to five stocks side by side: returns, valuation, growth, analyst view.",
      {"tickers": {"type": "array", "items": TICKER, "minItems": 2, "maxItems": 5}}, ["tickers"]),
+    ("history", "Daily closes for one to five tickers over a period, with % change since the start. Use it to draw a chart.",
+     {"tickers": {"type": "array", "items": TICKER, "minItems": 1, "maxItems": 5},
+      "period": {"type": "string", "enum": ["1W", "1M", "3M", "6M", "1Y"]}}, ["tickers"]),
     ("calendar", "Earnings for the user's stocks and major economic events in the next two weeks.", {}, []),
     ("search", "Find ticker symbols by company name.", {"query": {"type": "string"}}, ["query"]),
 ]
@@ -603,6 +607,8 @@ def _tool_call(name, a):
         return fetch("fund", {"t": str(a.get("fund", "SPY")).upper(), "h": a.get("period", "1D")}, autostart=True)
     if name == "compare":
         return fetch("compare", {"t": ",".join(str(t).upper() for t in a["tickers"])}, autostart=True)
+    if name == "history":
+        return fetch("history", {"t": ",".join(str(t).upper() for t in a["tickers"]), "h": a.get("period", "3M")}, autostart=True)
     if name == "search":
         return fetch("search", {"q": a["query"]}, autostart=True)
     if name in ("portfolio", "brief", "market", "calendar"):

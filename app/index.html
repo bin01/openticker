@@ -46,7 +46,7 @@
 [hidden]{display:none!important}
 html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font:14px/1.45 var(--f-body);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums;font-optical-sizing:auto}
-.wrap{max-width:1400px;margin:0 auto;padding-inline:max(20px,env(safe-area-inset-left,0px)) max(20px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1680px;margin:0 auto;padding-inline:max(20px,env(safe-area-inset-left,0px)) max(20px,env(safe-area-inset-right,0px))}
 main.wrap{padding-block:0 56px;display:flex;flex-direction:column;gap:16px}
 .num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 .up{color:var(--up)} .down{color:var(--down)} .flat{color:var(--ink-2)}
@@ -716,8 +716,8 @@ body.tick-moving,body.tick-moving *{cursor:grabbing!important;user-select:none!i
 .tick .tk-e circle{fill:#fff}
 .tick .tk-m{fill:none;stroke:#06140c;stroke-width:1.5;stroke-linecap:round;opacity:0;transition:opacity .2s}
 .tick .tk-b,.tick .tk-e{transform-box:fill-box;transform-origin:center}
-.tick .tk-look{transform:translate(var(--lx,0px),var(--ly,0px));transition:transform .16s ease-out}
-.tick .tk-lean{transform-box:view-box;transform-origin:16px 30px;transform:rotate(var(--lean,0deg));transition:transform .4s cubic-bezier(.2,.8,.2,1)}
+.tick .tk-look{transform:translate(var(--lx,0px),var(--ly,0px));transition:transform .05s linear}
+.tick .tk-lean{transform-box:view-box;transform-origin:16px 30px;transform:rotate(var(--lean,0deg));transition:transform .14s ease-out}
 .tick.tk-think .tk-look{transform:none}
 .tick.tk-idle .tk-e{animation:tkblink 5.5s infinite}
 .tick.tk-think .tk-b{animation:tkstretch 1.1s ease-in-out infinite;transform-origin:center bottom}
@@ -738,23 +738,79 @@ body.tick-moving,body.tick-moving *{cursor:grabbing!important;user-select:none!i
 .askbtn.ping::after{content:"";position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:var(--up);box-shadow:0 0 0 2px var(--panel)}
 body.tick-docked #askOpen{display:none}
 /* the floating Tick (desktop); phones keep the header button */
-.tfloat{position:fixed;right:var(--tf-r,24px);bottom:var(--tf-b,24px);z-index:36;width:60px;height:64px;border:0;background:none;padding:0;cursor:pointer;display:grid;place-items:center;touch-action:none;transition:opacity .22s,transform .3s cubic-bezier(.2,.8,.2,1)}
-.tfloat::before{content:"";position:absolute;bottom:4px;left:50%;width:30px;height:7px;margin-left:-15px;border-radius:50%;background:rgba(0,0,0,.2);filter:blur(2.5px);transition:transform .2s,opacity .2s}
-.tfloat .tick{filter:drop-shadow(0 6px 10px rgba(0,0,0,.18));transition:transform .2s cubic-bezier(.2,.8,.2,1)}
+.tfloat{position:fixed;right:var(--tf-r,24px);bottom:var(--tf-b,24px);z-index:36;height:44px;display:flex;align-items:center;gap:5px;padding:0 12px 0 7px;
+  border:1px solid var(--rule);background:var(--panel);border-radius:999px;box-shadow:0 10px 30px rgba(0,0,0,.14),0 1px 3px rgba(0,0,0,.08);
+  font:600 13.5px/1 var(--f-body);color:var(--ink);cursor:pointer;touch-action:none;white-space:nowrap;
+  transition:opacity .22s,transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .2s,border-color .2s}
+.tfloat .tick{margin:-16px 0 0;filter:drop-shadow(0 4px 6px rgba(0,0,0,.16));transition:transform .2s cubic-bezier(.2,.8,.2,1)}
 .tfloat .tick.tk-idle{animation:tkbob 4s ease-in-out infinite}
-.tfloat:hover .tick{transform:translateY(-3px)}
-.tfloat:hover::before{transform:scale(.85);opacity:.7}
-.tfloat.dragging{cursor:grabbing;transition:opacity .22s}
-.tfloat.dragging .tick{transform:translateY(-6px) rotate(-4deg)}
-.tfloat.dragging::before{transform:scale(.7);opacity:.5}
-.tf-say{position:absolute;right:calc(100% + 2px);bottom:30px;font:600 12px/1 var(--f-body);color:var(--bg);background:var(--ink);padding:7px 10px;border-radius:9px 9px 3px 9px;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.16);opacity:0;transform:translateY(4px) scale(.96);transform-origin:right bottom;transition:opacity .18s,transform .22s cubic-bezier(.2,.8,.2,1);pointer-events:none;display:flex;align-items:center;gap:6px}
-.tf-say kbd{background:color-mix(in srgb,var(--bg) 18%,transparent);border-color:transparent;color:inherit;font-size:10.5px}
-.tfloat.tf-l .tf-say{right:auto;left:calc(100% + 2px);border-radius:9px 9px 9px 3px;transform-origin:left bottom}
-.tfloat:hover .tf-say,.tfloat:focus-visible .tf-say,.tfloat.ping .tf-say{opacity:1;transform:none}
+.tfloat kbd{font-size:10.5px;color:var(--ink-3)}
+.tfloat:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(0,0,0,.18),0 1px 3px rgba(0,0,0,.08);border-color:color-mix(in srgb,var(--up) 45%,var(--rule))}
+.tfloat:hover .tick{transform:translateY(-3px) rotate(-3deg)}
+.tfloat:active{transform:translateY(0) scale(.98)}
+.tfloat.dragging{cursor:grabbing;transform:scale(1.03);transition:opacity .22s,box-shadow .2s}
+.tfloat.dragging .tick{transform:translateY(-5px) rotate(-6deg)}
+.tf-say{position:absolute;right:0;bottom:calc(100% + 10px);font:600 12px/1 var(--f-body);color:var(--bg);background:var(--ink);padding:7px 10px;border-radius:9px 9px 3px 9px;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.16);opacity:0;transform:translateY(4px) scale(.96);transform-origin:right bottom;transition:opacity .18s,transform .22s cubic-bezier(.2,.8,.2,1);pointer-events:none}
+.tfloat.tf-l .tf-say{right:auto;left:0;border-radius:9px 9px 9px 3px;transform-origin:left bottom}
+.tfloat.ping .tf-say{opacity:1;transform:none}
 .tfloat.dragging .tf-say{opacity:0}
-.tfloat.ping::after{content:"";position:absolute;top:8px;right:9px;width:10px;height:10px;border-radius:50%;background:var(--up);box-shadow:0 0 0 2px var(--bg)}
+.tfloat.ping::after{content:"";position:absolute;top:-2px;right:-2px;width:10px;height:10px;border-radius:50%;background:var(--up);box-shadow:0 0 0 2px var(--bg)}
 body.asking .tfloat{opacity:0;transform:scale(.6) translateY(10px);pointer-events:none}
 @media (min-width:761px){#askOpen{display:none}}
+/* Settings: one sheet, grouped cards, like the Mac's own settings */
+dialog.sets{width:min(680px,calc(100vw - 32px));max-height:min(780px,calc(100dvh - 48px));padding:0;border:1px solid var(--rule);border-radius:18px;background:var(--bg);color:var(--ink);box-shadow:0 30px 80px rgba(0,0,0,.28),0 2px 8px rgba(0,0,0,.1);overflow:hidden}
+dialog.sets[open]{display:flex;flex-direction:column;animation:rise .2s cubic-bezier(.2,.8,.2,1) both}
+dialog.sets::backdrop{background:rgba(10,14,12,.38);backdrop-filter:blur(2px)}
+.shead{display:grid;grid-template-columns:1fr auto;align-items:center;padding:16px 18px 0;border-bottom:1px solid var(--rule)}
+.shead h2{margin:0;font:700 19px/1.2 var(--f-body);letter-spacing:-.015em}
+.snav{grid-column:1/-1;display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;margin:10px -6px 0;padding-bottom:10px}
+.snav a{flex:none;padding:6px 10px;border-radius:8px;font:500 13px var(--f-body);color:var(--ink-2);text-decoration:none}
+.snav a:hover{background:var(--grid);color:var(--ink)}
+.sbody{flex:1;overflow:auto;padding:4px 18px 24px;scroll-padding-top:8px;font-variant-numeric:normal}
+.ssec h3{margin:20px 4px 8px;font:600 12.5px var(--f-body);color:var(--ink-3)}
+.scard{background:var(--panel);border:1px solid var(--rule);border-radius:14px}
+.srow{display:flex;align-items:center;gap:18px;padding:13px 16px;border-top:1px solid var(--grid)}
+.scard>.srow:first-child{border-top:0}
+.srow .sl{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.srow .sl b{font:600 13.5px/1.3 var(--f-body)}
+.srow .sl small{font-size:12.5px;line-height:1.45;color:var(--ink-3)}
+.srow .sl small a{color:var(--accent)}
+.srow .sc{flex:none;display:flex;gap:8px;align-items:center}
+.srow.col{flex-direction:column;align-items:stretch;gap:4px}
+.srow.col .sc{flex:auto}
+.srow .lnk{padding:0;font-size:12.5px}
+.srow select{height:32px;max-width:260px;border:1px solid var(--rule);border-radius:9px;background:var(--bg);color:var(--ink);font:500 13px var(--f-body);padding:0 8px}
+.srow.frm{flex-wrap:wrap;gap:8px;border-top:0;padding-top:0}
+.srow.frm input{flex:1 1 220px;min-width:0;height:30px;border:1px solid var(--rule);border-radius:8px;background:var(--bg);color:var(--ink);padding:0 10px;font-size:12.5px}
+.sv{font-size:13px;color:var(--ink-2)}
+.on-pill{font:600 11.5px/1 var(--f-body);color:var(--up);background:color-mix(in srgb,var(--up) 14%,transparent);padding:5px 9px;border-radius:999px}
+.sags{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.sag{display:flex;align-items:center;gap:11px;padding:10px 12px;border:1px solid var(--rule);border-radius:12px;background:var(--bg);color:var(--ink);text-align:left;cursor:pointer;font:inherit;transition:border-color .15s,background .15s}
+.sag:hover{border-color:color-mix(in srgb,var(--ink) 25%,var(--rule))}
+.sag>span{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.sag b{font:600 13px var(--f-body)}
+.sag small{font-size:12px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sag.on{border-color:color-mix(in srgb,var(--up) 60%,var(--rule));background:color-mix(in srgb,var(--up) 9%,var(--panel))}
+.sag .ic{color:var(--up);flex:none}
+.sag em{font:600 12px var(--f-body);color:var(--accent);font-style:normal;flex:none}
+.tgl{position:relative;display:inline-block;width:38px;height:22px;flex:none}
+.tgl input{position:absolute;inset:0;margin:0;opacity:0;cursor:pointer;z-index:1}
+.tgl i{position:absolute;inset:0;border-radius:999px;background:var(--rule);transition:background .18s}
+.tgl i::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .18s cubic-bezier(.2,.8,.2,1)}
+.tgl input:checked+i{background:var(--up)}
+.tgl input:checked+i::after{transform:translateX(16px)}
+.tgl input:focus-visible+i{outline:2px solid color-mix(in srgb,var(--ink) 30%,transparent);outline-offset:2px}
+.keys{display:grid;grid-template-columns:auto 1fr;gap:9px 14px;margin:6px 0 2px;align-items:center}
+.keys dt{display:flex;gap:3px}.keys dd{margin:0;font-size:13px;color:var(--ink-2)}
+.sets .pairl{margin:8px 0 0}
+body.no-tfloat .tfloat{display:none}
+@media (min-width:761px){body.no-tfloat:not(.tick-docked) #askOpen{display:inline-flex}}
+@media (max-width:600px){
+  dialog.sets{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;border:0}
+  .srow{flex-wrap:wrap;gap:10px}.srow .sc{flex-basis:100%}.srow:has(.tgl) .sc{flex-basis:auto}
+  .sags{grid-template-columns:1fr}
+}
+
 @media (max-width:760px){.tfloat{display:none}}
 body.tick-docked .bar-in{flex-wrap:nowrap}
 body.tick-docked .live #status{display:none}
@@ -828,6 +884,30 @@ body.tick-docked .live{margin-left:auto}
 .md a{color:var(--accent)}
 .md hr{border:0;border-top:1px solid var(--grid);margin:12px 0}
 .md code{font:500 12.5px var(--f-code);background:var(--grid);padding:1px 4px;border-radius:4px}
+.md .mdpre{margin:0 0 10px;padding:10px 12px;background:var(--grid);border-radius:10px;overflow:auto;font:500 12px/1.5 var(--f-code)}
+.md .mdpre code{background:none;padding:0}
+/* Tick's charts */
+:root{--c4:#8d63d2}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--c4:#b894f2}}
+:root[data-theme="dark"]{--c4:#b894f2}
+.md figure.tkc{margin:4px 0 14px;padding:12px 12px 8px;border:1px solid var(--rule);border-radius:12px;background:var(--panel);position:relative}
+.md figure.tkc figcaption{font:600 12.5px var(--f-body);color:var(--ink);margin:0 0 8px}
+.md figure.tkc.wait{display:grid;place-items:center;height:120px;color:var(--ink-3);font-size:12.5px;background:linear-gradient(90deg,var(--panel),var(--grid),var(--panel));background-size:200% 100%;animation:shimmer 1.4s linear infinite}
+@keyframes shimmer{to{background-position:-200% 0}}
+.ch-box{position:relative}
+.ch-box svg{display:block;width:100%;height:auto;overflow:visible;font-variant-numeric:tabular-nums}
+.ch-g{stroke:var(--grid)}.ch-0{stroke:var(--ink-3);stroke-dasharray:3 3;opacity:.6}
+.ch-a{font:500 10.5px var(--f-body);fill:var(--ink-3)}
+.ch-l{font:600 11.5px var(--f-body);fill:var(--ink)}
+.ch-v{font:500 11px var(--f-body);fill:var(--ink-2)}
+.ch-e{font:600 11px var(--f-body)}
+.ch-x{stroke:var(--ink-3);stroke-width:1;opacity:.6}
+.ch-leg{display:flex;gap:12px;margin:0 0 6px;font-size:12px;color:var(--ink-2)}
+.ch-leg span,.ch-tip span{display:inline-flex;align-items:center;gap:5px}
+.ch-leg i,.ch-tip i{width:8px;height:8px;border-radius:2px;display:inline-block}
+.ch-tip{position:absolute;top:-6px;transform:translateY(-100%);background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:8px;padding:6px 8px;font:500 11.5px/1.35 var(--f-body);display:flex;flex-direction:column;gap:2px;pointer-events:none;white-space:nowrap;z-index:2;font-variant-numeric:tabular-nums;box-shadow:0 6px 18px rgba(0,0,0,.18)}
+.ch-tip[hidden]{display:none}
+.ch-tip em{font-style:normal;font-weight:650}
 .mdt{overflow-x:auto;margin:4px 0 12px}
 .md table{border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
 .md th,.md td{padding:5px 12px 5px 0;border-bottom:1px solid var(--grid);text-align:left;white-space:nowrap}
@@ -1856,5 +1936,6 @@ poll(); setInterval(poll,3000); setInterval(loadMe,30000);
 <script src="/static/pages.js"></script>
 <script src="/static/ux.js"></script>
 <script src="/static/ask.js"></script>
+<script src="/static/settings.js"></script>
 </body>
 </html>

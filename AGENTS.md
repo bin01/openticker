@@ -11,7 +11,7 @@ OpenTicker is a local stock market dashboard: a Python server, a plain HTML/JS f
 | `app/personal.py` | SQLite store for watchlist, positions, alerts and settings |
 | `app/agent.py` | Context as Markdown (`/api/agent/<cmd>`), skills, agent providers, the streamed Ask runs |
 | `app/paths.py` | Where code and data live (`OPENTICKER_HOME`, default `~/Library/Application Support/OpenTicker`) |
-| `app/index.html`, `app/static/*.js` | The UI. Classic scripts sharing globals; load order is `stock-tabs.js`, `insights.js`, `pages.js`, `ux.js`, `ask.js` |
+| `app/index.html`, `app/static/*.js` | The UI. Classic scripts sharing globals; load order is `stock-tabs.js`, `insights.js`, `pages.js`, `ux.js`, `ask.js`, `settings.js` |
 | `bin/openticker` | The CLI: service, setup, data commands and the stdio MCP server |
 | `skills/*/SKILL.md` | Agent Skills used by Ask and installed for external agents |
 | `mac/` | `OpenTicker.swift` (WKWebView window), `Info.plist`, `AppIcon.icns` |
