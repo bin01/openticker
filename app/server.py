@@ -958,6 +958,15 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(415, b"json only", "text/plain")
         if self.path.split("?")[0] == "/api/ask":
             return self.ask()
+        if self.path.split("?")[0] == "/api/ask/chat/delete":
+            if not agent.may_ask(self):
+                return self.send(403, b'{"error":"not allowed"}', "application/json")
+            try:
+                body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 10_000)) or b"{}")
+            except Exception:
+                return self.send(400, b"bad json", "text/plain")
+            personal.chat_delete(user_for(self), str(body.get("id") or ""))
+            return self.send(200, b'{"ok":true}', "application/json")
         if self.path.split("?")[0] == "/api/ask/terminal":
             if not (agent.is_local(self) and agent.host_ok(self)):
                 return self.send(403, b'{"error":"Only on the Mac itself."}', "application/json")
@@ -1054,6 +1063,14 @@ class Handler(BaseHTTPRequestHandler):
         if not q:
             return self.send(400, json.dumps({"error": "Ask a question."}).encode(), "application/json")
         hist = [h for h in body.get("history") or [] if isinstance(h, dict)][-6:]
+        cid = str(body.get("chat") or "")
+        cid = cid if re.fullmatch(r"[\w-]{8,40}", cid) else ""
+        if cid:
+            try:
+                personal.chat_add(uid, cid, {"role": "user", "text": str(body.get("show") or q)[:4000], "ctx": {"scope": scope, "t": t or None},
+                                             "skill": sk["name"] if sk else None, "ts": time.time()})
+            except PermissionError:
+                cid = ""
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
@@ -1061,7 +1078,27 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         wlock, state = threading.Lock(), {"alive": True, "run": None}
 
+        acc = {"text": "", "steps": [], "tool": False, "by": None, "error": None, "on": False}
+
+        def remember(kind, payload):
+            """Keep what the user saw, so the conversation is still there after a reload or on the phone."""
+            if not acc["on"]:
+                return
+            if kind == "text":
+                acc["text"] += payload.get("text", "")
+                acc["tool"] = False
+            elif kind == "status":
+                acc["steps"].append(payload.get("text", ""))
+                acc["tool"] = bool(acc["text"])
+            elif kind == "turn" and acc["tool"]:
+                acc["text"], acc["tool"] = "", False
+            elif kind == "meta" and payload.get("model"):
+                acc["by"] = payload["model"]
+            elif kind == "error":
+                acc["error"] = payload.get("message")
+
         def emit(kind, payload):
+            remember(kind, payload)
             if not state["alive"]:
                 return
             try:
@@ -1084,7 +1121,13 @@ class Handler(BaseHTTPRequestHandler):
         run = agent.Run(prov, agent.build_prompt(q, ctx, sk, hist, tools=prov != "ollama"), emit, body.get("model"))
         state["run"] = run
         t0 = time.time()
+        acc["on"] = True
         run.run()
+        if cid:
+            stopped = not state["alive"] or run.cancelled
+            personal.chat_add(uid, cid, {"role": "assistant", "text": acc["text"], "steps": acc["steps"][:24],
+                                         "by": label + (f" · {acc['by']}" if acc["by"] else ""), "secs": round(time.time() - t0),
+                                         "error": acc["error"] or ("Stopped." if stopped and not acc["text"] else None), "ts": time.time()})
         log(f"ask via {prov} ({sk['name'] if sk else 'question'}, {scope} {t}) took {time.time() - t0:.0f}s")
 
     def do_GET(self):
@@ -1127,6 +1170,15 @@ class Handler(BaseHTTPRequestHandler):
                 "skills": [{k: s[k] for k in ("name", "label", "scope", "prompt", "description", "blurb")} for s in agent.skills()],
                 "pair": (f"{LINK_BASE or 'http://' + (self.headers.get('Host') or '')}/#pair={agent.pair_token()}" if agent.is_local(self) and agent.host_ok(self) else None),
             }).encode(), "application/json")
+        elif path in ("/api/ask/chats", "/api/ask/chat"):
+            if not agent.may_ask(self):
+                return self.send(403, b'{"error":"not allowed"}', "application/json")
+            uid = user_for(self)
+            if path.endswith("chats"):
+                body = personal.chats(uid)
+            else:
+                body = personal.chat(uid, (parse_qs(urlsplit(self.path).query).get("id") or [""])[0]) or {"error": "not found"}
+            self.send(200, json.dumps(body).encode(), "application/json")
         elif path == "/api/brief":
             self.send(200, json.dumps(brief(user_for(self))).encode(), "application/json")
         elif path == "/api/me":
