@@ -614,12 +614,34 @@ body.tick-moving,body.tick-moving *{cursor:grabbing!important;user-select:none!i
 .pdot{width:6px;height:6px;border-radius:50%;background:var(--ink-3);flex:none}
 .agi{flex:none;display:block;border-radius:3px}
 .ask-prov .agi{margin-right:1px}
-.ask-menu .agh{display:flex;align-items:center;gap:8px;padding:10px 10px 4px;font-size:12px;color:var(--ink-3)}
-.ask-menu .agh:first-child{padding-top:6px}
-.ask-menu .agh b{font-size:12.5px;color:var(--ink);font-weight:600}
-.ask-menu .agh small{margin-left:auto;font-size:11.5px;white-space:nowrap}
-.ask-menu .mrow{padding:7px 10px 7px 34px}
-.provm{width:320px}
+/* agent and model menus, after HyperFrames: big agent rows with a check, a short model list with a dot */
+.ask-prov,.ask-menu{font-variant-numeric:normal}
+.ask-prov.ask-ag{gap:3px;padding:0 5px 0 6px;margin-left:2px}
+#askMod{gap:4px;margin-left:-2px;font-weight:600;color:var(--ink)}
+.provm{width:300px;overflow-x:hidden}
+.agm{padding:7px}
+.ask-menu .agrow{flex-direction:row;align-items:center;gap:12px;padding:9px 12px 9px 10px;border-radius:11px}
+.ask-menu .agrow.on,.ask-menu .agrow.on:hover{background:color-mix(in srgb,var(--up) 15%,var(--panel))}
+.ask .ask-menu button.agrow b::after,.ask .ask-menu button.mrow b::after{display:none}
+.agic{width:26px;height:26px;display:grid;place-items:center;flex:none}
+.agt{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
+.agt b,.agt small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.agk{margin-left:auto;display:flex;align-items:center;gap:7px;color:var(--ink-3);flex:none}
+.agrow.on .agk{color:var(--up)}
+.ring{width:6px;height:6px;border:1.5px solid currentColor;border-radius:50%;opacity:.8}
+.ask-menu .mi{padding:9px 12px}
+.ask-menu.mdm{width:224px;padding:6px}
+.ask-menu .mrow{flex-direction:row;align-items:baseline;gap:8px;padding:8px 12px}
+.ask-menu .mrow[aria-checked="true"]{background:none}
+.ask-menu .mrow[aria-checked="true"]:hover{background:var(--tk-fill)}
+.ask-menu .mrow b{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ask-menu .mrow small{font-size:12.5px;color:var(--ink-3)}
+.mdot{margin-left:auto;align-self:center;width:7px;height:7px;border-radius:50%;background:var(--up);flex:none}
+.ask-menu .mmore{flex-direction:row;align-items:center;gap:5px;padding:8px 12px;color:var(--ink-2)}
+.ask-menu .mmore b{font-weight:500}
+.ask-menu .mmore .ic{transition:transform .15s;color:var(--ink-3)}
+.ask-menu .mmore[aria-expanded="true"] .ic{transform:rotate(180deg)}
+.mdm .mh{padding:12px 12px 4px;font-weight:500;font-size:12px}
 .pdot.on{background:var(--up)}
 .ask-hb{display:flex;gap:2px;margin-left:auto}
 .ask-hb .x{width:30px;height:30px;border:0;background:none;border-radius:8px;cursor:pointer;color:var(--ink-3);display:grid;place-items:center;transition:background .15s,color .15s}

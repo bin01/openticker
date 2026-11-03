@@ -1119,7 +1119,7 @@ class Handler(BaseHTTPRequestHandler):
             log(f"ask context failed: {e!r}")
             ctx = "(Live data wasn't available just now.)"
         emit("status", {"text": f"Asking {label}"})
-        run = agent.Run(prov, agent.build_prompt(q, ctx, sk, hist, tools=prov != "ollama"), emit, body.get("model"))
+        run = agent.Run(prov, agent.build_prompt(q, ctx, sk, hist, tools=prov != "ollama"), emit, body.get("model"), body.get("effort"))
         state["run"] = run
         t0 = time.time()
         acc["on"] = True

@@ -52,8 +52,13 @@ function prettyModel(m){
   x=m.match(/^(?:openai\/)?gpt-([\w.]+?)(-codex)?$/i); if(x) return "GPT-"+x[1]+(x[2]?" Codex":"");
   return m.split("/").pop();
 }
-/* the model this agent will answer with, as far as we know: the last one it reported, or its settings */
-function askModelName(p){ if(!p) return ""; const ch=askModelOf(p); const seen=p.seen?.[ch]||(ch===""?p.configured:null); return prettyModel(seen||ch); }
+/* the model a choice resolves to, as far as we know: what the agent last reported for it, or its settings */
+function askResolve(p,id){ if(!p) return ""; const S=p.seen||{};
+  return S[id]||(id===""?(S[p.configured]||p.configured):(id===p.configured?S[""]:null))||id||""; }
+function askModelName(p){ return p?prettyModel(askResolve(p,askModelOf(p))):""; }
+const askEffortOf=p=>!p?"":load("askEffort."+p.id,"")||p.effort||"";
+const EFFORT={low:"Low",medium:"Medium",high:"High",xhigh:"Extra high",max:"Max"};
+const AG_SUB={claude:"Your Claude plan",codex:"Your ChatGPT plan",opencode:"Free models, or your own",ollama:"Free, runs on this Mac"};
 const askProvLabel=p=>!p?"No agent":p.label+(askModelName(p)?` · ${askModelName(p)}`:"");
 /* small marks so each agent is recognizable at a glance */
 function agentIcon(id,s=16){
@@ -144,7 +149,7 @@ addEventListener("resize",()=>applyDock());
 function askShell(){
   if($("#ask")) return;
   const el=document.createElement("aside"); el.className="ask"; el.id="ask"; el.setAttribute("aria-label",TICK); el.setAttribute("aria-hidden","true");
-  el.innerHTML=`<div class="ask-grip" role="separator" aria-orientation="vertical" aria-label="Resize ${TICK}" title="Drag to resize. Double-click to reset." tabindex="0"></div><div class="ask-h"><b class="ask-nm">${TICK}</b><button type="button" class="ask-prov" id="askProv" aria-haspopup="menu" aria-expanded="false"></button>
+  el.innerHTML=`<div class="ask-grip" role="separator" aria-orientation="vertical" aria-label="Resize ${TICK}" title="Drag to resize. Double-click to reset." tabindex="0"></div><div class="ask-h"><b class="ask-nm">${TICK}</b><button type="button" class="ask-prov ask-ag" id="askProv" aria-haspopup="menu" aria-expanded="false"></button><button type="button" class="ask-prov" id="askMod" aria-haspopup="menu" aria-expanded="false"></button>
     <div class="ask-hb"><button class="x" id="askHist" title="Conversations" aria-label="Conversations">${ic("clock",16)}</button><button class="x" id="askNew" title="New conversation" aria-label="New conversation">${ic("compose",16)}</button><button class="x" id="askClose" aria-label="Hide ${TICK}" title="Hide ${TICK}">${ic(innerWidth<=760?"close":"dock",16)}</button></div></div>
   <div class="ask-menu provm" id="askMenu" role="menu" hidden></div>
   <div class="ask-b" id="askB"></div>
@@ -176,8 +181,10 @@ function askShell(){
   $("#askClose").onclick=closeAsk;
   $("#askNew").onclick=()=>newChat();
   $("#askHist").onclick=()=>{ ASK.view=ASK.view==="history"?null:"history"; askRender(); };
-  $("#askProv").onclick=e=>{ e.stopPropagation(); hideMenus("askMenu"); const m=$("#askMenu"); m.hidden=!m.hidden; e.currentTarget.setAttribute("aria-expanded",!m.hidden); if(!m.hidden) askProvMenu(); };
-  el.addEventListener("click",e=>{ if(!e.target.closest(".ask-menu,#askProv,.ctxchip")) hideMenus(); });
+  for(const [id,kind] of [["askProv","agent"],["askMod","model"]]) $("#"+id).onclick=e=>{ e.stopPropagation(); const m=$("#askMenu"), was=!m.hidden&&m.dataset.kind===kind;
+    hideMenus(); if(was) return; m.dataset.kind=kind; m.hidden=false;
+    m.style.left=Math.max(10,e.currentTarget.getBoundingClientRect().left-el.getBoundingClientRect().left-6)+"px"; e.currentTarget.setAttribute("aria-expanded","true"); kind==="agent"?askProvMenu():askModelMenu(); };
+  el.addEventListener("click",e=>{ if(!e.target.closest(".ask-menu,#askProv,#askMod,.ctxchip")) hideMenus(); });
   tickGrip(el.querySelector(".ask-grip")); tickMove(el,el.querySelector(".ask-h"));
   $("#askB").addEventListener("scroll",e=>el.querySelector(".ask-h").classList.toggle("lined",e.target.scrollTop>4),{passive:true});
 }
@@ -217,7 +224,7 @@ function tickMove(el,H){
     H.addEventListener("pointermove",mv); H.addEventListener("pointerup",up); H.addEventListener("pointercancel",up);
   });
 }
-function hideMenus(keep){ ["askMenu","askCtxM","askPop"].forEach(id=>{ if(id!==keep&&$("#"+id)) $("#"+id).hidden=true; }); if(keep!=="askMenu") $("#askProv")?.setAttribute("aria-expanded","false"); }
+function hideMenus(keep){ ["askMenu","askCtxM","askPop"].forEach(id=>{ if(id!==keep&&$("#"+id)) $("#"+id).hidden=true; }); if(keep!=="askMenu") ["#askProv","#askMod"].forEach(s=>$(s)?.setAttribute("aria-expanded","false")); }
 function paintSend(){ const s=$("#askSend"), typing=!!$("#askQ").value.trim(), stop=!!ASK.run&&!typing;
   s.innerHTML=stop?ic("stop",13):ic("send",16); s.setAttribute("aria-label",stop?"Stop":"Send"); s.classList.toggle("stop",stop); s.classList.toggle("ready",typing&&!stop); }
 
@@ -368,9 +375,12 @@ function askRender(){
   if(!$("#ask")) return;
   const c=ASK.ctx, info=ASK.info, p=askProv();
   renderCtx(); renderPlaceholder();
-  const pv=$("#askProv"), mn=askModelName(p);
-  pv.innerHTML=p?`${agentIcon(p.id,16)}<span>${esc(mn||p.label)}</span>${ic("chev",12)}`:`<i class="pdot"></i><span>${info?"Choose an agent":"Connecting"}</span>${ic("chev",12)}`;
-  pv.title=p?`${TICK} thinks with ${p.label}${mn?`, using ${mn}`:""}. ${p.note}.`:"";
+  const pv=$("#askProv"); let mn=askModelName(p);
+  pv.innerHTML=p?`${agentIcon(p.id,16)}${ic("chev",12)}`:`<i class="pdot"></i><span>${info?"Choose an agent":"Connecting"}</span>${ic("chev",12)}`;
+  pv.title=p?`${TICK} thinks with ${p.label}. ${p.note}.`:""; pv.setAttribute("aria-label",p?`Agent: ${p.label}`:"Choose an agent");
+  const md=$("#askMod"); md.hidden=!p;
+  if(p){ mn=mn||"Default model"; const ef=p.efforts?.length&&askEffortOf(p); md.innerHTML=`<span>${esc(mn)}</span>${ic("chev",12)}`;
+    md.title=`Model: ${mn}${ef?`, ${EFFORT[ef]||ef} effort`:""}`; md.setAttribute("aria-label",md.title); }
   $("#askHist").classList.toggle("on",ASK.view==="history");
   paintSend();
   if(ASK.run) say((ASK.conv[ASK.conv.length-1]?.status||"Thinking")+"…");
@@ -430,26 +440,53 @@ document.addEventListener("click",async e=>{
     <div class="pairl"><code>${esc(cmd)}</code><button class="btn ghost" data-ag-copy="${esc(cmd)}">${ic("copy",13)}Copy</button></div>
     <button class="lnk" data-ag-refresh>Check again</button>`;
 });
-function askProvMenu(){
-  const info=ASK.info||{providers:[]}, m=$("#askMenu"), cur=askProv();
-  const rows=[], HINT={"":"",opus:"Deepest reading, a little slower",sonnet:"Fast and thorough",haiku:"Quickest, for short questions"};
-  for(const p of info.providers){
-    rows.push(`<div class="agh">${agentIcon(p.id,16)}<b>${esc(p.label)}</b><small>${esc(p.available?p.note:(ST[p.state]||[""])[0])}</small></div>`);
-    if(!p.available) continue;
-    const mine=cur?.id===p.id?askModelOf(p):null;
-    for(const [id,lab] of p.choices||[["","Default"]]){
-      const known=prettyModel(p.seen?.[id]||(id===""?p.configured:null));
-      const name=id===""?(known?`Default · ${known}`:"Default"):p.id==="ollama"?prettyModel(id):(known||lab);
-      const sub=id===""?(p.id==="claude"?"Whatever Claude Code is set to":"What it's set to use"):p.id==="ollama"?"Free and private, on this Mac":HINT[id]||"";
-      rows.push(`<button role="menuitemradio" class="mrow" aria-checked="${mine===id}" data-prov="${p.id}" data-model="${esc(id)}"><b>${esc(name)}</b>${sub?`<small>${esc(sub)}</small>`:""}</button>`);
-    }
-  }
-  m.innerHTML=`${rows.join("")}<hr><button data-ask-agents>${ic("spark",15)}<b>Manage agents</b></button>${info.pair?`<button data-ask-pair>${ic("phone",15)}<b>Use on your phone</b></button><div class="pairbox" id="pairBox" hidden></div>`:""}`;
-  m.querySelector("[data-ask-agents]").onclick=e=>{ e.stopPropagation(); m.hidden=true; ASK.view="agents"; askRender(); };
-  m.querySelectorAll("[data-prov]").forEach(b=>b.onclick=()=>{ ASK.prov=b.dataset.prov; const mod=b.dataset.model||""; if(ASK.prov==="ollama"){ ASK.model=mod; save("askModel",mod); } else save("askModel."+ASK.prov,mod); save("askProv",ASK.prov); m.hidden=true; askRender(); });
+function askPair(m,info){
   const pb=m.querySelector("[data-ask-pair]"); if(pb) pb.onclick=e=>{ e.stopPropagation(); const box=$("#pairBox"); box.hidden=false;
     box.innerHTML=`<p>Open this link on your phone (same Wi-Fi). It pairs the phone so ${TICK} works there too.</p><div class="pairl"><code>${esc(info.pair)}</code><button class="btn ghost" id="pairCopy">${ic("copy",13)}Copy</button></div><p class="hint">Send it with AirDrop or Messages. Anyone with this link on your Wi-Fi can talk to ${TICK}, so keep it to yourself.</p>`;
     $("#pairCopy").onclick=ev=>{ ev.stopPropagation(); navigator.clipboard?.writeText(info.pair); $("#pairCopy").innerHTML=ic("check",13)+"Copied"; }; };
+}
+/* the agent menu: who Tick thinks with */
+function askProvMenu(){
+  const info=ASK.info||{providers:[]}, m=$("#askMenu"), cur=askProv();
+  m.className="ask-menu provm agm";
+  m.innerHTML=info.providers.map(p=>{ const on=cur?.id===p.id, ok=p.available;
+    return `<button role="menuitemradio" class="agrow${on?" on":""}" aria-checked="${on}" ${ok?`data-agent="${p.id}"`:`data-agent-setup="${p.id}"`}>
+      <span class="agic">${agentIcon(p.id,20)}</span><span class="agt"><b>${esc(p.label)}</b><small>${esc(ok?AG_SUB[p.id]||p.note:(ST[p.state]||["Not ready"])[0])}</small></span>
+      ${on?`<span class="agk">${ic("check",15)}</span>`:ok?"":`<span class="agk"><i class="ring"></i>${ic("chevr",14)}</span>`}</button>`; }).join("")
+    +`<hr><button class="mi" data-ask-agents>${ic("spark",15)}<b>Manage agents</b></button>${info.pair?`<button class="mi" data-ask-pair>${ic("phone",15)}<b>Use on your phone</b></button><div class="pairbox" id="pairBox" hidden></div>`:""}`;
+  m.querySelectorAll("[data-ask-agents],[data-agent-setup]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); hideMenus(); ASK.view="agents"; askRender(); });
+  m.querySelectorAll("[data-agent]").forEach(b=>b.onclick=()=>{ ASK.prov=b.dataset.agent; save("askProv",ASK.prov); hideMenus(); askRender(); });
+  askPair(m,info);
+}
+/* the model menu: which model, and how hard it thinks */
+function askModelMenu(more){
+  const p=askProv(), m=$("#askMenu"); if(!p) return;
+  m.className="ask-menu provm mdm";
+  const ch=askModelOf(p), row=(id,name,tag,on)=>`<button role="menuitemradio" class="mrow" aria-checked="${on}" data-model="${esc(id)}"><b>${esc(name)}</b>${tag?`<small>${esc(tag)}</small>`:""}${on?`<i class="mdot"></i>`:""}</button>`;
+  let h="";
+  if(p.id==="claude"){
+    const fam=x=>(String(x||"").toLowerCase().match(/opus|sonnet|haiku|fable/)||[""])[0];
+    const active=ch||fam(p.configured)||fam(askResolve(p,""));
+    const C=(p.choices||[]).filter(c=>c[0]), TAG={opus:"Best",sonnet:"Faster",haiku:"Fastest"};
+    const nm=id=>prettyModel(askResolve(p,id))||prettyModel(id);
+    const [top,...rest]=C, open=more||rest.some(c=>c[0]===active);
+    if(!active) h+=row("","Claude Code's default","",true);   // until it tells us which model that is
+    h+=row(top[0],nm(top[0]),TAG[top[0]],active===top[0]);
+    h+=`<button class="mmore" data-more aria-expanded="${open}"><b>More models</b>${ic("chev",12)}</button>`;
+    if(open) h+=rest.map(c=>row(c[0],nm(c[0]),TAG[c[0]],active===c[0])).join("");
+  } else if(p.id==="ollama"){
+    h+=(p.choices||[]).map(c=>row(c[0],prettyModel(c[0]),"",ch===c[0])).join("");
+  } else {
+    h+=row("",askModelName(p)||"Default",`Set in ${p.label}`,true);
+  }
+  if(p.efforts?.length){ const ef=askEffortOf(p);
+    h+=`<div class="mh">Effort</div>`+p.efforts.map(e=>`<button role="menuitemradio" class="mrow" aria-checked="${ef===e}" data-effort="${e}"><b>${EFFORT[e]||e}</b>${ef===e?`<i class="mdot"></i>`:""}</button>`).join(""); }
+  m.innerHTML=h;
+  m.querySelector("[data-more]")?.addEventListener("click",e=>{ e.stopPropagation(); askModelMenu(e.currentTarget.getAttribute("aria-expanded")!=="true"); });
+  m.querySelectorAll("[data-model]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); const mod=b.dataset.model;
+    if(p.id==="ollama"){ ASK.model=mod; save("askModel",mod); } else if(p.id==="claude") save("askModel."+p.id,mod);
+    askRender(); askModelMenu(true); });
+  m.querySelectorAll("[data-effort]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); save("askEffort."+p.id,b.dataset.effort); askRender(); askModelMenu(); });
 }
 
 /* streaming ------------------------------------------------------------------------------------------ */
@@ -469,7 +506,7 @@ async function askSend({q,skill,retry}){
   const ctl=new AbortController(), t0=Date.now(); ASK.run=ctl; setMood("think"); askRender();
   let toolSince=false, raf=0, started=false; const paint=()=>{ if(!raf) raf=requestAnimationFrame(()=>{ raf=0; askRender(); }); };
   try{
-    const r=await fetch("/api/ask",{method:"POST",headers:askHeaders(),signal:ctl.signal,body:JSON.stringify({provider:prov.id,model:askModelOf(prov)||undefined,scope:c.scope,t:c.t,
+    const r=await fetch("/api/ask",{method:"POST",headers:askHeaders(),signal:ctl.signal,body:JSON.stringify({provider:prov.id,model:askModelOf(prov)||undefined,effort:(prov.efforts?.length&&askEffortOf(prov))||undefined,scope:c.scope,t:c.t,
       skill:sk&&!q?sk.name:undefined,q:full||undefined,show:shown,history,chat:ASK.chat})});
     if(!r.ok){ const d=await r.json().catch(()=>({})); throw new Error(d.error||`${TICK} didn't answer.`); }
     const rd=r.body.getReader(), dec=new TextDecoder(); let buf="";

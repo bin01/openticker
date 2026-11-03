@@ -751,6 +751,7 @@ def _signed_in(pid, path):
 
 SEEN_FILE = paths.DATA / "agent-models.json"
 CLAUDE_MODELS = [["", "Default"], ["opus", "Opus"], ["sonnet", "Sonnet"], ["haiku", "Haiku"]]
+EFFORTS = ["low", "medium", "high", "xhigh", "max"]   # how hard the model thinks; Claude Code and Codex both take these
 
 
 def _seen():
@@ -797,6 +798,26 @@ def _configured_model(pid):
     return None
 
 
+def _configured_effort(pid):
+    """The effort level in the agent's own settings, when it sets one."""
+    try:
+        if pid == "claude":
+            for f in (Path.home() / ".claude" / "settings.local.json", Path.home() / ".claude" / "settings.json"):
+                if f.exists():
+                    e = json.loads(f.read_text() or "{}").get("effortLevel")
+                    if e:
+                        return e
+        elif pid == "codex":
+            f = Path.home() / ".codex" / "config.toml"
+            if f.exists():
+                m = re.search(r'^\s*model_reasoning_effort\s*=\s*"([^"]+)"', f.read_text(), re.M)
+                if m:
+                    return m.group(1)
+    except Exception:
+        return None
+    return None
+
+
 def providers(force=False):
     """Every agent with its state: ready, signin (installed, not signed in), off (Ollama not running), missing."""
     if not force and time.time() - _prov_cache["t"] < 90 and _prov_cache["v"]:
@@ -824,6 +845,8 @@ def providers(force=False):
         else:
             q["choices"] = [["", "Default"]]
         q["configured"] = _configured_model(p["id"])
+        q["efforts"] = EFFORTS if p["id"] in ("claude", "codex") else []
+        q["effort"] = _configured_effort(p["id"]) if q["efforts"] else None
         out.append(q)
     _prov_cache.update(t=time.time(), v=out)
     return _with_seen(out)
@@ -962,9 +985,10 @@ def _claude_partial():
 
 class Run:
     """One streaming agent run. emit(kind, payload) is called from this thread; cancel() stops it."""
-    def __init__(self, provider, prompt, emit, model=None):
+    def __init__(self, provider, prompt, emit, model=None, effort=None):
         model = model if isinstance(model, str) and re.match(r"^[A-Za-z0-9][\w.:/@+-]{0,100}$", model) else None   # never a flag
         self.provider, self.prompt, self.emit, self.model = provider, prompt, emit, model
+        self.effort = effort if effort in EFFORTS else None
         self.proc = None
         self.cancelled = False
 
@@ -1028,6 +1052,8 @@ class Run:
                 "--allowedTools", "Bash(openticker:*)", "Bash(openticker *)", "WebSearch", "WebFetch"]
         if self.model:
             args += ["--model", self.model]
+        if self.effort:
+            args += ["--effort", self.effort]
         p = self._spawn(args)
         for line in p.stdout:
             if self.cancelled:
@@ -1064,6 +1090,8 @@ class Run:
                 "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true"]
         if self.model:
             args += ["-m", self.model]
+        if self.effort:
+            args += ["-c", f'model_reasoning_effort="{self.effort}"']
         args.append("-")
         p = self._spawn(args)
         for line in p.stdout:
