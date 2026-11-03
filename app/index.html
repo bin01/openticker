@@ -814,6 +814,15 @@ body.no-tfloat .tfloat{display:none}
 @media (max-width:760px){.tfloat{display:none}}
 body.tick-docked .bar-in{flex-wrap:nowrap}
 body.tick-docked .live #status{display:none}
+/* with Tick docked the page can be narrow on a wide window, so the header follows the page's width, not the window's */
+header.bar{container-type:inline-size}
+@container (max-width:1010px){
+  body.tick-docked .bar-in{flex-wrap:wrap}
+  body.tick-docked .mainnav{order:10;flex:1 1 100%;overflow-x:auto;scrollbar-width:none;margin:0 -6px}
+  body.tick-docked .mainnav::-webkit-scrollbar{display:none}
+  body.tick-docked .brand{margin-right:auto}
+  body.tick-docked #ts{width:200px}
+}
 body.tick-docked .live{margin-left:auto}
 @media (max-width:1500px){body.tick-docked .mainnav a{padding-inline:9px}}
 .askbtn{gap:5px}
