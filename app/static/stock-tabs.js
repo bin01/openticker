@@ -44,7 +44,7 @@ const shs=x=>x==null?"–":(a=>a>=1e9?(a/1e9).toFixed(2)+"B":a>=1e6?(a/1e6).toFi
 const qLabel=(d,freq)=>{ const x=new Date(d+"T12:00:00Z"); return freq==="annual"?"FY"+String(x.getUTCFullYear()).slice(2):x.toLocaleDateString("en-US",{month:"short",timeZone:"UTC"})+" \u2019"+String(x.getUTCFullYear()).slice(2); };   // "Jul ’25": a quarter ending in July 2025, not July 25th
 const PERIOD={"0q":"This quarter","+1q":"Next quarter","0y":"This year","+1y":"Next year","LTG":"Long-term (5 yr)"};
 
-/* ---------- small charts, drawn at the size they're shown so text matches the other charts (10.5px labels, light grid) ---------- */
+/* ---------- small charts, drawn at the size they are shown (12px labels, light grid) ---------- */
 const paneW=()=>{ const w=$("#drPane")?.clientWidth||520; return Math.round($("#drawer.full")&&w>=760?(w-40)/2:Math.min(720,Math.max(300,w))); };
 const shortUsd=x=>x==null||!isFinite(x)?"–":(x<0?"−":"")+"$"+(a=>a>=1e12?(a/1e12).toFixed(1)+"T":a>=1e9?(a/1e9).toFixed(0)+"B":a>=1e6?(a/1e6).toFixed(0)+"M":a>=1e3?(a/1e3).toFixed(0)+"K":a.toFixed(a<10&&a%1?2:0))(Math.abs(x));
 const swatch=se=>`<span><i class="sw" style="background:${se.color};opacity:${se.soft?.5:.9}"></i>${esc(se.name)}</span>`;
@@ -54,13 +54,13 @@ function barChart(labels,series,{h=150,fmt=usdB,axis=shortUsd,note}={}){
   const ticks=niceTicks(Math.min(0,...all),Math.max(0,...all)*1.08,3), lo=Math.min(0,ticks[0]), hi=Math.max(...ticks,Math.max(...all)*1.08);
   const Y=v=>T+(H-T-B)*(1-(v-lo)/((hi-lo)||1)), gw=(W-L-R)/n, bw=Math.max(4,Math.min(14,(gw-14)/k));
   let s=`<svg class="chart" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img">`;
-  ticks.forEach(t=>{ s+=`<line x1="${L}" x2="${W-R}" y1="${Y(t).toFixed(1)}" y2="${Y(t).toFixed(1)}" stroke="${t===0?"var(--rule)":"var(--grid)"}"/><text x="${L-6}" y="${(Y(t)+3.5).toFixed(1)}" font-size="10" text-anchor="end" class="mono" fill="var(--ink-3)">${axis(t)}</text>`; });
+  ticks.forEach(t=>{ s+=`<line x1="${L}" x2="${W-R}" y1="${Y(t).toFixed(1)}" y2="${Y(t).toFixed(1)}" stroke="${t===0?"var(--rule)":"var(--grid)"}"/><text x="${L-6}" y="${(Y(t)+3.5).toFixed(1)}" font-size="11.5" text-anchor="end" class="mono" fill="var(--ink-3)">${axis(t)}</text>`; });
   labels.forEach((lab,i)=>{ const cx=L+gw*i+gw/2;
     series.forEach((se,j)=>{ const v=se.values[i]; if(v==null) return; const x=cx-(k*(bw+2))/2+j*(bw+2), y=Math.min(Y(v),Y(0)), hh=Math.abs(Y(v)-Y(0));
       s+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(hh,1).toFixed(1)}" rx="2" fill="${v<0?"var(--down)":se.color}" opacity="${se.soft?.5:.9}"><title>${esc(se.name)} ${esc(lab)}: ${fmt(v)}</title></rect>`;
       // only the latest period carries a value label; the axis covers the rest
-      if(j===0&&se.top&&i===n-1&&se.top[i]) s+=`<text x="${Math.min(W-R,x+bw/2).toFixed(1)}" y="${(Y(Math.max(v,0))-5).toFixed(1)}" font-size="10.5" text-anchor="${x+bw/2>W-60?"end":"middle"}" class="mono" font-weight="600" fill="var(--ink)">${se.top[i]}</text>`; });
-    s+=`<text x="${cx.toFixed(1)}" y="${H-6}" font-size="10.5" text-anchor="middle" fill="var(--ink-3)">${esc(lab)}</text>`; });
+      if(j===0&&se.top&&i===n-1&&se.top[i]) s+=`<text x="${Math.min(W-R,x+bw/2).toFixed(1)}" y="${(Y(Math.max(v,0))-5).toFixed(1)}" font-size="12" text-anchor="${x+bw/2>W-60?"end":"middle"}" class="mono" font-weight="600" fill="var(--ink)">${se.top[i]}</text>`; });
+    s+=`<text x="${cx.toFixed(1)}" y="${H-6}" font-size="12" text-anchor="middle" fill="var(--ink-3)">${esc(lab)}</text>`; });
   s+="</svg>";
   return `<div class="legend" style="margin-bottom:6px">${series.map(swatch).join("")}${note?`<span class="ks">${note}</span>`:""}</div>`+s;
 }
@@ -69,14 +69,14 @@ function lineChart(labels,series,{h=140,fmt=v=>pc(v,0)}={}){
   let lo=Math.min(...all),hi=Math.max(...all); const pad=(hi-lo)*.15||Math.abs(hi)*.1||.05; lo-=pad; hi+=pad;
   const X=i=>L+(W-L-R)*i/(n-1), Y=v=>T+(H-T-B)*(1-(v-lo)/(hi-lo));
   let s=`<svg class="chart" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`;
-  niceTicks(lo,hi,3).forEach(t=>{ s+=`<line x1="${L}" x2="${W-R}" y1="${Y(t).toFixed(1)}" y2="${Y(t).toFixed(1)}" stroke="var(--grid)"/><text x="${L-6}" y="${(Y(t)+3.5).toFixed(1)}" font-size="10" text-anchor="end" class="mono" fill="var(--ink-3)">${fmt(t)}</text>`; });
+  niceTicks(lo,hi,3).forEach(t=>{ s+=`<line x1="${L}" x2="${W-R}" y1="${Y(t).toFixed(1)}" y2="${Y(t).toFixed(1)}" stroke="var(--grid)"/><text x="${L-6}" y="${(Y(t)+3.5).toFixed(1)}" font-size="11.5" text-anchor="end" class="mono" fill="var(--ink-3)">${fmt(t)}</text>`; });
   const ends=[];
   series.forEach(se=>{ const pts=se.values.map((v,i)=>[i,v]).filter(p=>p[1]!=null); if(pts.length<2) return;
     s+=`<path d="${pts.map((p,j)=>(j?"L":"M")+X(p[0]).toFixed(1)+","+Y(p[1]).toFixed(1)).join("")}" fill="none" stroke="${se.color}" stroke-width="1.75" stroke-linejoin="round" opacity="${se.soft?.6:1}"/>`;
     const e=pts[pts.length-1]; s+=`<circle cx="${X(e[0]).toFixed(1)}" cy="${Y(e[1]).toFixed(1)}" r="2.5" fill="${se.color}"/>`; ends.push({x:X(e[0])+6,y:Y(e[1])+3.5,v:e[1],se}); });
-  ends.sort((a,b)=>a.y-b.y).forEach((e,i,a)=>{ if(i&&e.y-a[i-1].y<11) e.y=a[i-1].y+11; });
-  ends.forEach(e=>{ s+=`<text x="${e.x.toFixed(1)}" y="${e.y.toFixed(1)}" font-size="10.5" class="mono" fill="${e.se.soft?"var(--ink-2)":e.se.color}">${fmt(e.v)}</text>`; });
-  labels.forEach((lab,i)=>{ s+=`<text x="${X(i).toFixed(1)}" y="${H-6}" font-size="10.5" text-anchor="middle" fill="var(--ink-3)">${esc(lab)}</text>`; });
+  ends.sort((a,b)=>a.y-b.y).forEach((e,i,a)=>{ if(i&&e.y-a[i-1].y<13) e.y=a[i-1].y+13; });
+  ends.forEach(e=>{ s+=`<text x="${e.x.toFixed(1)}" y="${e.y.toFixed(1)}" font-size="12" class="mono" fill="${e.se.soft?"var(--ink-2)":e.se.color}">${fmt(e.v)}</text>`; });
+  labels.forEach((lab,i)=>{ s+=`<text x="${X(i).toFixed(1)}" y="${H-6}" font-size="12" text-anchor="middle" fill="var(--ink-3)">${esc(lab)}</text>`; });
   return `<div class="legend" style="margin-bottom:6px">${series.map(swatch).join("")}</div>`+s+"</svg>";
 }
 const C1="var(--accent)", C2="var(--ink-3)", C3="var(--warn)";
