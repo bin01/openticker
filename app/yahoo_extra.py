@@ -377,11 +377,21 @@ SECTOR_ETFS = [
 ]
 
 
-def _series(syms, period="1y", interval="1d"):
+def _series(syms, period="1y", interval="1d", retry=True):
     df = yf.download(syms, period=period, interval=interval, auto_adjust=False, progress=False, threads=True, group_by="column")
     close = df["Close"] if "Close" in df else df
     if isinstance(close, pd.Series):
         close = close.to_frame(syms[0])
+    # Yahoo sometimes drops a few symbols from a big request ("possibly delisted"); ask once more for just those
+    gone = [s for s in syms if s not in close.columns or close[s].isna().all()]
+    if retry and gone and len(gone) < len(syms):
+        try:
+            more = _series(gone, period, interval, retry=False)
+            got = [s for s in gone if s in more.columns and more[s].notna().any()]
+            if got:
+                close = close.drop(columns=[s for s in got if s in close.columns]).join(more[got], how="outer")
+        except Exception:
+            pass
     return close
 
 
