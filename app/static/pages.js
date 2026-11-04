@@ -44,12 +44,19 @@ async function xget(name,params,force){
   const key=name+"|"+JSON.stringify(params||{}), c=X[key];
   if(c&&!force&&(c.loading||Date.now()-c.at<(c.error?20e3:5*60e3))) return c;
   X[key]={...(c||{}),loading:true};
-  try{
-    const r=await fetch(`/api/x/${name}?`+new URLSearchParams(params||{}));
-    const d=await r.json(); X[key]=r.ok?{data:d,at:Date.now()}:{error:d.error||"Not available.",at:Date.now()};
-  }catch(e){ X[key]={error:"Couldn't reach the dashboard server.",at:Date.now()}; }
+  // Yahoo fails for a moment now and then: try again quietly before showing anything, and if it still fails,
+  // keep trying in the background and fill the section in when it answers
+  const once=async()=>{ try{ const r=await fetch(`/api/x/${name}?`+new URLSearchParams(params||{})); const d=await r.json();
+      return r.ok?{data:d,at:Date.now()}:{error:d.error||"Not available.",at:Date.now(),soft:r.status>=500}; }
+    catch(e){ return {error:"Couldn't reach OpenTicker on this Mac.",at:Date.now()}; } };
+  let res=await once();
+  if(res.soft){ await new Promise(f=>setTimeout(f,2500)); res=await once(); }
+  if(res.soft&&!c?.data){ res.error="Yahoo Finance isn't answering right now. This fills in on its own when it does."; res.later=true; }
+  X[key]=res.error&&c?.data?{...c,loading:false,at:Date.now()-4*60e3}:res;   // a failed refresh keeps what's on screen
+  if(res.later&&!xRetrying.has(key)){ xRetrying.add(key); (async()=>{ for(const wait of [20e3,60e3,180e3]){ await new Promise(f=>setTimeout(f,wait)); const r=await once(); if(!r.error){ X[key]=r; xRetrying.delete(key); render(); return; } } xRetrying.delete(key); })(); }
   return X[key];
 }
+const xRetrying=new Set();
 const xpeek=(name,params)=>X[name+"|"+JSON.stringify(params||{})];
 
 function renderPage(){
@@ -66,7 +73,8 @@ function dayLabel(d,today=nyToday()){
   if(d===shiftDays(today,-1)) return "Yesterday";
   return new Date(d+"T12:00:00Z").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",timeZone:"UTC"});
 }
-const errBox=(msg,name,params)=>`<div class="errbox"><span>${esc(msg)}</span>${name?`<button class="lnk" data-retry-x="${esc(name)}" data-retry-p="${esc(JSON.stringify(params||{}))}">Try again</button>`:""}</div>`;
+const errBox=(msg,name,params)=>{ const later=name&&xRetrying.has(name+"|"+JSON.stringify(params||{}));
+  return `<div class="errbox${later?" later":""}">${later?`<i class="spin" aria-hidden="true"></i>`:""}<span>${esc(msg)}</span>${name?`<button class="lnk" data-retry-x="${esc(name)}" data-retry-p="${esc(JSON.stringify(params||{}))}">Try now</button>`:""}</div>`; };
 const sk=(h=120)=>`<div class="sk" style="height:${h}px"></div>`;
 function miniSpark(arr,w=120,h=34,color){ const pts=(arr||[]).map((v,i)=>[i,v]).filter(p=>p[1]!=null); if(pts.length<2) return ""; const b=pts[0][1]; return spark(pts.map(p=>[p[0],p[1]/b-1]),w,h,color); }
 function insightList(items){

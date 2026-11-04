@@ -384,6 +384,8 @@ table.hz{width:100%;border-collapse:collapse;font-size:13px}
 .phead .ptitle{margin:0}
 .h4{margin:0 0 8px;font:600 10.5px/1 var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
 .errbox{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:14px 16px;border:1px dashed var(--rule);border-radius:12px;color:var(--ink-2);font-size:13px}
+.errbox .spin{width:12px;height:12px;border-radius:50%;border:1.5px solid var(--rule);border-top-color:var(--ink-3);animation:spin 1s linear infinite;flex:none}
+@media (prefers-reduced-motion:reduce){.errbox .spin{animation:none}}
 
 /* written insights */
 .ins{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:11px}
@@ -1549,6 +1551,9 @@ async function loadDetail(t,force){
   catch(e){ detailCache[t]={t,info:{},news:[],infoError:"Couldn't reach the local server.",at:Date.now()-9*60e3}; }
   done();
   if(drawerOpen&&sel===t) renderDetail();
+  // Yahoo hiccup: keep any company data we already had, and quietly try again while the stock stays open
+  const d=detailCache[t]; if(c?.info&&Object.keys(c.info).length&&d.infoError){ d.info=c.info; delete d.infoError; }
+  if((d.infoError||d.newsError)&&!force) setTimeout(()=>{ if(drawerOpen&&sel===t) loadDetail(t,true); },20e3);
 }
 async function loadChart(t,rng){
   const k=t+"|"+rng+"|"+fund, c=chartCache[k], ttl=(rng==="1D"||rng==="5D")?60e3:30*60e3;

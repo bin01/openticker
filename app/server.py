@@ -531,17 +531,30 @@ def stale_age(key):
 
 
 def cached(key, ttl, fn):
-    """Small TTL cache; if a refresh fails, serve the stale copy when there is one."""
+    """Small TTL cache. Yahoo fails now and then for a moment, so a failed fetch is tried once more; if it still
+    fails we serve the last good copy, from memory or from the last run (cache/detail.json), when there is one."""
     now = time.time()
     with _detail_lock:
         hit = _detail_cache.get(key)
     if hit and now - hit[0] < ttl:
         return hit[1]
     try:
-        val = fn()
+        try:
+            val = fn()
+        except Exception as e:
+            log(f"{key} failed, trying once more: {e!r}")
+            time.sleep(1.2)
+            val = fn()
     except Exception as e:
         log(f"{key} failed: {e!r}")
         health(_source(key), False, e)
+        if not hit:
+            with _detail_lock:
+                old = _disk_cache.get(_disk_key(key))
+            if old:
+                hit = (old[0], old[1])
+                with _detail_lock:
+                    _detail_cache.setdefault(key, hit)
         if hit:
             _stale_keys.add(key)
             return hit[1]
@@ -551,6 +564,53 @@ def cached(key, ttl, fn):
         _stale_keys.discard(key)
     health(_source(key))
     return val
+
+
+# ---------------------------------------------------------------- last good copies on disk, for when Yahoo fails after a restart
+DETAIL_CACHE = CACHE / "detail.json"
+DISK_KINDS = ("x", "info", "news", "chart")   # what the page shows; kept for a week
+_disk_cache: dict = {}
+
+
+def _disk_key(key):
+    return json.dumps(key, default=str)
+
+
+def load_disk_cache():
+    global _disk_cache
+    try:
+        raw = json.loads(DETAIL_CACHE.read_text())
+        _disk_cache = {k: (v[0], v[1]) for k, v in raw.items() if time.time() - v[0] < 7 * 86400}
+        log(f"kept {len(_disk_cache)} research results from the last run as a fallback")
+    except Exception:
+        _disk_cache = {}
+
+
+def save_disk_cache(last=None):
+    """Write the research the page has shown, so a failed fetch after a restart still has a copy. Returns a
+    signature so the loop can skip writing when nothing changed."""
+    with _detail_lock:
+        items = [(k, v) for k, v in _detail_cache.items() if k and k[0] in DISK_KINDS]
+    out = dict(_disk_cache)
+    for k, (ts, val) in items:
+        out[_disk_key(k)] = (ts, jsonable(val))
+    out = {k: v for k, v in out.items() if time.time() - v[0] < 7 * 86400}
+    sig = (len(out), max((v[0] for v in out.values()), default=0))
+    if sig != last:
+        tmp = DETAIL_CACHE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(out, separators=(",", ":")))
+        tmp.replace(DETAIL_CACHE)
+    return sig
+
+
+def disk_cache_loop():
+    last = None
+    while True:
+        time.sleep(300)
+        try:
+            last = save_disk_cache(last)
+        except Exception as e:
+            log(f"couldn't save research cache: {e!r}")
 
 
 def jsonable(v):
@@ -654,11 +714,11 @@ def stock_detail(sym):
     try:
         out["info"] = cached(("info", sym), INFO_TTL, lambda: fetch_info(sym))
     except Exception:
-        out["info"], out["infoError"] = {}, "Yahoo didn't return company data just now. Try again in a minute."
+        out["info"], out["infoError"] = {}, "Yahoo Finance isn't answering right now. OpenTicker will try again shortly."
     try:
         out["news"] = cached(("news", sym), NEWS_TTL, lambda: fetch_news(sym))
     except Exception:
-        out["news"], out["newsError"] = [], "Yahoo's news feed didn't answer. Try again in a minute."
+        out["news"], out["newsError"] = [], "Yahoo's news feed isn't answering right now. OpenTicker will try again shortly."
     return out
 
 
@@ -1631,7 +1691,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(400, json.dumps({"error": str(e)}).encode(), "application/json")
             except Exception as e:
                 log(f"{path} failed: {e!r}")
-                self.send(502, json.dumps({"error": "Yahoo didn't return this just now. Try again in a minute."}).encode(), "application/json")
+                self.send(502, json.dumps({"error": "Yahoo Finance isn't answering right now."}).encode(), "application/json")
         elif path.startswith("/static/"):
             name = path[8:]
             f = STATIC / name
@@ -1646,7 +1706,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(400, json.dumps({"error": str(e)}).encode(), "application/json")
             except Exception as e:
                 log(f"{path} failed: {e!r}")
-                self.send(502, json.dumps({"error": "Yahoo didn't return this just now. Try again in a minute."}).encode(), "application/json")
+                self.send(502, json.dumps({"error": "Yahoo Finance isn't answering right now."}).encode(), "application/json")
         elif path == "/api/app":
             local = agent.is_local(self)
             ver = paths.ROOT / "VERSION"
@@ -1735,6 +1795,8 @@ def main():
     # Serve right away: from the last run's prices if there are any, otherwise a loading screen that says what's
     # happening. Fresh holdings and history download behind it, then the background loops start.
     S.load_cache()
+    load_disk_cache()
+    threading.Thread(target=disk_cache_loop, daemon=True).start()
 
     def warm():
         while True:
