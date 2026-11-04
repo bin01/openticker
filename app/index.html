@@ -91,7 +91,7 @@ header.bar{position:sticky;top:0;z-index:15;background:color-mix(in srgb,var(--b
 .hero::before{content:"";position:absolute;inset:0;background:radial-gradient(900px 300px at 0% 0%,var(--glow),transparent 60%);pointer-events:none}
 .hero>*{position:relative;min-width:0}
 .eyebrow{display:flex;align-items:center;gap:10px;font:600 11px/1 var(--f-body);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
-.big-r{font:700 clamp(46px,6vw,76px)/1 var(--f-mono);letter-spacing:-.035em;margin:14px 0 6px;font-variant-numeric:tabular-nums}
+.big-r{font:700 clamp(34px,3.6vw,46px)/1.05 var(--f-mono);letter-spacing:-.03em;margin:12px 0 6px;font-variant-numeric:tabular-nums}
 .big-sub{color:var(--ink-2);font-size:13px}
 .hero .read{margin-top:18px;display:block;background:none;border:0;padding:0}
 .hero .read p{font:500 17px/1.55 var(--f-body);color:var(--ink);max-width:62ch;margin:10px 0 0}
@@ -1297,7 +1297,7 @@ function renderHero(){
   const vsM=isPseudo(fund)&&!!base.px.SPY, F=series(base.px[fund],m.i0,400), E=vsM?series(base.px.SPY,m.i0,400):ewSeries();
   const nF=fund==="Portfolio"?"Your portfolio":fund==="Watchlist"?"Your watchlist":fund, nE=vsM?"S&P 500":"Average stock";
   $("#heroLeg").innerHTML=`<span><i class="sw" style="background:var(--ink)"></i>${fund==="Portfolio"?"Your portfolio (today's shares)":fund==="Watchlist"?"Your watchlist (equal weight)":fund+" (weighted by size)"}</span><span><i class="sw" style="background:var(--accent)"></i>${vsM?"S&P 500 (SPY)":"Average stock (equal weight)"}</span>`;
-  const W=600,H=250,L=38,R=58,T=10,B=24, all=[...F,...E].map(p=>p[1]); if(!all.length){$("#heroChart").innerHTML="";return;}
+  const cw=$("#heroChart").clientWidth, W=cw>240?Math.round(cw):600, H=250,L=38,R=58,T=10,B=24, all=[...F,...E].map(p=>p[1]); if(!all.length){$("#heroChart").innerHTML="";return;}
   let lo=Math.min(0,...all),hi=Math.max(0,...all); const pad=(hi-lo)*.1||.01; lo-=pad; hi+=pad;
   const n=base.dates.length, i0=m.i0, X=k=>L+(W-L-R)*(n-1===i0?1:(k-i0)/(n-1-i0)), Y=v=>T+(H-T-B)*(1-(v-lo)/(hi-lo));
   const path=p=>p.map((q,j)=>(j?"L":"M")+X(q[0]).toFixed(1)+","+Y(q[1]).toFixed(1)).join("");
@@ -1312,6 +1312,9 @@ function renderHero(){
   if(eE) s+=`<circle cx="${X(eE[0])}" cy="${Y(eE[1])}" r="4" fill="var(--accent)" stroke="var(--panel)" stroke-width="2"/><text x="${X(eE[0])+8}" y="${yE}" font-size="11.5" class="mono" font-weight="600" fill="var(--accent)">${pct(eE[1],1)}</text>`;
   s+=`<line id="hxh" y1="${T}" y2="${H-B}" stroke="var(--ink-3)" stroke-dasharray="3 3" opacity="0"/><rect id="hhov" x="${L}" y="${T}" width="${W-L-R}" height="${H-T-B}" fill="transparent"/></svg>`;
   $("#heroChart").innerHTML=s;
+  // redraw when the column changes width (window resize, Tick docking) so the chart's text stays its real size
+  const hc=$("#heroChart"); if(hc&&hc._ro!==true&&window.ResizeObserver){ hc._ro=true; let w0=hc.clientWidth, t;
+    new ResizeObserver(()=>{ const w=hc.clientWidth; if(Math.abs(w-w0)<8) return; w0=w; clearTimeout(t); t=setTimeout(()=>model&&document.contains(hc)&&renderHero(),100); }).observe(hc); }
   const svg=$("#heroChart svg"),hov=svg.querySelector("#hhov"),xh=svg.querySelector("#hxh");
   hov.addEventListener("mousemove",ev=>{const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;const p=pt.matrixTransform(svg.getScreenCTM().inverse());
     const k=clamp(Math.round(i0+(p.x-L)/(W-L-R)*(n-1-i0)),i0,n-1); xh.setAttribute("x1",X(k));xh.setAttribute("x2",X(k));xh.setAttribute("opacity",1);
