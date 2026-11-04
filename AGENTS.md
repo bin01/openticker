@@ -12,6 +12,8 @@ curl -fsSL https://raw.githubusercontent.com/bin01/openticker/main/install.sh | 
 
 That clones the code to `~/.openticker`, makes a private Python environment with `uv`, links `openticker` into `~/.local/bin`, starts the server in the background (and at login), builds `/Applications/OpenTicker.app` and opens it. Run `./install.sh` inside a clone instead to use that clone. Add `-s -- --lan` (or later `openticker start --lan`) to let their phone open it on the same Wi-Fi.
 
+With Homebrew instead: `brew tap bin01/openticker https://github.com/bin01/openticker && brew install openticker`, then run `openticker` once. The Homebrew command (`packaging/homebrew/launcher.sh`, formula in `Formula/openticker.rb`) runs the same `install.sh` on first use and afterwards hands every command to `~/.openticker/bin/openticker`, so everything below applies either way.
+
 Then run `openticker doctor`. Everything should show ✓; it also lists which AI agents Tick can use. On macOS the installer needs the Command Line Tools: if it says so, the person has to click Install in the window that opened, then you run it again.
 
 ## Change it

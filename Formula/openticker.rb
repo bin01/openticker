@@ -38,6 +38,6 @@ class Openticker < Formula
 
   test do
     assert_match opt_libexec.to_s, (bin/"openticker").read
-    assert_predicate libexec/"install.sh", :exist?
+    assert_path_exists libexec/"install.sh"
   end
 end

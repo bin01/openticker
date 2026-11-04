@@ -24,17 +24,25 @@ And when you want it to work differently, ask your agent to change it.</p>
 
 ## Install
 
-Paste this into Terminal:
+**One line in Terminal:**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/bin01/openticker/main/install.sh | bash
 ```
 
-Or let your coding agent do it. Paste this into Claude Code, Codex or any agent:
+**With Homebrew:**
+
+```bash
+brew tap bin01/openticker https://github.com/bin01/openticker
+brew install openticker
+openticker
+```
+
+**With your coding agent:** paste this into Claude Code, Codex or any agent:
 
 > Install OpenTicker from github.com/bin01/openticker and follow its AGENTS.md.
 
-Either way, OpenTicker installs to `~/.openticker`, runs in the background, adds **OpenTicker** to your Applications and opens it. It needs macOS 12 or later and sets up its own Python, so nothing else is required. It also runs on Linux, in your browser.
+Whichever you pick, OpenTicker installs to `~/.openticker`, runs in the background, adds **OpenTicker** to your Applications and opens it. It needs macOS 12 or later and sets up its own Python, so nothing else is required. It also runs on Linux, in your browser.
 
 **On your phone too:** run `openticker start --lan`, then `openticker pair`, and open the link on your phone. It installs to your home screen.
 
