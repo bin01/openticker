@@ -223,7 +223,7 @@ def free_port(p):
         time.sleep(0.1)
 
 
-def start(c=None, quiet=False):
+def start(c=None, quiet=False, wait=40):
     c = c or config()
     if MAC:
         changed = write_plist(c)
@@ -243,7 +243,7 @@ def start(c=None, quiet=False):
         with open(LOG, "ab") as log:
             subprocess.Popen(server_args(c), cwd=str(APP), stdout=log, stderr=log, stdin=subprocess.DEVNULL,
                              start_new_session=True, env={**os.environ, "PYTHONWARNINGS": "ignore"})
-    if not wait_up():
+    if not wait_up(wait):
         die(f"the server didn't come up. See {LOG}")
     if not quiet:
         url = f"http://127.0.0.1:{c['port']}"
@@ -460,15 +460,16 @@ def cmd_setup(args):
     if "--lan" in args:
         c["lan"] = True
     save_config(c)
+    print(f"  {dim('Starting the server. The first start downloads fund holdings and a year of prices, about a minute.')}")
     if MAC:
         free_port(c["port"]) if not loaded() else None
-        start(c, quiet=True)
+        start(c, quiet=True, wait=240)
         ok("Server runs in the background and starts at login")
         a = build_app(quiet=False)
         if a:
             ok(f"Mac app → {str(a).replace(str(Path.home()), '~')}")
     else:
-        start(c, quiet=True)
+        start(c, quiet=True, wait=240)
         ok("Server started")
     install_skills()
     print()

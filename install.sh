@@ -71,6 +71,7 @@ step "Linked the openticker command into ~/.local/bin"
 
 "$DIR/bin/openticker" setup "$@"
 
+[ -n "${OPENTICKER_FROM_BREW:-}" ] && exit 0   # Homebrew's openticker is already on PATH
 case ":$ORIG_PATH:" in
   *":$HOME/.local/bin:"*) ;;
   *) printf "\n  %sAdd ~/.local/bin to your PATH to use the openticker command:%s\n    echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc\n" "$dim" "$reset" ;;
