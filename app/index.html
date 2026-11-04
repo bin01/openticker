@@ -570,6 +570,9 @@ header.bar{padding-top:env(safe-area-inset-top,0px)}
 
 /* chart events */
 .vsg{display:flex;gap:14px;align-items:center}
+.makey{display:flex;flex-wrap:wrap;gap:4px 16px;margin:6px 0 0;font-size:12px;color:var(--ink-2)}.makey span{display:inline-flex;align-items:center;gap:6px}.makey i{width:14px;height:2px;border-radius:1px}.makey b{font-weight:600;color:var(--ink)}.makey small{color:var(--ink-3);font-size:11.5px}
+.ma-lead{margin:0 0 10px;font-size:13.5px;line-height:1.45}
+.hz.ma td small{color:var(--ink-3);font-size:11px;margin-left:4px}.hz.ma td b{font-weight:600}
 .evkey{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11.5px;color:var(--ink-3);margin-top:6px}
 .evkey span{display:inline-flex;align-items:center;gap:5px}
 .ek{display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;font:700 8.5px/1 var(--f-body);font-style:normal;color:var(--ink-3)}
@@ -1092,6 +1095,26 @@ function firstValid(a,i){ if(!a) return null; for(let k=i;k<a.length;k++) if(a[k
 function lastValid(a){ if(!a) return null; for(let k=a.length-1;k>=0;k--) if(a[k]!=null) return a[k]; return null; }
 function ret(a,i0){ const s=firstValid(a,i0), e=lastValid(a); return s&&e?{r:e/s.v-1,late:s.k>i0}:{r:null,late:false}; }
 function avgLast(a,n){ let s=0,c=0; for(let k=a.length-1;k>=0&&c<n;k--) if(a[k]!=null){s+=a[k];c++;} return c>=n*0.8?s/c:null; }
+/* moving averages: the popular four, where the price sits against them, and the latest 50/200-day cross */
+const MAS=[[20,"about a month"],[50,"about a quarter"],[100,"about five months"],[200,"about ten months"]];
+function smaSeries(a,n){ const out=new Array(a.length).fill(null); let s=0,q=[]; for(let k=0;k<a.length;k++){ if(a[k]==null){ out[k]=q.length>=n?s/n:null; continue; } q.push(a[k]); s+=a[k]; if(q.length>n) s-=q.shift(); out[k]=q.length>=n?s/n:null; } return out; }
+function maRead(t){
+  const a=base.px[t]; if(!a) return null; const last=lastValid(a); if(last==null) return null;
+  const rows=MAS.map(([n,span])=>{ const v=avgLast(a,n); return {n,span,v,vs:v?last/v-1:null}; }).filter(r=>r.v!=null);
+  if(!rows.length) return null;
+  const s50=smaSeries(a,50), s200=smaSeries(a,200); let cross=null;
+  for(let k=a.length-1;k>0&&k>a.length-90;k--){ if(s50[k]==null||s200[k]==null||s50[k-1]==null||s200[k-1]==null) break;
+    const now=s50[k]>s200[k], was=s50[k-1]>s200[k-1]; if(now!==was){ cross={golden:now,day:base.dates[k]}; break; } }
+  const up=rows.filter(r=>r.vs>0), dn=rows.filter(r=>r.vs<=0), nm=x=>x.map(r=>r.n+"-day").join(x.length>2?", ":" and ").replace(/, ([^,]*)$/,", and $1"), all=rows.length===4?"all four":"all of them";
+  const r200=rows.find(r=>r.n===200);
+  let lead;
+  if(!dn.length) lead=`<b>Above ${all}:</b> the trend is up over every time frame here.`;
+  else if(!up.length) lead=`<b>Below ${all}:</b> the trend is down over every time frame here.`;
+  else if(r200&&r200.vs>0) lead=`<b>A pullback in a longer uptrend:</b> below the ${nm(dn)} average${dn.length>1?"s":""}, still above the 200-day.`;
+  else if(r200&&r200.vs<=0) lead=`<b>Bouncing in a longer downtrend:</b> back above the ${nm(up)} average${up.length>1?"s":""}, still below the 200-day.`;
+  else lead=`<b>Mixed:</b> above the ${nm(up)}, below the ${nm(dn)}.`;
+  return {last,rows,cross,lead};
+}
 function range52(a){ let hi=-Infinity,lo=Infinity,c=0; for(let k=a.length-1;k>=0&&c<252;k--,c++) if(a[k]!=null){hi=Math.max(hi,a[k]);lo=Math.min(lo,a[k]);} return isFinite(hi)?{hi,lo}:null; }
 
 const startCache={};
@@ -1471,7 +1494,7 @@ function renderNote(){
 /* ======================= drawer ======================= */
 const CR=["1D","5D","1M","3M","6M","YTD","1Y","5Y"];
 const HZ_TO_CR={"1D":"1D","1W":"5D","1M":"1M","3M":"3M","6M":"6M","YTD":"YTD","1Y":"1Y"};
-let chartRange=null, showVs=load("vs","1")==="1", aboutOpen=false, drawerKey="";
+let chartRange=null, showVs=load("vs","1")==="1", showMa=load("ma","1")==="1", aboutOpen=false, drawerKey="";
 const detailCache={}, chartCache={};
 const big=x=>x==null||!isFinite(x)?"–":(x<0?"−":"")+"$"+(a=>a>=1e12?(a/1e12).toFixed(2)+"T":a>=1e9?(a/1e9).toFixed(1)+"B":a>=1e6?(a/1e6).toFixed(0)+"M":a.toLocaleString("en-US"))(Math.abs(x));
 const mult=x=>x==null||!isFinite(x)||x<=0?"–":x.toFixed(1)+"×";
@@ -1548,7 +1571,7 @@ function drawerShell(r){
    <div class="kf" id="drKf"></div>
    <div class="dr-body"><div class="dr-main">
      <div class="dr-sec" style="order:1"><div class="ch-head"><div class="seg sm" id="drRng" role="group" aria-label="Chart range"></div>
-       <span class="vsg"><label class="vs"><input type="checkbox" id="drEv" ${showEv?"checked":""}> Events</label>${isPseudo(fund)?"":`<label class="vs"><input type="checkbox" id="drVs" ${showVs?"checked":""}> vs ${fund}</label>`}</span></div>
+       <span class="vsg"><label class="vs"><input type="checkbox" id="drMa" ${showMa?"checked":""}> Averages</label><label class="vs"><input type="checkbox" id="drEv" ${showEv?"checked":""}> Events</label>${isPseudo(fund)?"":`<label class="vs"><input type="checkbox" id="drVs" ${showVs?"checked":""}> vs ${fund}</label>`}</span></div>
        <div class="ch-sum" id="drChSum"></div><div id="drChart"><div class="sk" style="height:250px"></div></div></div>
      ${sec(3,"Analyst view","",`<div id="drAnalyst"><div class="sk" style="height:110px"></div></div>`)}
      ${sec(4,"Next earnings","",`<div id="drEarn"><div class="sk" style="height:60px"></div></div>`)}
@@ -1560,6 +1583,7 @@ function drawerShell(r){
      <div class="dr-sec" id="drMineSec" style="order:2" hidden><h4>Your position</h4><div id="drMine"></div></div>
      ${sec(2,`In ${fund}`,"",`<div class="stats" id="drFund"></div>`)}
      ${sec(7,"Returns vs the fund","",`<div id="drRet"></div>`)}
+     ${sec(8,"Moving averages","",`<div id="drMA"></div>`)}
      ${sec(8,"Positioning","",`<div class="stats" id="drPos"></div>`)}
      ${sec(9,`Sector peers in ${fund}`,"drPeers",`<div id="drPeers"></div>`)}
      ${sec(11,"About","",`<div id="drAbout"><div class="sk" style="height:80px"></div></div>`)}
@@ -1570,6 +1594,7 @@ function drawerShell(r){
   $("#drRng").innerHTML=CR.map(k=>`<button data-cr="${k}" aria-pressed="${k===curRange()}">${k}</button>`).join("");
   if($("#drVs")) $("#drVs").onchange=e=>{ showVs=e.target.checked; save("vs",showVs?"1":"0"); drawPriceChart(); };
   $("#drEv").onchange=e=>{ showEv=e.target.checked; save("ev",showEv?"1":"0"); drawPriceChart(); };
+  $("#drMa").onchange=e=>{ showMa=e.target.checked; save("ma",showMa?"1":"0"); drawPriceChart(); };
   renderTabs(); renderDetail(); drawPriceChart(); loadChart(r.t,curRange()); drawerMine(r); renderEarnHist(); loadEarnHist(r.t);
 }
 function drawerLive(r){
@@ -1591,8 +1616,12 @@ function drawerLive(r){
   $("#drPos").innerHTML=`
      <div class="stat"><div class="lbl">From 52-wk high</div><div class="v ${cls(r.offHi)}">${pct(r.offHi,1)}</div><div class="ks">High ${money(r.hi)} · Low ${money(r.lo)}</div></div>
      <div class="stat"><div class="lbl">52-wk range position</div><div class="v">${r.pos==null?"–":Math.round(r.pos*100)+"%"}</div><div class="ks">0% at the low, 100% at the high</div></div>
-     <div class="stat"><div class="lbl">vs 50-day average</div><div class="v ${cls(r.vs50)}">${pct(r.vs50,1)}</div><div class="ks">${money(r.ma50)}</div></div>
-     <div class="stat"><div class="lbl">vs 200-day average</div><div class="v ${cls(r.vs200)}">${pct(r.vs200,1)}</div><div class="ks">${money(r.ma200)}</div></div>`;
+`;
+  const M=maRead(r.t);
+  $("#drMA").innerHTML=!M?`<p class="hint" style="margin:0">Not enough price history yet.</p>`:`<p class="ma-lead">${M.lead}</p>
+     <table class="hz ma"><thead><tr><th>Average of the last</th><th>Price</th><th>${esc(r.t)} is</th></tr></thead><tbody>
+     ${M.rows.map(x=>`<tr><td><b>${x.n} days</b> <small>${x.span}</small></td><td class="num">${money(x.v)}</td><td class="num ${cls(x.vs)}">${pct(Math.abs(x.vs),1).replace(/^[+−-]/,"")} ${x.vs>0?"above":"below"}</td></tr>`).join("")}</tbody></table>
+     ${M.cross?`<p class="hint" style="margin:10px 0 0"><b style="color:var(--ink)">${M.cross.golden?"Golden cross":"Death cross"} on ${shortDate(M.cross.day)}:</b> the 50-day average moved ${M.cross.golden?"above":"below"} the 200-day. Traders read it as a sign the longer trend ${M.cross.golden?"has turned up":"has turned down"}; it often comes after much of the move.</p>`:""}`;
   renderPeers(r);
   $("#drHeld").innerHTML=inFunds.length?"":`<p class="hint" style="margin:0">None of ${FUND_LIST.slice(0,-1).join(", ")} or ${FUND_LIST.at(-1)}.</p>`;
   if(inFunds.length) $("#drHeld").innerHTML=inFunds.map(k=>{const h=base.funds[k].holdings.find(x=>x.t===r.t);return `<button class="chip" data-f="${k}" style="border:0;cursor:pointer">${k} · ${h.w.toFixed(2)}%</button>`;}).join("");
@@ -1690,12 +1719,17 @@ function drawPriceChart(){
   // fund overlay rebased to the stock's starting price
   let F=[]; if(showVs&&c.vs?.pts?.length){ const m=new Map(c.vs.pts.map(p=>[p[0],p[1]])), fb=rng==="1D"&&c.vs.prevClose?c.vs.prevClose:(m.get(P[0][0])??c.vs.pts[0][1]); P.forEach((p,k)=>{const v=m.get(p[0]); if(v!=null) F.push([k,base0*v/fb]);}); }
   const fch=F.length?F[F.length-1][1]/base0-1:null;
+  const MA=showMa&&c.ma?[["50","var(--accent)"],["200","var(--warn)"]].map(([k,col])=>({k,col,a:(c.ma[k]||[]).map((v,j)=>v==null?null:[j,v]).filter(Boolean)})).filter(m=>m.a.length>1):[];
+  $("#drMa").closest("label").hidden=!c.ma;
   $("#drChSum").innerHTML=`<span class="num ${cls(ch)}" style="font-weight:600">${pct(ch)}</span> <span class="hint">${rng==="1D"?"since yesterday's close":"over "+rng}</span>${fch!=null?` <span class="hint">· ${fund} ${pct(fch)} · relative</span> <span class="num ${cls((1+ch)/(1+fch)-1)}">${pct((1+ch)/(1+fch)-1)}</span>`:""}`;
   const evK=rng==="1D"||rng==="5D"?null:placeEvents(sel,P), LANE=evK?22:0;
   const W=innerWidth<560?390:520,H=(innerWidth<560?240:260)+LANE,L=8,R=46,T=10,VB=innerWidth<560?38:46,B=22, PH=H-LANE-T-B-VB-6;
   const sess=rng==="1D"?390/ (c.interval==="5m"?5:1):n-1;  // 1D spans the whole session so a partial day looks partial
   const X=k=>L+(W-L-R)*(sess<=0?1:k/Math.max(sess,n-1));
-  const ys=[...P.map(p=>p[1]),...F.map(p=>p[1]),...(rng==="1D"&&c.prevClose?[c.prevClose]:[])];
+  { // an average far from the price would squash the chart, so leave it off and say where it is
+    const pv=[...P.map(p=>p[1]),...F.map(p=>p[1])], pl=Math.min(...pv), ph=Math.max(...pv), sp=(ph-pl)||ph*.02;
+    MA.forEach(m=>{ const v=m.a.map(p=>p[1]), ml=Math.min(...v), mh=Math.max(...v); m.off=mh<pl-sp*.6?"below":ml>ph+sp*.6?"above":null; }); }
+  const ys=[...P.map(p=>p[1]),...F.map(p=>p[1]),...MA.filter(m=>!m.off).flatMap(m=>m.a.map(p=>p[1])),...(rng==="1D"&&c.prevClose?[c.prevClose]:[])];
   let lo=Math.min(...ys),hi=Math.max(...ys); const pad=(hi-lo)*.08||hi*.01; lo-=pad; hi+=pad;
   const Y=v=>T+PH*(1-(v-lo)/(hi-lo));
   const vmax=Math.max(...P.map(p=>p[2]))||1, VY=T+PH+6+LANE, bw=Math.max(1,(W-L-R)/Math.max(sess,n)*0.7);
@@ -1711,18 +1745,20 @@ function drawPriceChart(){
   if(rng==="1D"){ const t0=P[0][0]; ticks.forEach(k=>{ s+=`<text x="${X(k)}" y="${H-6}" font-size="10.5" text-anchor="${k===0?"start":"middle"}" fill="var(--ink-3)">${fmtAxis(t0+k*300,rng)}</text>`; }); }
   else ticks.forEach((k,j)=>{ s+=`<text x="${X(k)}" y="${H-6}" font-size="10.5" text-anchor="${j===0?"start":j===ticks.length-1?"end":"middle"}" fill="var(--ink-3)">${fmtAxis(P[k][0],rng)}</text>`; });
   if(F.length) s+=`<path d="${path(F)}" fill="none" stroke="var(--ink-3)" stroke-width="1.3" stroke-dasharray="4 3"/>`;
+  MA.filter(m=>!m.off).forEach(m=>{ s+=`<path d="${path(m.a)}" fill="none" stroke="${m.col}" stroke-width="1.4" opacity=".9" stroke-linejoin="round"/>`; });
   s+=`<path d="${path(S)}L${X(n-1)},${T+PH}L${X(0)},${T+PH}Z" fill="${col}" opacity=".08"/><path d="${path(S)}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>`;
   s+=`<circle cx="${X(n-1)}" cy="${Y(lastP)}" r="3.5" fill="${col}" stroke="var(--panel)" stroke-width="2"/>`;
   if(evK){ evK.forEach((_,k)=>{ s+=`<line x1="${X(k)}" x2="${X(k)}" y1="${Y(P[k][1])}" y2="${T+PH+6+LANE/2-6}" stroke="var(--ink-3)" stroke-width=".6" stroke-dasharray="1 2" opacity=".6"/>`; }); s+=eventLane(evK,X,T+PH+6+LANE/2); }
   s+=`<line id="xh" y1="${T}" y2="${VY+VB}" stroke="var(--ink-3)" stroke-dasharray="3 3" opacity="0"/><circle id="xd" r="3.5" fill="${col}" opacity="0"/><rect id="hov" x="${L}" y="${T}" width="${W-L-R}" height="${VY+VB-T}" fill="transparent"/></svg>`;
-  el.innerHTML=s+(evK?`<div class="evkey"><span><i class="ek e">E</i>earnings</span><span><i class="ek">▲</i>upgrade or downgrade</span><span><i class="ek o">D</i>dividend</span><span><i class="ek o up">B</i>insider buy</span><span class="ks">hover the chart for details</span></div>`:"");
+  el.innerHTML=s+(MA.length?`<div class="makey">${MA.map(m=>`<span><i style="background:${m.col}"></i>${m.k}-day average <b class="num">${money(m.a[m.a.length-1][1])}</b>${m.off?` <small>${m.off==="below"?"↓ well below":"↑ well above"} this chart</small>`:""}</span>`).join("")}</div>`:"")+(evK?`<div class="evkey"><span><i class="ek e">E</i>earnings</span><span><i class="ek">▲</i>upgrade or downgrade</span><span><i class="ek o">D</i>dividend</span><span><i class="ek o up">B</i>insider buy</span><span class="ks">hover the chart for details</span></div>`:"");
   const svg=el.querySelector("svg"),hov=svg.querySelector("#hov"),xh=svg.querySelector("#xh"),xd=svg.querySelector("#xd");
   const fm=new Map(F.map(p=>[p[0],p[1]]));
   const move=ev=>{ const pt=svg.createSVGPoint(); const e=ev.touches?ev.touches[0]:ev; pt.x=e.clientX; pt.y=e.clientY; const p=pt.matrixTransform(svg.getScreenCTM().inverse());
     const k=clamp(Math.round((p.x-L)/(W-L-R)*Math.max(sess,n-1)),0,n-1), q=P[k];
     xh.setAttribute("x1",X(k)); xh.setAttribute("x2",X(k)); xh.setAttribute("opacity",1); xd.setAttribute("cx",X(k)); xd.setAttribute("cy",Y(q[1])); xd.setAttribute("opacity",1);
+    const mav=MA.map(m=>{ const v=c.ma[m.k][k]; return v==null?"":`<br>${m.k}-day avg ${money(v)}`; }).join("");
     const fv=fm.get(k), evs=evK?[k-1,k,k+1].flatMap(j=>evK.get(j)||[]):[];
-    showTip(e,`<b>${fmtTip(q[0],rng)}</b><br>${esc(sel)} ${money(q[1])} <span>(${pct(q[1]/base0-1)})</span>${fv!=null?`<br>${fund} ${pct(fv/base0-1)}`:""}<br>Volume ${vol(q[2])}${evs.map(x=>`<br>• ${esc(x.text)}`).join("")}`); };
+    showTip(e,`<b>${fmtTip(q[0],rng)}</b><br>${esc(sel)} ${money(q[1])} <span>(${pct(q[1]/base0-1)})</span>${fv!=null?`<br>${fund} ${pct(fv/base0-1)}`:""}${mav}<br>Volume ${vol(q[2])}${evs.map(x=>`<br>• ${esc(x.text)}`).join("")}`); };
   hov.addEventListener("mousemove",move); hov.addEventListener("touchmove",ev=>{move(ev);},{passive:true});
   const out=()=>{xh.setAttribute("opacity",0);xd.setAttribute("opacity",0);hideTip();}; hov.addEventListener("mouseleave",out); hov.addEventListener("touchend",out);
 }

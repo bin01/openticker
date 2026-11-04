@@ -685,11 +685,26 @@ CHART_RANGES = {
 }
 
 
+MA_DAYS = (50, 200)   # the moving averages drawn on daily charts
+RANGE_START = {"1M": {"months": 1}, "3M": {"months": 3}, "6M": {"months": 6}, "1Y": {"years": 1}}
+
+
 def fetch_chart(sym, rng):
     period, interval = CHART_RANGES[rng]
     tk = yf.Ticker(sym)
-    h = tk.history(period=period, interval=interval, auto_adjust=True, prepost=False)
-    h = h.dropna(subset=["Close"])
+    ma = None
+    if interval == "1d":
+        # two years of bars so the 200-day average exists from the first day shown, then trim to the range
+        h = tk.history(period="2y", interval="1d", auto_adjust=True, prepost=False).dropna(subset=["Close"])
+        avgs = {n: h["Close"].rolling(n).mean() for n in MA_DAYS}
+        last = h.index[-1] if len(h.index) else pd.Timestamp.now(tz=NY)
+        start = (pd.Timestamp(year=last.year, month=1, day=1, tz=last.tz) if rng == "YTD"
+                 else last.normalize() - pd.DateOffset(**RANGE_START[rng]))
+        keep = h.index >= start
+        h = h[keep]
+        ma = {str(n): [None if v != v else round(float(v), 4) for v in a[keep].tolist()] for n, a in avgs.items()}
+    else:
+        h = tk.history(period=period, interval=interval, auto_adjust=True, prepost=False).dropna(subset=["Close"])
     pts = [[int(ts.timestamp()), round(float(c), 4), int(v) if v == v else 0]
            for ts, c, v in zip(h.index, h["Close"].tolist(), h["Volume"].tolist())]
     prev = None
@@ -698,7 +713,7 @@ def fetch_chart(sym, rng):
         prev = md.get("chartPreviousClose") or md.get("previousClose")
     if not pts:
         raise ValueError("no bars")
-    return {"pts": pts, "intraday": interval.endswith("m"), "interval": interval, "prevClose": jsonable(prev)}
+    return {"pts": pts, "intraday": interval.endswith("m"), "interval": interval, "prevClose": jsonable(prev), "ma": ma}
 
 
 def market_open():
