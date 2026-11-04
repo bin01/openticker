@@ -185,7 +185,7 @@ function askShell(){
   for(const [id,kind] of [["askProv","agent"],["askMod","model"]]) $("#"+id).onclick=e=>{ e.stopPropagation(); const m=$("#askMenu"), was=!m.hidden&&m.dataset.kind===kind;
     hideMenus(); if(was) return; m.dataset.kind=kind; m.hidden=false;
     m.style.left=Math.max(10,e.currentTarget.getBoundingClientRect().left-el.getBoundingClientRect().left-6)+"px"; e.currentTarget.setAttribute("aria-expanded","true"); kind==="agent"?askProvMenu():askModelMenu(); };
-  el.addEventListener("click",e=>{ if(!e.target.closest(".ask-menu,#askProv,#askMod,.ctxchip")) hideMenus(); });
+  el.addEventListener("click",e=>{ if(!e.target.closest(".ask-menu,#askProv,#askMod,.ctxchip,#askAllPb")) hideMenus(); });
   tickGrip(el.querySelector(".ask-grip")); tickMove(el,el.querySelector(".ask-h"));
   $("#askB").addEventListener("scroll",e=>el.querySelector(".ask-h").classList.toggle("lined",e.target.scrollTop>4),{passive:true});
 }
@@ -317,7 +317,7 @@ function askPopUpdate(){
     const ql=tk.q.toLowerCase(), sk=(ASK.info?.skills||ASK_SKILLS_FALLBACK);
     const order={[ASK.ctx.scope]:0}; const all=[...sk].sort((a,b)=>(order[a.scope]??1)-(order[b.scope]??1));
     const gn={stock:ASK.ctx.scope==="stock"?`Playbooks for ${ASK.ctx.t}`:"Playbooks for a stock",portfolio:"Playbooks for your stocks",market:"Playbooks for the market"};
-    items=all.filter(s=>!ql||s.name.includes(ql)||s.label.toLowerCase().includes(ql)).slice(0,8).map(s=>({k:"skill",name:s.name,label:s.label,sub:s.blurb||(s.scope==="stock"&&ASK.ctx.scope!=="stock"?"Open a stock or type @ first":""),g:gn[s.scope],dis:s.scope==="stock"&&ASK.ctx.scope!=="stock"}));
+    items=all.filter(s=>!ql||s.name.includes(ql)||s.label.toLowerCase().includes(ql)).map(s=>({k:"skill",name:s.name,label:s.label,sub:s.scope==="stock"&&ASK.ctx.scope!=="stock"?"Open a stock first, or type @ and a ticker":s.blurb||"",g:gn[s.scope],dis:s.scope==="stock"&&ASK.ctx.scope!=="stock"}));
     if("new".startsWith(ql)) items.push({k:"new",label:"New conversation",sub:"Start fresh. This one stays in history",g:"Conversation"});
   }
   if(!items.length){ hidePop(); return; }
@@ -397,7 +397,8 @@ function askRender(){
       <p class="tk-sub">I read OpenTicker's live numbers and think with ${p?esc(askAgentName(p)):"your own AI agent"}. Ask anything, or start here.</p>
       ${N.length?`<div class="notes">${N.map((n,i)=>`<button class="nt" data-nt="${i}"><i class="${n.dir||""}"></i><span>${n.text}</span><em>${esc(n.act)}${ic("chevr",12)}</em></button>`).join("")}</div>`:""}
       <div class="tk-lab">${c.scope==="stock"?`Playbooks for ${esc(c.t)}`:c.scope==="portfolio"?"Playbooks for your stocks":"Playbooks for the market"}</div>
-      <div class="pbs">${S.map(s=>`<button class="pb" data-ask-skill="${esc(s.name)}" title="${esc(s.blurb||"")}">${esc(s.label)}</button>`).join("")}</div></div>`;
+      <div class="pbs">${S.map(s=>`<button class="pb" data-ask-skill="${esc(s.name)}" title="${esc(s.blurb||"")}">${esc(s.label)}</button>`).join("")}${(()=>{ const n=(ASK.info?.skills||ASK_SKILLS_FALLBACK).length; return n>S.length?`<button class="pb pball" id="askAllPb" title="Or type / in the box below">All ${n} playbooks${ic("chevr",12)}</button>`:""; })()}</div></div>`;
+    const AP=$("#askAllPb"); if(AP) AP.onclick=()=>{ const Q=$("#askQ"); Q.value="/"; Q.focus(); Q.setSelectionRange(1,1); askPopUpdate(); };
     ASK.notes=N; return;
   }
   let lastCtx=null;
