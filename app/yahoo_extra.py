@@ -409,13 +409,15 @@ def macro_daily():
 def macro_intraday():
     syms = [m[0] for m in MACRO] + [s[0] for s in SECTOR_ETFS]
     close = _series(syms, "1d", "5m")
-    last, spark = {}, {}
+    last, spark, day = {}, {}, {}
     for c in close.columns:
         s = close[c].dropna()
         if len(s):
             last[c] = clean(float(s.iloc[-1]))
             spark[c] = [clean(round(float(v), 4)) for v in s.tolist()]
-    return {"last": last, "spark": spark}
+            t = s.index[-1]
+            day[c] = (t.tz_convert(NY) if t.tzinfo else t).strftime("%Y-%m-%d")   # which session the last price is from
+    return {"last": last, "spark": spark, "day": day}
 
 
 # Stock index futures trade almost around the clock (Sunday 6 pm to Friday 5 pm New York time, with an hour's

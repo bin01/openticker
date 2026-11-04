@@ -95,8 +95,12 @@ function macroView(){
   const out={};
   for(const sym of Object.keys(d.px)){
     const a=d.px[sym]; let i=n-1; while(i>=0&&a[i]==null) i--; if(i<0) continue;
-    const todayRow=d.dates[i]===today, lastPx=last[sym]??a[i];
-    let p=todayRow?i-1:i; while(p>=0&&a[p]==null) p--;
+    // Yahoo can leave today's daily bar empty for a while, so the intraday last stands in for it. Before today's
+    // first trade (after midnight, on weekends) the intraday bars are the last session's: then compare that
+    // session with the day before, not with itself
+    const todayRow=d.dates[i]===today, liveToday=m.intraday?.day?.[sym]?m.intraday.day[sym]===today:true;
+    const lastPx=todayRow||liveToday?last[sym]??a[i]:a[i];
+    let p=todayRow||!liveToday?i-1:i; while(p>=0&&a[p]==null) p--;
     const prev=p>=0?a[p]:null;
     const rets={"1D":prev?lastPx/prev-1:null};
     for(const h of ["1W","1M","3M","YTD","1Y"]){ const s=startIndex(d.dates,h), f=firstValid(a,s); rets[h]=f?lastPx/f.v-1:null; }
@@ -117,12 +121,13 @@ function spyBreadth(){
 }
 function myToday(){
   if(!me) return null;
-  const pos=positionsAgg(); let V=0,D=0; const moves=[];
-  pos.forEach(p=>{ const F=facts(p.t); const last=lastValid(base.px[p.t]||[]); if(last==null) return; V+=last*p.shares; if(F?.chg!=null){ const prev=last/(1+F.chg); D+=(last-prev)*p.shares; } });
+  const pos=positionsAgg(); let V=0,D=0,XD=null,xLab=null; const moves=[];
+  pos.forEach(p=>{ const F=facts(p.t); const last=lastValid(base.px[p.t]||[]); if(last==null) return; V+=last*p.shares; if(F?.chg!=null){ const prev=last/(1+F.chg); D+=(last-prev)*p.shares; }
+    const x=extOf(p.t); if(x){ XD=(XD||0)+(x.p-last)*p.shares; xLab=x.lab; } });
   const syms=[...new Set([...me.watch,...pos.map(p=>p.t)])];
-  syms.forEach(t=>{ const F=facts(t); if(F?.chg!=null) moves.push({t,chg:F.chg,last:F.last}); });
+  syms.forEach(t=>{ const F=facts(t); if(F?.chg!=null) moves.push({t,chg:F.chg,last:F.last,x:extOf(t)}); });
   moves.sort((a,b)=>Math.abs(b.chg)-Math.abs(a.chg));
-  return {V,D,dayPct:V-D?D/(V-D):null,moves,hasPos:pos.length>0,count:syms.length};
+  return {V,D,dayPct:V-D?D/(V-D):null,moves,hasPos:pos.length>0,count:syms.length,XD,xLab};
 }
 function overnightInsight(v){
   const ov=xpeek("macro")?.data?.overnight; if(!ov?.q||v.status?.status==="open") return null;
@@ -134,9 +139,17 @@ function overnightInsight(v){
   const rest=[["YM=F","the Dow"],["RTY=F","small caps"]].filter(([k])=>f(k)!=null).map(([k,n])=>`${n} ${pct(f(k))}`);
   return {tone:cls(lead),html:`<b>Futures point to ${dir}.</b> ${when}, S&amp;P 500 futures are ${ud(es)}${nq!=null?` and Nasdaq futures ${ud(nq)}`:""}${rest.length?`; ${rest.join(", ")}`:""}.${ov.trading?"":" Futures are paused right now, so these are the last trades."}`};
 }
+function extInsight(){
+  const spy=base?.funds?.SPY?.holdings; if(!spy) return null;
+  const xs=spy.map(h=>({t:h.t,x:extOf(h.t)})).filter(o=>o.x&&Math.abs(o.x.chg)>=0.02).sort((a,b)=>Math.abs(b.x.chg)-Math.abs(a.x.chg));
+  if(!xs.length) return null;
+  const lab=xs[0].x.lab, top=xs.slice(0,5);
+  return {tone:"",html:`<b>${lab}, the biggest S&amp;P 500 movers:</b> ${top.map(o=>`<a href="#" data-sel="${o.t}">${o.t}</a> ${pct(o.x.chg,1)}`).join(", ")}${xs.length>top.length?`, and ${xs.length-top.length} more moving 2% or more`:""}. These trades are thinner than the regular session, so moves can shift by the open.`};
+}
 function marketInsights(v){
   const q=v.q, ins=[], open=v.status?.status==="open", verb=open?"is":"was";
   const ovl=overnightInsight(v); if(ovl) ins.push(ovl);
+  const exl=extInsight(); if(exl) ins.push(exl);
   const sp=q["^GSPC"], nd=q["^IXIC"], rt=q["^RUT"];
   if(sp){ const r=sp.rets["1D"]; const dir=r>0.002?"higher":r<-0.002?"lower":"little changed";
     ins.push({tone:cls(r),html:`<b>Stocks ${open?"are":"closed"} ${dir}.</b> The S&amp;P 500 ${verb} ${pct(r)}${nd?`, the Nasdaq ${pct(nd.rets["1D"])}`:""}${rt?` and small caps ${pct(rt.rets["1D"])}`:""}.`}); }
@@ -196,7 +209,8 @@ function renderMarket(){
   const my=myToday();
   $("#mMine").innerHTML=!my||!my.count?`<p class="hint">Add stocks to your watchlist or portfolio to see them here.</p><button class="btn ghost" data-page="mine">Go to My stocks</button>`:
     `${my.hasPos?`<div class="mval"><b>${money(my.V)}</b><span class="${cls(my.D)}">${my.D>=0?"+":"−"}${money(Math.abs(my.D))} · ${pct(my.dayPct)}</span></div>`:""}
-     <ul class="mlist">${my.moves.slice(0,5).map(x=>`<li data-sel="${x.t}"><b class="mono">${x.t}</b><span class="num">${money(x.last)}</span><span class="num ${cls(x.chg)}">${pct(x.chg,1)}</span></li>`).join("")}</ul>
+     ${my.hasPos&&my.XD!=null?`<div class="mx">${ic(my.xLab==="Pre-market"?"sun":"moon",12)}${my.xLab} <span class="num ${cls(my.XD)}">${my.XD>=0?"+":"−"}${money(Math.abs(my.XD))} · ${pct(my.V?my.XD/my.V:null)}</span></div>`:""}
+     <ul class="mlist">${my.moves.slice(0,5).map(x=>`<li data-sel="${x.t}"><b class="mono">${x.t}</b><span class="num">${money(x.last)}</span><span class="num ${cls(x.chg)}">${pct(x.chg,1)}${x.x?`<span class="xh" title="${x.x.lab} ${money(x.x.p)} at ${extTime(x.x.ts)}">${ic(x.x.s==="pre"?"sun":"moon",10)} <span class="${cls(x.x.chg)}">${pct(x.x.chg,1)}</span></span>`:""}</span></li>`).join("")}</ul>
      ${(()=>{ const b=briefItems().filter(x=>x.kind!=="move"); return b.length?`<div class="lbl" style="margin-top:16px">From your brief</div>${briefRows(b.slice(0,3))}<a class="lnk" href="#mine" data-page="mine" style="margin-top:6px">Open your brief ›</a>`:""; })()}`;
   // tiles
   $("#mTiles").innerHTML=TILE_GROUPS.map(([g,syms])=>`<div class="tgrp" style="--n:${syms.filter(s=>v.q[s]).length}"><div class="lbl">${g}</div><div class="tiles">${syms.filter(s=>v.q[s]).map(s=>{ const t=tileValue(s,v), col=t.c==null?"var(--ink-3)":t.c>=0?"var(--up)":"var(--down)";

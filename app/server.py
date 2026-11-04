@@ -259,6 +259,8 @@ class State:
         self.stream_status = "starting"
         self.sectors = load_sectors()
         self.extras: list[str] = []   # tickers opened from search that aren't in any fund
+        self.ext: dict = {}           # pre-market and after-hours trades: sym -> (price, unix time, "pre"|"post", NY date)
+        self.last_ext_tick = 0.0
 
     def tickers(self):
         s = set(FUNDS) | set(self.extras) | set(personal.all_symbols())
@@ -399,12 +401,45 @@ class State:
             if day == self.dates[-1]:
                 self.px[sym][-1] = round(float(price), 4)
 
+    def apply_ext(self, sym, price, ts):
+        """A trade outside the regular session. Only pre-market (4 to 9:30) and after hours (4 to 8 pm) count."""
+        if price is None or sym not in self.px:
+            return
+        when = dt.datetime.fromtimestamp(ts, NY)
+        sess = ext_session(when)
+        if not sess:
+            return
+        old = self.ext.get(sym)
+        if old and old[1] > ts:
+            return
+        self.ext[sym] = (round(float(price), 4), int(ts), sess, when.strftime("%Y-%m-%d"))
+
+    def ext_view(self):
+        """The extended-hours prices that matter right now, Yahoo style: pre-market before the open, after hours
+        from the close until the next pre-market, nothing during the regular session. Change is from the last close."""
+        now = dt.datetime.now(NY)
+        weekday = now.weekday() < 5
+        if weekday and dt.time(9, 30) <= now.time() < dt.time(16, 0) or not self.dates:
+            return {}
+        pre_now = weekday and dt.time(4, 0) <= now.time() < dt.time(9, 30)
+        today, last_day = now.strftime("%Y-%m-%d"), self.dates[-1]
+        out = {}
+        for sym, (p, ts, sess, day) in self.ext.items():
+            if (sess, day) != (("pre", today) if pre_now else ("post", last_day)):
+                continue
+            a = self.px.get(sym) or []
+            close = a[-1] if a else None
+            if close:
+                out[sym] = [p, ts, sess, round(p / close - 1, 6)]
+        return out
+
     def snapshot_live(self):
         with self.lock:
             return {
                 "v": self.version,
                 "date": self.dates[-1] if self.dates else None,
                 "last": {t: a[-1] for t, a in self.px.items() if a},
+                "ext": self.ext_view(),
                 "lastTick": self.last_tick,
                 "ticks": self.ticks,
                 "stream": self.stream_status,
@@ -425,6 +460,14 @@ class State:
             }
 
 
+def ext_session(when):
+    """'pre' or 'post' for a New York time inside those sessions on a weekday, else None."""
+    if when.weekday() >= 5:
+        return None
+    t = when.time()
+    return "pre" if dt.time(4, 0) <= t < dt.time(9, 30) else "post" if dt.time(16, 0) <= t < dt.time(20, 0) else None
+
+
 S = State()
 
 
@@ -432,9 +475,12 @@ def stream_loop():
     """Yahoo streaming quotes. Reconnects forever."""
     def on_msg(m):
         try:
-            if m.get("market_hours") != 1:      # regular session only
-                return
             ts = int(m.get("time", 0)) / 1000
+            if m.get("market_hours") != 1:      # pre-market or after hours: kept apart from the daily close
+                with S.lock:
+                    S.apply_ext(m["id"], m.get("price"), ts)
+                S.last_ext_tick = time.time()
+                return
             day = dt.datetime.fromtimestamp(ts, NY).strftime("%Y-%m-%d")
             S.apply_price(m["id"], m.get("price"), day)
             S.last_tick = time.time()
@@ -484,6 +530,41 @@ def poll_loop():
                 log("polled prices (stream quiet)")
         except Exception as e:
             log(f"poll failed: {e!r}")
+
+
+def ext_poll():
+    """Pre-market and after-hours prices for everything, from one-minute bars that include extended hours."""
+    df = download_closes(S.tickers(), period="1d", interval="1m", prepost=True)
+    n = 0
+    with S.lock:
+        for sym in df.columns:
+            col = df[sym].dropna()
+            if len(col):
+                S.apply_ext(sym, float(col.iloc[-1]), col.index[-1].timestamp())
+                n += 1
+    log(f"extended-hours prices for {n} symbols")
+
+
+def ext_loop():
+    """Fill in pre-market and after-hours prices once at start, then every ten minutes in those sessions
+    when the stream is quiet, and once more just after 8 pm so the final after-hours price is right."""
+    last, closing_done = 0.0, None
+    while True:
+        try:
+            now = dt.datetime.now(NY)
+            sess = ext_session(now)
+            day = now.strftime("%Y-%m-%d")
+            late = now.weekday() < 5 and dt.time(20, 2) <= now.time() < dt.time(21, 0) and closing_done != day
+            due = (not last and not market_open()) or late or \
+                (sess and time.time() - last > 600 and time.time() - S.last_ext_tick > 180)
+            if due:
+                last = time.time()
+                ext_poll()
+                if late:
+                    closing_done = day
+        except Exception as e:
+            log(f"extended-hours poll failed: {e!r}")
+        time.sleep(60)
 
 
 # ---------------------------------------------------------------- per-stock detail
@@ -764,16 +845,24 @@ def fetch_chart(sym, rng):
         h = h[keep]
         ma = {str(n): [None if v != v else round(float(v), 4) for v in a[keep].tolist()] for n, a in avgs.items()}
     else:
-        h = tk.history(period=period, interval=interval, auto_adjust=True, prepost=False).dropna(subset=["Close"])
+        # 1D includes pre-market and after hours, like Yahoo's day chart; only the latest day is kept
+        h = tk.history(period=period, interval=interval, auto_adjust=True, prepost=rng == "1D").dropna(subset=["Close"])
+        if rng == "1D" and len(h.index):
+            h = h[h.index.tz_convert(NY).date == h.index[-1].tz_convert(NY).date()]
     pts = [[int(ts.timestamp()), round(float(c), 4), int(v) if v == v else 0]
            for ts, c, v in zip(h.index, h["Close"].tolist(), h["Volume"].tolist())]
-    prev = None
+    prev, day = None, None
     if rng == "1D":
         md = tk.history_metadata or {}
         prev = md.get("chartPreviousClose") or md.get("previousClose")
+        if pts:
+            d = h.index[-1].tz_convert(NY)
+            at = lambda hh, mm: int(d.replace(hour=hh, minute=mm, second=0, microsecond=0).timestamp())
+            day = {"pre": at(4, 0), "open": at(9, 30), "close": at(16, 0), "post": at(20, 0),
+                   "last": jsonable(md.get("regularMarketPrice"))}   # the official regular-session price
     if not pts:
         raise ValueError("no bars")
-    return {"pts": pts, "intraday": interval.endswith("m"), "interval": interval, "prevClose": jsonable(prev), "ma": ma}
+    return {"pts": pts, "intraday": interval.endswith("m"), "interval": interval, "prevClose": jsonable(prev), "ma": ma, "day": day}
 
 
 def market_open():
@@ -783,7 +872,7 @@ def market_open():
 
 def chart_ttl(rng):
     if rng in ("1D", "5D"):
-        return 60 if market_open() else 30 * 60
+        return 60 if market_open() or ext_session(dt.datetime.now(NY)) else 30 * 60
     return 30 * 60
 
 
@@ -1828,6 +1917,7 @@ def main():
         if not args.no_stream:
             threading.Thread(target=stream_loop, daemon=True).start()
         threading.Thread(target=poll_loop, daemon=True).start()
+        threading.Thread(target=ext_loop, daemon=True).start()
         threading.Thread(target=sector_loop, daemon=True).start()
 
     threading.Thread(target=warm, daemon=True).start()

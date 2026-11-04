@@ -114,6 +114,14 @@ def _ytd(dates, arr):
     return arr[-1] / base - 1 if base else None
 
 
+def _trim(arr):
+    """Drop the empty rows Yahoo leaves at the end of a daily series before a day's first trade."""
+    arr = list(arr)
+    while arr and arr[-1] is None:
+        arr.pop()
+    return arr
+
+
 def _avg(arr, n):
     xs = [v for v in arr[-n:] if v is not None]
     return sum(xs) / len(xs) if len(xs) >= n * 0.8 else None
@@ -132,6 +140,13 @@ def price_lines(sym, bench="SPY"):
     r, rb = _ytd(dates, arr), _ytd(dates, b)
     rows.insert(5, ["YTD", _pct(r), _pct(rb), _pct(r - rb) if r is not None and rb is not None else "n/a"])
     out = [f"Last price ${last:,.2f} (session {dates[-1]})."]
+    with srv.S.lock:
+        x = srv.S.ext_view().get(sym)
+    if x:
+        lab = "Pre-market" if x[2] == "pre" else "After hours"
+        when = dt.datetime.fromtimestamp(x[1], srv.NY).strftime("%-I:%M %p")
+        out.append(f"{lab}: ${x[0]:,.2f}, {_pct(x[3])} from the last close, as of {when} New York time "
+                   "(thin trading outside the regular session; the open can differ).")
     a50, a200 = _avg(arr, 50), _avg(arr, 200)
     yr = [v for v in arr[-252:] if v is not None]
     bits = []
@@ -785,6 +800,14 @@ def portfolio_context(uid):
                          _pct(_ret(arr, 1)), _pct(_ret(arr, 21)), _pct(v / q["cost"] - 1)])
         L += ["## Portfolio", f"Value {_money(total)}, today {'+' if day >= 0 else '-'}{_money(abs(day))}, total gain {_pct(total / cost_all - 1)} on {_money(cost_all)} cost.", "",
               _table(["Ticker", "Shares", "Avg cost", "Price", "Value", "Weight", "1D", "1M", "Total gain"], rows)]
+        with srv.S.lock:
+            ext = srv.S.ext_view()
+        moves = [(t, ext[t]) for t in vals if t in ext]
+        if moves:
+            lab = "Pre-market" if moves[0][1][2] == "pre" else "After hours"
+            xd = sum(pos[t]["sh"] * (x[0] - vals[t] / pos[t]["sh"]) for t, x in moves)
+            L += ["", f"{lab} (thin trading, from the last close): portfolio {'+' if xd >= 0 else '-'}{_money(abs(xd))}; "
+                  + ", ".join(f"{t} ${x[0]:,.2f} {_pct(x[3])}" for t, x in sorted(moves, key=lambda m: -abs(m[1][3]))) + "."]
         sec = {}
         for t, v in vals.items():
             s = (srv.S.sectors.get(t) or {}).get("sector") if isinstance(srv.S.sectors.get(t), dict) else srv.S.sectors.get(t)
@@ -866,8 +889,8 @@ def market_context():
         dates, px = m["daily"]["dates"], m["daily"]["px"]
         rows = []
         for sym, (name, kind) in m["names"].items():
-            a = px.get(sym) or []
-            if a and a[-1] is not None:
+            a = _trim(px.get(sym) or [])
+            if a:
                 last = a[-1]
                 if kind == "rate":
                     ch = lambda n: f"{(last - a[-1 - n]):+.2f} pts" if len(a) > n and a[-1 - n] else "n/a"
@@ -877,8 +900,8 @@ def market_context():
         L += ["", "## Macro", _table(["Market", "Level", "1D", "1M"], rows)]
         rows = []
         for sym, name, _k in m.get("sectors") or []:
-            a = px.get(sym) or []
-            if a and a[-1] is not None:
+            a = _trim(px.get(sym) or [])
+            if a:
                 rows.append([name, sym, _pct(_ret(a, 1)), _pct(_ret(a, 5)), _pct(_ret(a, 21)), _pct(_ret(a, 63))])
         if rows:
             rows.sort(key=lambda r: -float(r[4].rstrip("%")) if r[4] != "n/a" else 0)
