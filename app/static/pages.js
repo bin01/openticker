@@ -247,19 +247,35 @@ function renderMarket(){
   const ec=xpeek("econ");
   $("#mEcon").innerHTML=!ec||ec.loading&&!ec.data?sk(300):ec.error?errBox(ec.error,"econ"):econList(ec.data.filter(e=>e.date>=shiftDays(nyToday(),-1)).slice(0,14),true);
 }
+/* the sector's S&P 500 companies that moved most over the chosen range, from prices already on hand */
+function sectorMovers(name){
+  const H=base?.funds?.SPY?.holdings||[], rows=[];
+  H.forEach(h=>{ if(base.sectors?.[h.t]!==name) return; const r=facts(h.t)?.rets?.[mktRange]; if(r!=null) rows.push({t:h.t,n:h.n,w:h.w,r}); });
+  if(rows.length<4) return "";
+  rows.sort((a,b)=>b.r-a.r);
+  const k=Math.min(6,Math.floor(rows.length/2)), up=rows.slice(0,k), down=rows.slice(-k).reverse();
+  const when=mktRange==="1D"?"today":mktRange==="YTD"?"this year":"over "+mktRange, sp=facts("SPY")?.rets?.[mktRange];
+  const li=x=>`<li data-sel="${esc(x.t)}"><b class="mono">${esc(x.t)}</b><span>${esc(niceName(x.n||""))}</span><span></span><span class="num ${cls(x.r)}">${pct(x.r,1)}</span></li>`;
+  const avg=rows.reduce((a,x)=>a+x.r,0)/rows.length, nUp=rows.filter(x=>x.r>0).length;
+  return `<p class="sdsum">${nUp} of ${rows.length} ${esc(name.toLowerCase())} companies in the S&amp;P 500 are up ${when}; the average one moved ${pct(avg,1)}${sp!=null?`, against ${pct(sp,1)} for the whole index`:""}.</p>
+    <div class="row even" style="gap:22px"><div><h4 class="h4">Leading ${when}</h4><ul class="clist">${up.map(li).join("")}</ul></div><div><h4 class="h4">Lagging ${when}</h4><ul class="clist">${down.map(li).join("")}</ul></div></div>`;
+}
 async function renderSectorDetail(){
   const el=$("#mSector"); if(!el) return;
   if(!sectorOpen){ el.innerHTML=""; return; }
+  const name=$(`[data-sector="${sectorOpen}"]`)?.dataset.sname||sectorOpen, mv=sectorMovers(name);
+  const head=desc=>`<div class="sdh"><div><h3>${esc(name)}</h3>${desc?`<p class="hint" style="margin:4px 0 0;max-width:80ch">${esc(desc)}</p>`:""}</div><button class="x" data-sector-close aria-label="Close sector">${ic("close",16)}</button></div>${mv}`;
   const c=xpeek("sector",{key:sectorOpen});
-  if(!c||c.loading&&!c.data){ el.innerHTML=`<div class="sdet">${sk(200)}</div>`; xget("sector",{key:sectorOpen}).then(()=>page==="market"&&renderSectorDetail()); return; }
-  if(c.error){ el.innerHTML=`<div class="sdet">${errBox(c.error,"sector",{key:sectorOpen})}</div>`; return; }
+  // the movers come from prices already loaded, so they show at once; Yahoo's sector profile fills in below
+  if(!c||c.loading&&!c.data){ el.innerHTML=`<div class="sdet">${head()}<div style="margin-top:16px">${sk(200)}</div></div>`; xget("sector",{key:sectorOpen}).then(()=>page==="market"&&renderSectorDetail()); return; }
+  if(c.error){ el.innerHTML=`<div class="sdet">${head()}<div style="margin-top:16px">${errBox(c.error,"sector",{key:sectorOpen})}</div></div>`; return; }
   const d=c.data, o=d.overview||{}, inds=d.industries||[], mxw=Math.max(...inds.map(i=>i.weight||0))||1;
-  const ic=industryOpen?xpeek("industry",{key:industryOpen}):null;
-  el.innerHTML=`<div class="sdet"><div class="sdh"><div><h3>${esc($(`[data-sector="${sectorOpen}"]`)?.dataset.sname||sectorOpen)}</h3><p class="hint" style="margin:4px 0 0;max-width:80ch">${esc(o.description||"")}</p></div><button class="x" data-sector-close aria-label="Close sector">${ic("close",16)}</button></div>
-    <div class="kf"><div><div class="lbl">Market value</div><div class="v">${big(o.market_cap)}</div></div><div><div class="lbl">Share of US market</div><div class="v">${o.market_weight!=null?pc(o.market_weight):"–"}</div></div><div><div class="lbl">Companies</div><div class="v">${o.companies_count?.toLocaleString("en-US")||"–"}</div><div class="ks">${o.industries_count||"?"} industries</div></div></div>
-    <div class="row even" style="margin-top:14px;gap:22px"><div><h4 class="h4">Industries by size</h4><div class="ibars">${inds.map(i=>`<button class="ibar ${industryOpen===i.key?"on":""}" data-industry="${esc(i.key)}"><span>${esc(i.name)}</span><i style="width:${((i.weight||0)/mxw*100).toFixed(1)}%"></i><b class="num">${i.weight!=null?pc(i.weight):""}</b></button>`).join("")}</div><p class="hint">Pick an industry for its best performers.</p></div>
-      <div><h4 class="h4">${industryOpen&&ic?.data?esc(inds.find(i=>i.key===industryOpen)?.name||"")+": best this year":"Largest companies · share of the sector"}</h4>${industryOpen?industryHTML(ic):`<ul class="clist">${(d.companies||[]).slice(0,14).map(x=>`<li data-sel="${esc(x.t)}"><b class="mono">${esc(x.t)}</b><span>${esc(x.n)}</span><span class="ks">${esc(x.rating||"")}</span><span class="num">${x.weight!=null?pc(x.weight):""}</span></li>`).join("")}</ul>`}</div></div></div>`;
-  if(industryOpen&&(!ic||ic.loading&&!ic.data)) xget("industry",{key:industryOpen}).then(()=>page==="market"&&renderSectorDetail());
+  const ind=industryOpen?xpeek("industry",{key:industryOpen}):null;   // not "ic": that's the icon helper
+  el.innerHTML=`<div class="sdet">${head(o.description)}
+    ${o.market_cap==null&&o.companies_count==null?"":`<div class="kf" style="margin-top:16px"><div><div class="lbl">Market value</div><div class="v">${big(o.market_cap)}</div></div><div><div class="lbl">Share of US market</div><div class="v">${o.market_weight!=null?pc(o.market_weight):"–"}</div></div><div><div class="lbl">Companies</div><div class="v">${o.companies_count?.toLocaleString("en-US")||"–"}</div><div class="ks">${o.industries_count||"?"} industries</div></div></div>`}
+    <div class="row even" style="margin-top:26px;gap:22px"><div><h4 class="h4">Industries by size</h4><div class="ibars">${inds.map(i=>`<button class="ibar ${industryOpen===i.key?"on":""}" data-industry="${esc(i.key)}"><span>${esc(i.name)}</span><i style="width:${((i.weight||0)/mxw*100).toFixed(1)}%"></i><b class="num">${i.weight!=null?pc(i.weight):""}</b></button>`).join("")}</div><p class="hint">Pick an industry for its best performers.</p></div>
+      <div><h4 class="h4">${industryOpen&&ind?.data?esc(inds.find(i=>i.key===industryOpen)?.name||"")+": best this year":"Largest companies · share of the sector"}</h4>${industryOpen?industryHTML(ind):`<ul class="clist">${(d.companies||[]).slice(0,14).map(x=>`<li data-sel="${esc(x.t)}"><b class="mono">${esc(x.t)}</b><span>${esc(x.n)}</span><span class="ks">${esc(x.rating||"")}</span><span class="num">${x.weight!=null?pc(x.weight):""}</span></li>`).join("")}</ul>`}</div></div></div>`;
+  if(industryOpen&&(!ind||ind.loading&&!ind.data)) xget("industry",{key:industryOpen}).then(()=>page==="market"&&renderSectorDetail());
 }
 function industryHTML(ic){
   if(!ic||ic.loading&&!ic.data) return sk(220);
