@@ -719,8 +719,9 @@ def cmd_shot(args):
     w, h = (390, 844) if phone else (1440, 900)
     try:
         r = subprocess.run([chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check",
-                            # never touch the keychain: a fresh or test HOME has none, and macOS would ask the person about it
-                            "--use-mock-keychain", "--password-store=basic",
+                            # never touch the keychain (a fresh or test HOME has none, and macOS would ask the person about it),
+                            # and skip animations so nothing is caught halfway through fading in
+                            "--use-mock-keychain", "--password-store=basic", "--force-prefers-reduced-motion",
                             f"--window-size={w},{h}", "--force-device-scale-factor=2", "--virtual-time-budget=9000",
                             f"--screenshot={path}", url] + (["--no-sandbox"] if os.geteuid() == 0 else []),
                            capture_output=True, text=True, timeout=120)
