@@ -40,10 +40,15 @@ function renderNav(){
 }
 function setFund(k){ fund=k; if(PAGE_FUNDS.funds.includes(k)){ fundFor.funds=k; save("fund",k); } else { fundFor.mine=k; save("fundMine",k); } }
 
-async function xget(name,params,force){
+function xget(name,params,force){
   const key=name+"|"+JSON.stringify(params||{}), c=X[key];
-  if(c&&!force&&(c.loading||Date.now()-c.at<(c.error?20e3:5*60e3))) return c;
-  X[key]={...(c||{}),loading:true};
+  // a request already on its way hands back that same answer when it comes; resolving straight away would let
+  // "show a placeholder, fetch, then draw again" run in a tight loop that never lets the fetch finish
+  if(c?.loading&&c.wait) return c.wait;
+  if(c&&!force&&!c.loading&&Date.now()-c.at<(c.error?20e3:5*60e3)) return Promise.resolve(c);
+  const wait=xfetch(key,name,params,c); X[key]={...(c||{}),loading:true,wait}; return wait;
+}
+async function xfetch(key,name,params,c){
   // Yahoo fails for a moment now and then: try again quietly before showing anything, and if it still fails,
   // keep trying in the background and fill the section in when it answers
   const once=async()=>{ try{ const r=await fetch(`/api/x/${name}?`+new URLSearchParams(params||{})); const d=await r.json();

@@ -1516,7 +1516,8 @@ function renderMatrix(){
 /* ======================= rotation quadrant ======================= */
 /* axis labels with just enough decimals that every gap reads the same (2.5% steps show as 2.5, 5.0, 7.5) */
 function tickPct(t,a){ const st=a.length>1?Math.abs(a[1]-a[0])*100:1; let d=0; while(d<2&&Math.abs(st*10**d-Math.round(st*10**d))>1e-6) d++; return pct(t,d); }
-function niceTicks(lo,hi,n){ const span=hi-lo,step0=span/n,mag=Math.pow(10,Math.floor(Math.log10(step0))); const step=[1,2,2.5,5,10].map(x=>x*mag).find(x=>span/x<=n)||mag*10; const out=[]; for(let v=Math.ceil(lo/step)*step;v<=hi+1e-12;v+=step) out.push(Math.abs(v)<1e-12?0:v); return out; }
+function niceTicks(lo,hi,n){ const span=hi-lo; if(!(span>0)||!isFinite(span)) return isFinite(lo)?[lo]:[];   // a flat or empty series would otherwise loop forever
+  const step0=span/n,mag=Math.pow(10,Math.floor(Math.log10(step0))); const step=[1,2,2.5,5,10].map(x=>x*mag).find(x=>span/x<=n)||mag*10; const out=[]; for(let v=Math.ceil(lo/step)*step;v<=hi+1e-12;v+=step) out.push(Math.abs(v)<1e-12?0:v); return out; }
 function renderRotation(){
   let pts=model.rows.filter(r=>!r.other&&r.ex["3M"]!=null&&r.ex["1M"]!=null);
   pts=pts.sort((a,b)=>b.w-a.w).slice(0,fund==="SPY"?60:40);
