@@ -25,7 +25,7 @@ Data, as Markdown (for you or any agent)
   openticker technicals NVDA         trend, moving averages, RSI, MACD, volume, support and resistance
   openticker portfolio               your positions, watchlist, upcoming earnings and brief
   openticker brief                   what changed for your stocks
-  openticker market                  SPY, QQQ, SMH, SOXX, sectors, macro and today's movers
+  openticker market                  SPY, QQQ, SMH, SPSM, sectors, macro and today's movers
   openticker fund SPY --h 1M         what drove a fund over 1D 1W 1M 3M 6M or 1Y
   openticker compare NVDA AMD        side by side
   openticker history NVDA SMH --h 3M daily closes, for charts
@@ -786,9 +786,9 @@ MCP_TOOLS = [
      {"ticker": TICKER, "section": {"type": "string", "enum": list(SECTIONS)}}, ["ticker", "section"]),
     ("portfolio", "The user's positions (with P&L), watchlist, upcoming earnings for them and what changed recently.", {}, []),
     ("brief", "What changed recently for the user's stocks: rating changes, target moves, insider trades, unusual options, earnings.", {}, []),
-    ("market", "Market overview: SPY, QQQ, SMH, SOXX, sector ETFs, rates, oil, dollar, VIX and today's biggest S&P 500 movers.", {}, []),
+    ("market", "Market overview: SPY, QQQ, SMH, SPSM (small caps), sector ETFs, rates, oil, dollar, VIX and today's biggest S&P 500 movers.", {}, []),
     ("fund", "Which holdings drove an index fund over a period.",
-     {"fund": {"type": "string", "description": "A fund on the Funds page: SPY, QQQ, SMH, SOXX or any you added"},
+     {"fund": {"type": "string", "description": "A fund on the Funds page: SPY, QQQ, SMH, SPSM or any you added"},
       "period": {"type": "string", "enum": ["1D", "1W", "1M", "3M", "6M", "1Y"]}}, ["fund"]),
     ("compare", "Two to five stocks side by side: returns, valuation, growth, analyst view.",
      {"tickers": {"type": "array", "items": TICKER, "minItems": 2, "maxItems": 5}}, ["tickers"]),

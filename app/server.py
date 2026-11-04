@@ -1,14 +1,14 @@
 """OpenTicker: live market dashboard with research, alerts and an AI agent layer.
 
-Serves a local web page that shows, for SPY, QQQ, SMH and SOXX, how each
+Serves a local web page that shows, for SPY, QQQ, SMH and SPSM, how each
 holding is performing against the fund over a chosen horizon and how much it
 contributed to the fund's return (start weight x return).
 
 Data:
   * Holdings and weights: the fund issuers' daily holdings files
-    (State Street for SPY, Invesco for QQQ, VanEck for SMH). iShares blocks
-    scripted downloads, so SOXX uses Yahoo's top-10 holdings and the rest of
-    the fund is shown as one "Other holdings" line.
+    (State Street for SPY and SPSM, Invesco for QQQ, VanEck for SMH). A fund
+    without a full file (iShares blocks scripted downloads) uses Yahoo's top-10
+    holdings and the rest of the fund shows as one "Other holdings" line.
   * Daily price history: Yahoo Finance via yfinance (split/dividend adjusted).
   * Live prices: Yahoo's streaming quote feed via yfinance.WebSocket, with a
     polling fallback if the stream goes quiet.
@@ -57,7 +57,7 @@ FUNDS = {
     "SPY": "SPDR S&P 500 ETF",
     "QQQ": "Invesco QQQ (Nasdaq-100)",
     "SMH": "VanEck Semiconductor ETF",
-    "SOXX": "iShares Semiconductor ETF (tracks SOX)",
+    "SPSM": "SPDR S&P 600 Small Cap ETF",
 }
 
 HOLDINGS_TTL = 12 * 3600      # refetch issuer files twice a day
@@ -121,9 +121,10 @@ def download_closes(syms, **kw):
 
 
 # ---------------------------------------------------------------- holdings
-def holdings_spy():
+def holdings_ssga(fund):
+    """Any SPDR fund: State Street's daily holdings file."""
     raw = curl("https://www.ssga.com/us/en/intermediary/library-content/products/"
-               "fund-data/etfs/us/holdings-daily-us-en-spy.xlsx")
+               f"fund-data/etfs/us/holdings-daily-us-en-{fund.lower()}.xlsx")
     head = pd.read_excel(io.BytesIO(raw), header=None, nrows=4)
     as_of = str(head.iloc[2, 1]).replace("As of ", "")
     df = pd.read_excel(io.BytesIO(raw), header=4)
@@ -171,7 +172,8 @@ def holdings_yahoo(fund):
 
 
 # Full holdings files from the issuers. A fund that isn't listed here uses holdings_yahoo.
-HOLDING_SOURCES = {"SPY": holdings_spy, "QQQ": holdings_qqq, "SMH": holdings_smh}
+HOLDING_SOURCES = {"SPY": lambda: holdings_ssga("SPY"), "SPSM": lambda: holdings_ssga("SPSM"),
+                   "QQQ": holdings_qqq, "SMH": holdings_smh}
 
 
 def load_holdings(force=False):
@@ -179,7 +181,7 @@ def load_holdings(force=False):
     old = {}
     if path.exists():
         old = json.loads(path.read_text())
-        if not force and time.time() - old.get("_fetched", 0) < HOLDINGS_TTL:
+        if not force and time.time() - old.get("_fetched", 0) < HOLDINGS_TTL and all(f in old for f in FUNDS):
             return old
     out = {"_fetched": time.time()}
     for fund in FUNDS:
@@ -376,7 +378,7 @@ class State:
         if not hist.get("dates") or not any(f in hold for f in FUNDS):
             return False
         with self.lock:
-            self.holdings = {k: v for k, v in hold.items() if not k.startswith("_")}
+            self.holdings = {k: v for k, v in hold.items() if k in FUNDS}
             self.dates, self.px = hist["dates"], hist["px"]
             self.history_fetched = hist.get("fetched") or 0.0
             self.version += 1
@@ -465,7 +467,7 @@ def poll_loop():
             open_ = now_ny.weekday() < 5 and dt.time(9, 30) <= now_ny.time() <= dt.time(16, 5)
             if time.time() - S.history_fetched > HISTORY_TTL:
                 old = S.holdings
-                S.holdings = {k: v for k, v in load_holdings().items() if not k.startswith("_")} or old
+                S.holdings = {k: v for k, v in load_holdings().items() if k in FUNDS} or old
                 S.load_history()
                 continue
             if open_ and time.time() - S.last_tick > POLL_FALLBACK and time.time() - S.last_poll > POLL_FALLBACK:
@@ -943,12 +945,12 @@ def reason_phrase(r):
 
 
 def peer_for(t):
-    """The group a stock moves with: chip stocks for anything in SMH or SOXX, otherwise its sector fund.
+    """The group a stock moves with: chip stocks for anything in SMH, otherwise its sector fund.
     Returns (label, closes) or None."""
     if t in FUNDS or any(t == e for e, _, _ in X.SECTOR_ETFS):
         return None
     with S.lock:
-        if any(h["t"] == t for f in ("SMH", "SOXX") for h in S.holdings.get(f, {}).get("holdings", [])):
+        if any(h["t"] == t for f in ("SMH",) for h in S.holdings.get(f, {}).get("holdings", [])):
             a = S.px.get("SMH")
             return ("chip stocks", list(a[-3:]), "SMH") if a else None
         sector = str(S.sectors.get(t) or "").lower().replace(" ", "-")
@@ -1722,8 +1724,8 @@ def main():
     def warm():
         while True:
             try:
-                S.boot = "Getting what SPY, QQQ, SMH and SOXX hold"
-                S.holdings = {k: v for k, v in load_holdings().items() if not k.startswith("_")}
+                S.boot = "Getting what SPY, QQQ, SMH and SPSM hold"
+                S.holdings = {k: v for k, v in load_holdings().items() if k in FUNDS}
                 S.boot = f"Getting a year of daily prices for {len(S.tickers())} stocks and funds"
                 S.load_history()
                 break

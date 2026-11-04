@@ -108,7 +108,7 @@ function renderXray(){
   const mx=Math.max(...rows.map(r=>Math.max(r.me,r.m)),0.01);
   const ws=[...W.values()].sort((a,b)=>b-a), top1=ws[0]||0, top3=ws.slice(0,3).reduce((a,b)=>a+b,0), effN=1/ws.reduce((a,w)=>a+w*w,0);
   const overlap=k=>{ const fw=new Map(base.funds[k].holdings.map(h=>[h.t,h.w/100])); let s=0; names.forEach((w,t)=>s+=Math.min(w,fw.get(t)||0)); return s; };
-  const ov=["SPY","QQQ","SMH"].filter(k=>base.funds[k]).map(k=>({k,v:overlap(k)})).sort((a,b)=>b.v-a.v);
+  const ov=["SPY","QQQ","SMH","SPSM"].filter(k=>base.funds[k]).map(k=>({k,v:overlap(k)})).sort((a,b)=>b.v-a.v);
   const R=riskStats(base.px[fund]||[],base.px.SPY||[]);
   let income=null, val=0, payers=0;
   if(isP){ income=0; positionsAgg().forEach(p=>{ const last=lastValid(base.px[p.t]||[]); if(last==null) return; val+=last*p.shares; const i=detailCache[p.t]?.info||{}; const dr=i.dividendRate??(i.trailingAnnualDividendRate||0); if(dr){ income+=dr*p.shares; payers++; } }); }
