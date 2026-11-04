@@ -47,13 +47,13 @@ function renderSettings(){
   d.innerHTML=`<div class="shead"><h2>Settings</h2><button class="x" id="setClose" aria-label="Close settings">${ic("close",16)}</button><nav class="snav" aria-label="Settings sections">${SET_SECTIONS.map(([k,l])=>`<a href="#set-${k}" data-set-go="${k}">${l}</a>`).join("")}</nav></div>
   <div class="sbody">
   ${sec("look","Appearance",
-     setRow("Theme","Auto follows your Mac's light or dark setting.",setSeg("theme",[["auto","Auto"],["light","Light"],["dark","Dark"]],theme)))}
+     setRow("Theme","Auto follows your device's light or dark setting.",setSeg("theme",[["auto","Auto"],["light","Light"],["dark","Dark"]],theme)))}
   ${sec("tick","Tick",
      `<div class="srow col"><div class="sl"><b>Who Tick thinks with</b><small>An AI agent on your Mac, signed in with your own account.</small></div>
        <div class="sags">${P.map(p=>{ const on=cur?.id===p.id;
          return `<button type="button" class="sag${on?" on":""}" ${p.available?`data-set-agent="${p.id}"`:`data-set-setup="${p.id}"`} aria-pressed="${on}">${agentIcon(p.id,20)}<span><b>${esc(p.label)}</b><small>${esc(p.available?AG_SUB[p.id]||p.note:(ST[p.state]||["Not ready"])[0])}</small></span>${on?ic("check",15):p.available?"":`<em>Set up</em>`}</button>`; }).join("")}</div></div>`
      +(cur?setRow("Model",cur.id==="claude"?"Opus reads deepest. Sonnet and Haiku answer faster.":cur.id==="ollama"?"Models you've pulled into Ollama.":`Change it in ${esc(cur.label)}'s own settings.`,modelCtl):"")
-     +(ef!=null?setRow("Effort","How long Tick thinks before answering. Higher is more thorough and slower.",setSeg("effort",cur.efforts.map(e=>[e,EFFORT[e]||e]),ef),"wide"):"")
+     +(ef!=null?setRow("Effort","How long Tick thinks before answering. Higher is more thorough and slower.",setSeg("effort",[...(cur.effort?[]:[["","Default"]]),...cur.efforts.map(e=>[e,EFFORT[e]||e])],ef),"wide"):"")
      +setRow("Open Tick when OpenTicker starts",openPref===""?"Right now it opens on wide windows only.":"",setTgl("setOpen",openPref==="1"||(openPref===""&&innerWidth>=1280),"Open Tick at start"))
      +(innerWidth>760?setRow("Ask Tick button","The floating button in the corner when Tick's panel is closed.",setTgl("setFloat",floatOn,"Show the Ask Tick button"))
      +setRow("Side",`Or drag Tick's header across. Drag its inner edge to resize${ASK.w!==TICK_W0?`, or <button type="button" class="lnk" id="setW">reset the width</button>`:""}.`,setSeg("side",[["left","Left"],["right","Right"]],ASK.side)):""))}

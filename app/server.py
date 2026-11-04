@@ -207,16 +207,28 @@ def load_holdings(force=False):
 SECTORS_PATH = CACHE / "sectors.json"
 
 
+NAMES_PATH = CACHE / "names.json"   # company names for symbols outside the funds (positions, watchlist, search)
+
+
 def load_sectors():
     return json.loads(SECTORS_PATH.read_text()) if SECTORS_PATH.exists() else {}
+
+
+def load_names():
+    try:
+        return json.loads(NAMES_PATH.read_text()) if NAMES_PATH.exists() else {}
+    except Exception:
+        return {}
 
 
 def sector_loop():
     """Fill in GICS-style sectors from Yahoo once per symbol, slowly, and cache them."""
     time.sleep(5)
     while True:
-        known = load_sectors()
-        todo = [t for t in S.tickers() if t not in FUNDS and t not in known]
+        known, names = load_sectors(), load_names()
+        with S.lock:
+            held = {h["t"] for f in S.holdings.values() for h in f.get("holdings", [])}
+        todo = [t for t in S.tickers() if t not in FUNDS and (t not in known or (t not in held and t not in names))]
         if todo:
             log(f"looking up sectors for {len(todo)} symbols")
         added = 0
@@ -224,6 +236,8 @@ def sector_loop():
             try:
                 info = yf.Ticker(t).get_info()
                 known[t] = info.get("sector") or info.get("quoteType", "Other").title()
+                if t not in held and (info.get("longName") or info.get("shortName")):
+                    names[t] = info.get("longName") or info.get("shortName")
                 added += 1
             except Exception as e:
                 log(f"sector {t} failed: {e!r}")
@@ -231,13 +245,15 @@ def sector_loop():
             time.sleep(0.25)
             if added and added % 50 == 0:
                 SECTORS_PATH.write_text(json.dumps(known))
+                NAMES_PATH.write_text(json.dumps(names))
                 with S.lock:
-                    S.sectors = dict(known)
+                    S.sectors, S.names = dict(known), dict(names)
                     S.version += 1
         if added:
             SECTORS_PATH.write_text(json.dumps(known))
+            NAMES_PATH.write_text(json.dumps(names))
             with S.lock:
-                S.sectors = dict(known)
+                S.sectors, S.names = dict(known), dict(names)
                 S.version += 1
             log(f"sectors ready for {len(known)} symbols")
         time.sleep(6 * 3600)
@@ -258,6 +274,7 @@ class State:
         self.boot = "Starting up"   # what the first launch is doing, shown on the loading screen
         self.stream_status = "starting"
         self.sectors = load_sectors()
+        self.names = load_names()
         self.extras: list[str] = []   # tickers opened from search that aren't in any fund
         self.ext: dict = {}           # pre-market and after-hours trades: sym -> (price, unix time, "pre"|"post", NY date)
         self.last_ext_tick = 0.0
@@ -455,6 +472,7 @@ class State:
                 "dates": self.dates,
                 "px": self.px,
                 "sectors": self.sectors,
+                "names": self.names,
                 "extras": self.extras,
                 "historyFetched": self.history_fetched,
             }
@@ -841,6 +859,9 @@ def fetch_chart(sym, rng):
         last = h.index[-1] if len(h.index) else pd.Timestamp.now(tz=NY)
         start = (pd.Timestamp(year=last.year, month=1, day=1, tz=last.tz) if rng == "YTD"
                  else last.normalize() - pd.DateOffset(**RANGE_START[rng]))
+        before = h.index[h.index <= start]
+        if len(before):     # start from the last close on or before that date, the same base the rest of the app measures from
+            start = before[-1]
         keep = h.index >= start
         h = h[keep]
         ma = {str(n): [None if v != v else round(float(v), 4) for v in a[keep].tolist()] for n, a in avgs.items()}
@@ -1009,15 +1030,35 @@ LINK_BASE = ""
 HOST = "127.0.0.1"
 
 
+_SUFFIX = re.compile(r"[\s,]+(Inc|Corp|Corporation|Co|Cos|Company|Ltd|Plc|Lp|Nv|Sa|Ag|Holdings Inc)\.?$", re.I)
+
+
+def nice_name(n):
+    """'Costco Wholesale Corporation' -> 'Costco Wholesale', 'Procter + Gamble Co/The' -> 'Procter & Gamble', as the app shows them."""
+    n = re.sub(r"\s*\+\s*", " & ", re.sub(r"\s+", " ", str(n or "")).strip()).replace("/The", "")
+    m = re.search(r"\s+(?:Cl|Class)\s+([A-C])$", n)
+    cls = f" Class {m.group(1)}" if m else ""
+    n = n[:m.start()] if m else n
+    for _ in range(3):
+        n = _SUFFIX.sub("", n)
+    n = re.sub(r"\s*&$", "", n)
+    if n.isupper() and len(n) > 5:
+        n = n.title()
+    n = {"Jpmorgan Chase & Co": "JPMorgan Chase", "Jpmorgan Chase": "JPMorgan Chase", "Nvidia": "NVIDIA", "Amazon.Com": "Amazon.com"}.get(n, n)
+    return n + cls
+
+
 def symbol_names():
     names = {}
     for f in FUNDS:
         for h in S.holdings.get(f, {}).get("holdings", []):
             names.setdefault(h["t"], h["n"])
+    for t, n in S.names.items():
+        names.setdefault(t, n)
     for (kind, *rest), (_, val) in list(_detail_cache.items()):
         if kind == "info" and isinstance(val, dict) and val.get("longName"):
             names[rest[0]] = val["longName"]
-    return names
+    return {t: nice_name(n) for t, n in names.items()}
 
 
 def alerts_loop():
@@ -1121,7 +1162,10 @@ def peer_for(t):
         day = S.dates[-1] if S.dates else None
     etf = next(((e, n) for e, n, k in X.SECTOR_ETFS if k == sector), None)
     pair = _macro_pair(etf[0], day) if etf and day else None
-    return (f"{etf[1].lower()} stocks", pair, etf[0]) if pair else None
+    if not pair:
+        return None
+    word = {"Financials": "financial", "Industrials": "industrial", "Utilities": "utility", "Technology": "tech"}.get(etf[1], etf[1].lower())
+    return (f"{word} stocks", pair, etf[0])
 
 
 def _macro_pair(sym, day):
@@ -1479,9 +1523,11 @@ def brief(uid):
             dn = len(pts) - len(ups)
             items.append({"t": sym, "kind": "targets", "date": max(c["date"] for c in pts),
                           "tone": "" if (ups and dn and abs(avg) < 0.05) else "up" if avg > 0 else "down",
-                          "head": (f"{len(ups)} price-target raise{'s' if len(ups) != 1 else ''}" if ups else "")
-                                  + (" and " if ups and dn else "") + (f"{dn} cut{'s' if dn != 1 else ''}" if dn else ""),
-                          "text": f"in two weeks, {avg * 100:+.0f}% on average. Latest: {pts[0].get('firm')} to ${pts[0]['pt']:,.0f}",
+                          "head": ("Price target " + ("raised" if ups else "cut") if len(pts) == 1 else
+                                   (f"{len(ups)} price target raise{'s' if len(ups) != 1 else ''}" if ups else "")
+                                   + (" and " if ups and dn else "") + (f"{dn} cut{'s' if dn != 1 else ''}" if dn else "")),
+                          "text": (f"{avg * 100:+.0f}% to ${pts[0]['pt']:,.0f}, by {pts[0].get('firm')}" if len(pts) == 1 else
+                                   f"in two weeks, {avg * 100:+.0f}% on average. Latest: {pts[0].get('firm')} to ${pts[0]['pt']:,.0f}"),
                           "tab": "analysts", "score": min(74, 52 + 3 * len(pts) + 60 * abs(avg))})
         et = (a.get("eps_trend") or {}).get("0y") or {}
         if et.get("current") and et.get("30daysAgo"):

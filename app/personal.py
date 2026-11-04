@@ -316,7 +316,7 @@ def evaluate(uid, px, dates, names, earnings, link_base="", explain=None):
                 d = e["date"][:10]
                 if d in (day, _next_day(day)) and e.get("reported") is None:
                     when = {"BMO": "before the open", "AMC": "after the close"}.get(e.get("timing"), "")
-                    est = f" EPS estimate ${e['epsEst']:.2f}." if e.get("epsEst") is not None else ""
+                    est = f" Analysts expect ${e['epsEst']:.2f} a share." if e.get("epsEst") is not None else ""
                     when_day = "today" if d == day else "tomorrow"
                     fire(rule, t, f"{t} reports {when_day}",
                          f"{nm} reports earnings {when_day}{' ' + when if when else ''}.{est}", d)

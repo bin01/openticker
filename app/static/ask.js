@@ -659,7 +659,10 @@ function chartSVG(c,W){
   const X=i=>L+(n<2?0:i/(n-1)*(W-L-R)), Y=v=>T+(hi-v)/(hi-lo)*(H-T-B);
   const single=S.length===1, f=S[0].values.find(v=>v!=null), l=[...S[0].values].reverse().find(v=>v!=null), dirCol=l>=f?"var(--up)":"var(--down)";
   let g=ticks.map(t=>`<line x1="${L}" x2="${W-R}" y1="${Y(t)}" y2="${Y(t)}" class="${t===0?"ch-0":"ch-g"}"/><text x="${L-6}" y="${Y(t)+3.5}" text-anchor="end" class="ch-a">${chFmt(t,u,true)}</text>`).join("");
-  const xi=[...new Set([0,Math.round((n-1)/3),Math.round(2*(n-1)/3),n-1])].filter(i=>i>=0&&i<n);
+  // evenly spaced dates: as many as fit, always a whole step apart, so labels never bunch in pairs
+  const lw=Math.max(...c.x.map(x=>String(chDate(x)).length))*6.4+14, fit=Math.max(2,Math.floor((W-L-R)/lw)+1);
+  const step=n<=fit?1:Math.ceil((n-1)/(fit-1)), xi=[]; for(let i=0;i<n;i+=step) xi.push(i);
+  if(xi[xi.length-1]!==n-1){ if((n-1-xi[xi.length-1])<step*0.6) xi.pop(); xi.push(n-1); }
   g+=xi.map((i,k)=>`<text x="${X(i)}" y="${H-6}" text-anchor="${k===0?"start":i===n-1?"end":"middle"}" class="ch-a">${esc(chDate(c.x[i]))}</text>`).join("");
   const ends=[];
   S.forEach((s,k)=>{ const col=single?dirCol:CH_COL[k]; let d="", pen=false;

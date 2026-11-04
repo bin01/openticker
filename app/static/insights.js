@@ -31,7 +31,7 @@ function priceItems(){
     if(F.ma200){ for(let back=0;back<3;back++){ const k=a.length-1-back; if(a[k]==null||a[k-1]==null) continue;
       const ma=(j)=>{ let s=0,n=0; for(let i=j;i>j-200&&i>=0;i--) if(a[i]!=null){s+=a[i];n++;} return n>150?s/n:null; };
       const m0=ma(k-1), m1=ma(k); if(m0&&m1&&Math.sign(a[k]-m1)!==Math.sign(a[k-1]-m0)){ const up=a[k]>m1;
-        out.push({t,kind:"ma",tone:up?"up":"down",date:base.dates[k],score:50,head:`Crossed ${up?"above":"below"} its 200-day average`,text:`a common line between an uptrend and a downtrend (${money(m1)})`,tab:"overview",short:`${t} ${up?"above":"below"} its 200-day`}); break; } } }
+        out.push({t,kind:"ma",tone:up?"up":"down",date:base.dates[k],score:50,head:`Crossed ${up?"above":"below"} its 200-day average`,text:`at ${money(m1)}, the line that often separates an uptrend from a downtrend`,tab:"overview",short:`${t} ${up?"above":"below"} its 200-day`}); break; } } }
     const e=EARN[t];
     if(e&&e.reported!=null&&e.date>=shiftDays(today,-3)&&e.date<=today){ const rx=reaction(t,e.date,e.timing==="BMO"?9:16);
       out.push({t,kind:"reported",tone:cls(e.surprise),date:e.date,score:82,head:e.surprise==null?"Reported earnings":`${e.surprise>=0?"Beat":"Missed"} earnings estimates by ${pc(Math.abs(e.surprise)/100,0)}`,
@@ -50,8 +50,9 @@ function briefItems(){
   return all.sort((a,b)=>(b.score-a.score)||String(b.date).localeCompare(String(a.date)));
 }
 function whenLabel(x){ const today=nyToday(); if(x.future) return dayLabel(x.date); if(x.date===today) return "Today"; return dayLabel(x.date); }
+const minus=t=>String(t??"").replace(/(^|[\s(,])-(?=\$?\d)/g,"$1−");   // a real minus sign in server-written text
 function briefRows(items){
-  return `<ul class="brief">${items.map(x=>`<li class="${x.tone||""}"><button class="bl" data-open="${esc(x.t)}" data-open-tab="${esc(x.tab||"")}"><i aria-hidden="true"></i><b class="btk">${esc(x.t)}</b><span class="bt"><b>${esc(x.head)}</b>${x.text?` <span>${esc(x.text)}</span>`:""}</span><span class="bw">${esc(whenLabel(x))}</span></button></li>`).join("")}</ul>`;
+  return `<ul class="brief">${items.map(x=>`<li class="${x.tone||""}"><button class="bl" data-open="${esc(x.t)}" data-open-tab="${esc(x.tab||"")}"><i aria-hidden="true"></i><b class="btk">${esc(x.t)}</b><span class="bt"><b>${esc(minus(x.head))}</b>${x.text?` <span>${esc(minus(x.text))}</span>`:""}</span><span class="bw">${esc(whenLabel(x))}</span></button></li>`).join("")}</ul>`;
 }
 function renderBrief(){
   const el=$("#s-brief"); if(!el) return;
@@ -72,13 +73,14 @@ document.addEventListener("click",e=>{
 setInterval(()=>{ if(!document.hidden&&(page==="mine"||page==="market")&&me) loadBrief(); },4e3);
 
 /* ======================= Portfolio X-ray ======================= */
-function sectorOf(t){ return base.sectors?.[t]||detailCache[t]?.info?.sector||null; }
+function sectorOf(t){ const s=base.sectors?.[t]||detailCache[t]?.info?.sector||null; return s==="ETF"?"Funds":SECTOR_NAME[s]||s; }
 function fundSectorMix(f){ const m=new Map(); (base.funds[f]?.holdings||[]).forEach(h=>{ const s=sectorOf(h.t)||"Other"; m.set(s,(m.get(s)||0)+h.w/100); }); return m; }
-/* your exposure, looking through any of the four funds you hold */
+/* your exposure, looking through any of the four funds you hold, and the common twins that track the same index */
+const SAME_INDEX={VOO:"SPY",IVV:"SPY",SPLG:"SPY",SPYM:"SPY",QQQM:"QQQ",IJR:"SPSM",VIOO:"SPSM",SLY:"SPSM"};
 function lookThrough(weights){
   const sec=new Map(), names=new Map();
   weights.forEach((w,t)=>{
-    const f=base.funds[t]&&!isPseudo(t)?t:null;
+    const f=base.funds[t]&&!isPseudo(t)?t:base.funds[SAME_INDEX[t]]?SAME_INDEX[t]:null;
     if(f){ base.funds[f].holdings.forEach(h=>{ names.set(h.t,(names.get(h.t)||0)+w*h.w/100); const s=sectorOf(h.t)||"Other"; sec.set(s,(sec.get(s)||0)+w*h.w/100); }); return; }
     names.set(t,(names.get(t)||0)+w);
     const s=sectorOf(t)||(detailCache[t]?.info?.quoteType==="ETF"?"Other funds":"Unclassified"); sec.set(s,(sec.get(s)||0)+w);
@@ -118,15 +120,15 @@ function renderXray(){
   if(over) ins.push({tone:"",html:`<b>Tilted toward ${esc(over.s.toLowerCase())}:</b> ${pc(over.me,0)} of ${what} versus ${pc(over.m,0)} of the S&amp;P 500${over.m>0.01?`, about ${(over.me/over.m).toFixed(1)}× the market's weight`:""}.${under?` Lightest versus the market in ${esc(under.s.toLowerCase())} (${pc(under.me,0)} vs ${pc(under.m,0)}).`:""}`});
   if(R) ins.push({tone:R.beta>1.3?"down":R.beta<0.8?"up":"",html:`<b>${R.beta>1.3?"More volatile than the market":R.beta<0.8?"Calmer than the market":"Moves with the market"}:</b> a beta of ${R.beta.toFixed(2)} means a 1% move in the S&amp;P 500 has come with about a ${R.beta.toFixed(1)}% move in ${what}. Its worst drop in the past year was ${pc(R.dd,0)}.`});
   if(ws.length<=4) ins.push({tone:top1>0.35?"down":"",html:`<b>${ws.length} positions</b>, the largest at ${pc(top1,0)}${isP?" of the value":""}. ${top1>0.35?"One stock drives much of your result, so its news matters most.":"Fairly even sizes."}`});
-  else ins.push({tone:top3>0.6?"down":"",html:`<b>${top3>0.6?"Concentrated":top3>0.4?"Moderately concentrated":"Well spread"}:</b> the top three positions are ${pc(top3,0)}${isP?" of the value":""}, which behaves like ${effN.toFixed(1)} equal-sized holdings.`});
+  else ins.push({tone:top3>0.6?"down":"",html:`<b>${top3>0.6?"Concentrated":top3>0.4?"Moderately concentrated":"Well spread"}:</b> the top three positions are ${pc(top3,0)}${isP?" of the value":""}, about as spread out as ${Math.round(effN)} equal-sized positions.`});
   if(ov[0]) ins.push({tone:"",html:`<b>${pc(ov[0].v,0)} overlaps with ${ov[0].k}</b>, counting the stocks inside any funds you hold.${ov[0].v>0.6?` Much of ${what} could be replicated with the fund.`:""}`});
   if(isP&&income!=null&&val) ins.push({tone:"",html:income?`<b>About ${money(income)} a year in dividends</b>, a ${pc(income/val,2)} yield, from ${payers} of ${positionsAgg().length} positions.`:"<b>No dividend income</b> from these positions."});
   const stat=(l,v,k,c="")=>`<div><div class="lbl">${l}</div><div class="v ${c}">${v}</div>${k?`<div class="ks">${k}</div>`:""}</div>`;
   el.innerHTML=`<div class="ph"><div><h2>${isP?"Portfolio":"Watchlist"} X-ray</h2><div class="hint">${isP?"Weighted by value.":"Equal weight."} Funds you hold are looked through to the stocks inside them. Risk uses the last year of daily prices against the S&amp;P 500.</div></div></div>
     <div class="xray"><div>${insightList(ins)}
       <div class="kf">${R?stat("Beta",R.beta.toFixed(2),"vs S&amp;P 500")+stat("Volatility",pc(R.vol,0),`a year; market ${pc(R.volM,0)}`)+stat("Worst drop",pc(R.dd,0),"past year","down"):""}${stat("Largest position",pc(top1,0),ws.length>3?`top 3: ${pc(top3,0)}`:`of ${ws.length} positions`)}${ov[0]?stat("Most overlap",`${pc(ov[0].v,0)}`,`with ${ov[0].k}${ov[1]?`; ${ov[1].k} ${pc(ov[1].v,0)}`:""}`):""}${isP&&income!=null?stat("Dividend income",income?money(income):"$0",val&&income?`${pc(income/val,2)} yield`:""):""}</div></div>
-      <div><h4 class="h4">Sector mix vs the S&amp;P 500</h4><div class="xs">${rows.map(r=>{ const d=r.me-r.m; return `<div class="xr"><span class="xn">${esc(r.s)}</span><span class="xb"><i class="me" style="width:${(r.me/mx*100).toFixed(1)}%"></i><i class="mk" style="width:${(r.m/mx*100).toFixed(1)}%"></i></span><span class="num xv">${pc(r.me,0)}</span><span class="num xd ${Math.abs(d)<0.02?"":d>0?"up":"down"}">${Math.abs(d)<0.005?"=":(d>0?"+":"−")+Math.round(Math.abs(d)*100)}</span></div>`; }).join("")}</div>
-      <div class="legend" style="margin-top:8px"><span><i class="sw" style="background:var(--accent)"></i>${isP?"Your portfolio":"Your watchlist"}</span><span><i class="sw" style="background:var(--ink-3);opacity:.5"></i>S&amp;P 500</span><span class="ks">right column: difference in points</span></div></div></div>`;
+      <div><h4 class="h4">Sector mix vs the S&amp;P 500</h4><div class="xs">${rows.map(r=>{ const d=r.me-r.m; return `<div class="xr"><span class="xn">${esc(r.s)}</span><span class="xb"><i class="me" style="width:${(r.me/mx*100).toFixed(1)}%${r.me<0.005?";visibility:hidden":""}"></i><i class="mk" style="width:${(r.m/mx*100).toFixed(1)}%"></i></span><span class="num xv">${pc(r.me,0)}</span><span class="num xd ${Math.abs(d)<0.02?"":d>0?"up":"down"}">${Math.abs(d)<0.005?"=":(d>0?"+":"−")+Math.round(Math.abs(d)*100)}</span></div>`; }).join("")}</div>
+      <div class="legend" style="margin-top:8px"><span><i class="sw" style="background:var(--accent)"></i>${isP?"Your portfolio":"Your watchlist"}</span><span><i class="sw" style="background:var(--ink-3);opacity:.5"></i>S&amp;P 500</span><span class="ks">The number on the right is the difference, in percentage points.</span></div></div></div>`;
 }
 
 /* ======================= events on the price chart ======================= */
@@ -138,7 +140,7 @@ function chartEvents(t){
   const e=EARN[t]; if(e&&e.reported==null&&e.date>=today) ev.push({date:e.date,kind:"E",tone:"",future:true,text:`Next earnings ${dayLabel(e.date)}`});
   (xpeek("analysts",{t})?.data?.changes||[]).forEach(c=>{ const a=(c.action||"").toLowerCase(); if(a==="up"||a==="down") ev.push({date:c.date,kind:a==="up"?"▲":"▼",tone:a==="up"?"up":"down",text:`${a==="up"?"Upgrade":"Downgrade"}: ${c.firm} to ${c.to}${c.pt?`, target ${money(c.pt)}`:""}`}); });
   (xpeek("events",{t})?.data?.dividends||[]).forEach(d=>ev.push({date:d.date,kind:"D",tone:"",text:`Dividend ${money(d.amount)} (ex-date)`}));
-  (xpeek("ownership",{t})?.data?.insiders||[]).filter(x=>x.kind==="buy").forEach(x=>ev.push({date:x.date,kind:"B",tone:"up",text:`Insider buy: ${String(x.insider||"").toLowerCase().replace(/\b[a-z]/g,c=>c.toUpperCase())}${x.value?` ${usdB(x.value)}`:""}`}));
+  (xpeek("ownership",{t})?.data?.insiders||[]).filter(x=>x.kind==="buy").forEach(x=>ev.push({date:x.date,kind:"B",tone:"up",text:`Insider buy: ${personName(x.insider)}${x.value?` ${usdB(x.value)}`:""}`}));
   return ev.filter(x=>x.date);
 }
 /* place events on chart indexes; returns {byK: Map(k -> [events])} */

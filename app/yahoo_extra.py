@@ -226,6 +226,10 @@ def _mid(row):
 def options(sym, earnings_date: str | None = None, expiry: str | None = None):
     t = yf.Ticker(sym)
     exps = list(t.options or [])
+    if not exps:            # Yahoo sometimes answers an empty list for a moment; ask once more before saying there are none
+        time.sleep(1.5)
+        t = yf.Ticker(sym)
+        exps = list(t.options or [])
     if not exps:
         return {"t": sym, "expirations": []}
     price = None
@@ -366,7 +370,7 @@ MACRO = [
     ("^GSPC", "S&P 500", "index"), ("^IXIC", "Nasdaq", "index"), ("^DJI", "Dow Jones", "index"), ("^RUT", "Russell 2000", "index"),
     ("^VIX", "VIX (fear gauge)", "vol"), ("^TNX", "10-year yield", "rate"), ("^FVX", "5-year yield", "rate"), ("^IRX", "3-month T-bill", "rate"),
     ("DX-Y.NYB", "US dollar index", "fx"), ("CL=F", "Crude oil", "commodity"), ("GC=F", "Gold", "commodity"),
-    ("BTC-USD", "Bitcoin", "crypto"), ("ES=F", "S&P futures", "future"), ("NQ=F", "Nasdaq futures", "future"),
+    ("BTC-USD", "Bitcoin", "crypto"), ("ES=F", "S&P futures", "future"), ("NQ=F", "Nasdaq-100 futures", "future"),
 ]
 SECTOR_ETFS = [
     ("XLK", "Technology", "technology"), ("XLC", "Communication", "communication-services"),
@@ -525,6 +529,8 @@ SCREEN_NAMES = {
     "portfolio_anchors": "Portfolio anchors (funds)", "solid_large_growth_funds": "Large growth funds",
     "solid_midcap_growth_funds": "Mid-cap growth funds", "top_mutual_funds": "Top mutual funds",
     "conservative_foreign_funds": "Conservative foreign funds", "high_yield_bond": "High-yield bond funds",
+    "top_etfs_us": "Top ETFs", "top_performing_etfs": "Best-performing ETFs", "technology_etfs": "Technology ETFs",
+    "bond_etfs": "Bond ETFs",
 }
 
 

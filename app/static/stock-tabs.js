@@ -1,3 +1,6 @@
+/* filings list insiders last name first in capitals ("TETER TIMOTHY S"); say it the usual way ("Timothy S. Teter") */
+function personName(x){ const w=String(x||"").trim().toLowerCase().replace(/\b[a-z]/g,c=>c.toUpperCase()).split(/\s+/).filter(Boolean);
+  if(w.length<2||!/^[A-Z ]+$/.test(String(x).trim())) return w.join(" "); return [...w.slice(1).map(p=>p.length===1?p+".":p),w[0]].join(" "); }
 /* OpenTicker: the stock page's tabs (Financials, Analysts, Ownership, Options, Dividends and filings, ETF holdings)
    and the written "What stands out" insights on its Overview. Uses globals from index.html and pages.js. */
 
@@ -6,7 +9,7 @@ const isEtf=t=>(detailCache[t]?.info?.quoteType||"")==="ETF"||FUND_LIST.includes
 function tabsFor(t){
   return isEtf(t)
     ? [["overview","Overview"],["holdings","Holdings"],["events","Distributions"]]
-    : [["overview","Overview"],["analysts","Analysts"],["financials","Financials"],["ownership","Ownership"],["options","Options"],["events","Dividends & filings"]];
+    : [["overview","Overview"],["analysts","Analysts"],["financials","Financials"],["ownership","Ownership"],["options","Options"],["events","Dividends"]];
 }
 const TAB_SRC={analysts:"analysts",financials:"financials",ownership:"ownership",options:"options",events:"events",holdings:"etf"};
 function prefetchStock(t){
@@ -29,6 +32,7 @@ function renderTab(){
   if(c.error){ el.innerHTML=errBox(c.error,src,{t:sel}); return; }
   const r=stockRow(sel)||{}, d=c.data;
   el.innerHTML=({analysts:paneAnalysts,financials:paneFinancials,ownership:paneOwnership,options:paneOptions,events:paneEvents,holdings:paneEtf}[drTab])(d,r);
+  if(drTab==="analysts"&&detailCache[sel]&&r.last!=null) renderAnalyst(r,detailCache[sel],"drAnalyst2");
   if(drTab==="options") $("#optExp")?.addEventListener("change",async e=>{ const k={t:sel,exp:e.target.value}; el.querySelector("#optChain").innerHTML=sk(300); const x=await xget("options",k); if(drawerOpen) el.querySelector("#optChain").innerHTML=x.error?errBox(x.error):chainTable(x.data); });
   if(drTab==="financials") el.querySelectorAll("[data-freq]").forEach(b=>b.onclick=()=>{ finFreq=b.dataset.freq; save("finFreq",finFreq); renderTab(); });
 }
@@ -37,7 +41,7 @@ document.addEventListener("click",e=>{ const b=e.target.closest("[data-tab]"); i
 /* ---------- formatting helpers ---------- */
 const usdB=x=>x==null||!isFinite(x)?"–":(x<0?"−":"")+"$"+(a=>a>=1e12?(a/1e12).toFixed(2)+"T":a>=1e9?(a/1e9).toFixed(a>=1e11?0:1)+"B":a>=1e6?(a/1e6).toFixed(0)+"M":a>=1e3?(a/1e3).toFixed(0)+"K":a.toFixed(0))(Math.abs(x));
 const shs=x=>x==null?"–":(a=>a>=1e9?(a/1e9).toFixed(2)+"B":a>=1e6?(a/1e6).toFixed(1)+"M":a>=1e3?(a/1e3).toFixed(0)+"K":String(Math.round(a)))(Math.abs(x));
-const qLabel=(d,freq)=>{ const x=new Date(d+"T12:00:00Z"); return freq==="annual"?"FY"+String(x.getUTCFullYear()).slice(2):x.toLocaleDateString("en-US",{month:"short",year:"2-digit",timeZone:"UTC"}); };
+const qLabel=(d,freq)=>{ const x=new Date(d+"T12:00:00Z"); return freq==="annual"?"FY"+String(x.getUTCFullYear()).slice(2):x.toLocaleDateString("en-US",{month:"short",timeZone:"UTC"})+" \u2019"+String(x.getUTCFullYear()).slice(2); };   // "Jul ’25": a quarter ending in July 2025, not July 25th
 const PERIOD={"0q":"This quarter","+1q":"Next quarter","0y":"This year","+1y":"Next year","LTG":"Long-term (5 yr)"};
 
 /* ---------- small chart: grouped bars ---------- */
@@ -67,7 +71,7 @@ function lineChart(labels,series,{h=150,fmt=v=>pc(v,0)}={}){
   labels.forEach((lab,i)=>{ s+=`<text x="${X(i)}" y="${H-6}" font-size="10.5" text-anchor="middle" fill="var(--ink-3)">${esc(lab)}</text>`; });
   return `<div class="legend" style="margin-bottom:4px">${series.map(se=>`<span><i class="sw" style="background:${se.color}"></i>${esc(se.name)}</span>`).join("")}</div>`+s+"</svg>";
 }
-const C1="var(--accent)", C2="color-mix(in oklab, var(--accent) 38%, var(--panel))", C3="var(--warn)";
+const C1="var(--accent)", C2="var(--ink-3)", C3="var(--warn)";
 
 /* ---------- Financials ---------- */
 let finFreq=load("finFreq","quarterly");
@@ -92,7 +96,7 @@ function paneFinancials(d){
   const tbl=(blk)=>`<table class="hz fin"><thead><tr><th></th>${(blk.periods||[]).map(p=>`<th>${qLabel(p,finFreq)}</th>`).join("")}</tr></thead><tbody>${(blk.rows||[]).map(r=>`<tr><td>${esc(r.label)}</td>${r.values.map(v=>`<td class="num">${r.key==="Diluted EPS"?(v==null?"–":"$"+v.toFixed(2)):r.key==="Ordinary Shares Number"?shs(v):usdB(v)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
   return `<div class="seg sm" style="margin-bottom:12px"><button data-freq="quarterly" aria-pressed="${finFreq==="quarterly"}">Quarterly</button><button data-freq="annual" aria-pressed="${finFreq==="annual"}">Annual</button></div>
     ${notes.length?insightList(notes.map(t=>({html:t}))):""}
-    <div class="dr-sec"><h4>Revenue and profit</h4>${barChart(labs,[{name:"Revenue",values:s.rev,color:C1,top:gTop},{name:"Net income",values:s.ni,color:C2}],{note:"revenue, and its growth vs a year earlier"})}</div>
+    <div class="dr-sec"><h4>Revenue and profit</h4>${barChart(labs,[{name:"Revenue",values:s.rev,color:C1,top:gTop},{name:"Net income",values:s.ni,color:C2}],{note:"The label shows the latest revenue growth vs a year earlier"})}</div>
     <div class="dr-sec"><h4>Margins</h4>${lineChart(labs,[{name:"Gross",values:m(s.gp),color:C2},{name:"Operating",values:m(s.op),color:C1},{name:"Net",values:m(s.ni),color:C3}])}</div>
     ${cfP.length?`<div class="dr-sec"><h4>Cash generated and returned</h4>${barChart(cfP.map(p=>qLabel(p,finFreq)),[{name:"Free cash flow",values:fcf,color:C1},{name:"Buybacks",values:bb,color:C2},{name:"Dividends",values:dv,color:C3}])}</div>`:""}
     ${bsP.length?`<div class="dr-sec"><h4>Cash and debt</h4>${barChart(bsP.map(p=>qLabel(p,finFreq)),[{name:"Cash and investments",values:cash,color:C1},{name:"Total debt",values:debt,color:C3}])}</div>`:""}
@@ -117,7 +121,7 @@ function paneAnalysts(d,r){
   const ptUp=ch.filter(c=>c.pt&&c.ptPrior&&c.pt>c.ptPrior).length, ptDn=ch.filter(c=>c.pt&&c.ptPrior&&c.pt<c.ptPrior).length;
   const act=c=>/up/i.test(c.action)?`<span class="chip up">Upgrade</span>`:/down/i.test(c.action)?`<span class="chip down">Downgrade</span>`:/init/i.test(c.action)?`<span class="chip">New</span>`:`<span class="chip">${/reit|main/i.test(c.action)?"Reiterated":esc(c.action||"")}</span>`;
   const chT=ch.length?`<p class="hint" style="margin:0 0 8px">${ch.length} analyst notes in the last year: ${ups} upgrade${ups===1?"":"s"}, ${downs} downgrade${downs===1?"":"s"}${ptUp+ptDn?`, ${ptUp} price-target raise${ptUp===1?"":"s"} and ${ptDn} cut${ptDn===1?"":"s"}`:""}.</p><table class="hz rchg"><tbody>${ch.slice(0,18).map(c=>`<tr><td class="ks">${new Date(c.date+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"})}</td><td>${esc(c.firm||"")}</td><td>${act(c)}</td><td class="ks">${c.from&&c.from!==c.to?esc(c.from)+" → ":""}${esc(c.to||"")}</td><td class="num">${c.pt?`${c.ptPrior&&c.ptPrior!==c.pt?`<span class="ks">$${Math.round(c.ptPrior)} → </span>`:""}$${Math.round(c.pt)}`:""}</td></tr>`).join("")}</tbody></table>`:`<p class="hint">No rating changes in the last year.</p>`;
-  return `<div class="dr-sec" style="margin-top:0"><h4>Consensus and price target</h4><div id="drAnalyst2"></div></div>
+  return `<div class="dr-sec" style="margin-top:0"><div id="drAnalyst2"></div></div>
     ${trend?`<div class="dr-sec"><h4>Ratings over the last 3 months</h4>${trend}</div>`:""}
     ${estT?`<div class="dr-sec"><h4>Where earnings estimates are heading</h4>${estT}</div>`:""}
     ${fT?`<div class="dr-sec"><h4>Forecasts</h4>${fT}${gT}</div>`:""}
@@ -127,14 +131,14 @@ function paneAnalysts(d,r){
 /* ---------- Ownership ---------- */
 function paneOwnership(d){
   const m=d.major||{}, ins=m.insidersPercentHeld, inst=m.institutionsPercentHeld, other=ins!=null&&inst!=null?Math.max(0,1-ins-inst):null;
-  const bar=ins!=null&&inst!=null?`<div class="obar"><i style="width:${(inst*100).toFixed(1)}%;background:${C1}"></i><i style="width:${(ins*100).toFixed(1)}%;background:${C3}"></i><i style="width:${(other*100).toFixed(1)}%;background:var(--grid)"></i></div>
-    <div class="legend"><span><i class="sw" style="background:${C1}"></i>Institutions ${pc(inst,0)}</span><span><i class="sw" style="background:${C3}"></i>Insiders ${pc(ins,1)}</span><span><i class="sw" style="background:var(--grid)"></i>Everyone else ${pc(other,0)}</span>${m.institutionsCount?`<span class="ks">${Math.round(m.institutionsCount).toLocaleString("en-US")} institutions</span>`:""}</div>`:"";
+  const bar=ins!=null&&inst!=null?`<div class="obar"><i style="width:${(inst*100).toFixed(1)}%;background:${C1}"></i><i style="width:${(ins*100).toFixed(1)}%;background:${C3}"></i><i style="width:${(other*100).toFixed(1)}%;background:var(--ink-3);opacity:.35"></i></div>
+    <div class="legend"><span><i class="sw" style="background:${C1}"></i>Institutions ${pc(inst,0)}</span><span><i class="sw" style="background:${C3}"></i>Insiders ${pc(ins,1)}</span><span><i class="sw" style="background:var(--ink-3);opacity:.35"></i>Everyone else ${pc(other,0)}</span>${m.institutionsCount?`<span class="ks">${Math.round(m.institutionsCount).toLocaleString("en-US")} institutions</span>`:""}</div>`:"";
   const tx=d.insiders||[], buys=tx.filter(x=>x.kind==="buy"), sells=tx.filter(x=>x.kind==="sell");
   const bv=buys.reduce((a,x)=>a+(x.value||0),0), sv=sells.reduce((a,x)=>a+(x.value||0),0);
   const sum=tx.length?`<div class="kf" style="margin-top:0"><div><div class="lbl">Insider buys (12 mo)</div><div class="v up">${buys.length}</div><div class="ks">${usdB(bv)}</div></div><div><div class="lbl">Insider sales (12 mo)</div><div class="v down">${sells.length}</div><div class="ks">${usdB(sv)}</div></div><div><div class="lbl">Net</div><div class="v ${cls(bv-sv)}">${bv-sv>=0?"Buying":"Selling"}</div><div class="ks">${usdB(Math.abs(bv-sv))}</div></div></div>
     <p class="hint">Insiders sell for many reasons (taxes, diversification, planned sales), so steady selling is normal. Open-market buying is rarer and usually more telling.</p>`:"";
-  const tc=s=>String(s||"").toLowerCase().replace(/\b[a-z]/g,c=>c.toUpperCase()), aw=tx.filter(x=>x.kind==="award").length, shown=tx.filter(x=>x.kind!=="award");
-  const txT=shown.length?`<table class="hz itx"><tbody>${shown.slice(0,25).map(x=>`<tr><td class="ks">${x.date?new Date(x.date+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"2-digit",timeZone:"UTC"}):""}</td><td>${esc(tc(x.insider))}<div class="ks">${esc(tc(x.role))}</div></td><td><span class="chip ${x.kind==="buy"?"up":x.kind==="sell"?"down":""}">${{buy:"Buy",sell:"Sale",award:"Award",other:"Other"}[x.kind]}</span></td><td class="num">${shs(x.shares)}</td><td class="num">${x.value?usdB(x.value):"–"}</td></tr>`).join("")}</tbody></table>${aw?`<p class="hint">Not shown: ${aw} stock awards (pay, not trades).</p>`:""}`:`<p class="hint">${aw?`Only stock awards (${aw}) in the last year, no buying or selling.`:"No insider transactions reported in the last year."}</p>`;
+  const tc=personName, aw=tx.filter(x=>x.kind==="award").length, shown=tx.filter(x=>x.kind!=="award");
+  const txT=shown.length?`<table class="hz itx"><thead><tr><th>Date</th><th style="text-align:left">Insider</th><th style="text-align:left">Type</th><th>Shares</th><th>Value</th></tr></thead><tbody>${shown.slice(0,25).map(x=>`<tr><td class="ks">${x.date?new Date(x.date+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"}):""}</td><td>${esc(tc(x.insider))}<div class="ks">${esc(tc(x.role))}</div></td><td><span class="chip ${x.kind==="buy"?"up":x.kind==="sell"?"down":""}">${{buy:"Buy",sell:"Sale",award:"Award",other:"Other"}[x.kind]}</span></td><td class="num">${shs(x.shares)}</td><td class="num">${x.value?usdB(x.value):"–"}</td></tr>`).join("")}</tbody></table>${aw?`<p class="hint">Not shown: ${aw} stock awards (pay, not trades).</p>`:""}`:`<p class="hint">${aw?`Only stock awards (${aw}) in the last year, no buying or selling.`:"No insider transactions reported in the last year."}</p>`;
   const hT=rows=>rows.length?`<table class="hz"><thead><tr><th>Holder</th><th>Owns</th><th>Value</th><th>Change</th></tr></thead><tbody>${rows.map(h=>`<tr><td>${esc(h.holder||"")}</td><td class="num">${pc(h.pct,2)}</td><td class="num">${usdB(h.value)}</td><td class="num ${cls(h.chg)}">${pct(h.chg,1)}</td></tr>`).join("")}</tbody></table><p class="hint">Change is the shift in shares held at their latest filing.</p>`:`<p class="hint">Not reported.</p>`;
   return `${bar?`<div class="dr-sec" style="margin-top:0"><h4>Who owns it</h4>${bar}</div>`:""}
     <div class="dr-sec"><h4>Insider trading</h4>${sum}${txT}</div>
@@ -146,8 +150,11 @@ function paneOwnership(d){
 function moveCard(x,title,price){
   if(!x||x.move==null) return "";
   const lo=price*(1-x.move), hi=price*(1+x.move);
-  return `<div class="stat"><div class="lbl">${title}</div><div class="v">±${pc(x.move,1)}</div><div class="ks">${money(lo)} to ${money(hi)} by ${new Date(x.expiry+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"})}${x.iv?` · IV ${pc(x.iv,0)}`:""}</div></div>`;
+  return `<div class="stat"><div class="lbl">${title}</div><div class="v">±${pc(x.move,1)}</div><div class="ks">${money(lo)} to ${money(hi)} by ${new Date(x.expiry+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"})}${ivOk(x.iv,x.expiry,x.move)?` · implied volatility ${pc(x.iv,0)}`:""}</div></div>`;
 }
+/* Yahoo's implied volatility is unreliable near expiry and outside market hours (2% next to a ±4% two-day move); only show it when it is plausible */
+function ivOk(iv,expiry,move,ref){ if(!(iv>0.08)) return false; const days=(new Date(expiry+"T21:00:00Z")-Date.now())/864e5; if(days<2) return false;
+  const est=move>0?move/(0.8*Math.sqrt(days/365)):ref; return !(est>0)||(iv>=est*0.5&&iv<=est*2); }   // est: the yearly swing the expected move implies
 function chainTable(d){
   const c=d?.chain; if(!c?.rows?.length) return `<p class="hint">No contracts for this date.</p>`;
   const p=d.price, f=v=>v==null?"–":v.toFixed(2), n=v=>v==null?"–":Math.round(v).toLocaleString("en-US");
@@ -155,14 +162,15 @@ function chainTable(d){
   return `<div class="tbl-wrap"><table class="hz chain"><thead><tr><th colspan="4" class="ctr">Calls</th><th class="ctr">Strike</th><th colspan="4" class="ctr">Puts</th></tr><tr><th>Bid</th><th>Ask</th><th>Vol</th><th>OI</th><th></th><th>Bid</th><th>Ask</th><th>Vol</th><th>OI</th></tr></thead><tbody>${c.rows.map(r=>`<tr class="${r.strike===atm?"atm":""}"><td class="num ${r.strike<p?"itm":""}">${f(r.call?.bid)}</td><td class="num ${r.strike<p?"itm":""}">${f(r.call?.ask)}</td><td class="num ks">${n(r.call?.vol)}</td><td class="num ks">${n(r.call?.oi)}</td><td class="num ctr"><b>${r.strike}</b></td><td class="num ${r.strike>p?"itm":""}">${f(r.put?.bid)}</td><td class="num ${r.strike>p?"itm":""}">${f(r.put?.ask)}</td><td class="num ks">${n(r.put?.vol)}</td><td class="num ks">${n(r.put?.oi)}</td></tr>`).join("")}</tbody></table></div><p class="hint">Shaded cells are in the money. The highlighted row is the strike closest to the price.</p>`;
 }
 function paneOptions(d){
-  if(!d.expirations?.length) return `<p class="hint">No listed options for this stock.</p>`;
-  const p=d.price, hist=typicalEarningsMove(sel);
+  if(!d.expirations?.length) return `<p class="hint">No options data for this stock right now. Some stocks have no listed options; for others Yahoo may be briefly unavailable, so try again in a few minutes.</p>`;
+  const U=d.unusual||[], anyOI=U.some(u=>u.oi>0);   // columns that would be empty on every row are left out
+  const p=d.price, hist=typicalEarningsMove(sel), ivRef=d.near?.move>0?d.near.move/(0.8*Math.sqrt(Math.max(1,d.near.days||1)/365)):null; const anyIV=U.some(u=>ivOk(u.iv,u.expiry,null,ivRef));
   const pcv=d.pcVolume, mood=pcv==null?"":pcv>1.2?"Traders are buying more puts than calls, a defensive lean.":pcv<0.6?"Calls far outnumber puts, a bullish lean.":"Puts and calls are fairly balanced.";
-  return `<div class="stats">${moveCard(d.near,"Expected move, next expiry",p)}${d.earnings?moveCard(d.earnings,`Expected move through earnings (${dayLabel(d.earnings.earningsDate)})`,p):""}
+  return `<div class="stats">${moveCard(d.near,"Expected move, next expiry",p)}${d.earnings?moveCard(d.earnings,`Through earnings, ${dayLabel(d.earnings.earningsDate).replace(/^[A-Z][a-z]{2}, /,"")}`,p):""}
       <div class="stat"><div class="lbl">Put/call ratio</div><div class="v">${pcv!=null?pcv.toFixed(2):"–"}</div><div class="ks">by volume${d.pcOI!=null?` · ${d.pcOI.toFixed(2)} by open interest`:""}</div></div>
       ${hist!=null?`<div class="stat"><div class="lbl">Typical earnings move</div><div class="v">±${pc(hist,1)}</div><div class="ks">average over the last reports</div></div>`:""}</div>
-    <p class="hint">The expected move is what option prices imply: the at-the-money straddle divided by the stock price. ${mood}${d.earnings&&hist!=null?` Options price a ${pc(d.earnings.move,1)} move through earnings versus a typical ${pc(hist,1)}, so they look ${d.earnings.move>hist*1.15?"expensive":d.earnings.move<hist*0.85?"cheap":"about fairly priced"} by that measure.`:""}</p>
-    <div class="dr-sec"><h4>Unusual activity</h4>${d.unusual?.length?`<table class="hz"><thead><tr><th>Contract</th><th>Volume</th><th>Open interest</th><th>IV</th></tr></thead><tbody>${d.unusual.map(u=>`<tr><td><span class="chip ${u.side==="call"?"up":"down"}">${u.side==="call"?"Call":"Put"}</span> $${u.strike} · ${new Date(u.expiry+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"})}</td><td class="num">${u.volume.toLocaleString("en-US")}</td><td class="num ks">${u.oi.toLocaleString("en-US")}</td><td class="num">${u.iv!=null?pc(u.iv,0):"–"}</td></tr>`).join("")}</tbody></table><p class="hint">Contracts trading more than twice their open interest, a sign of fresh positioning.</p>`:`<p class="hint">Nothing unusual in the nearest three expiries.</p>`}</div>
+    <p class="hint">The expected move is how far option prices say the stock could swing, up or down, by that date (the price of a bet on either direction at today's price, divided by the stock price). ${mood}${d.earnings&&hist!=null?` Options price a ${pc(d.earnings.move,1)} move through earnings versus a typical ${pc(hist,1)}, so they look ${d.earnings.move>hist*1.15?"expensive":d.earnings.move<hist*0.85?"cheap":"about fairly priced"} by that measure.`:""}</p>
+    <div class="dr-sec"><h4>Unusual activity</h4>${d.unusual?.length?`<table class="hz"><thead><tr><th>Contract</th><th>Volume</th>${anyOI?"<th>Open interest</th>":""}${anyIV?`<th title="Implied volatility: the yearly swing option prices assume">Implied vol.</th>`:""}</tr></thead><tbody>${d.unusual.map(u=>`<tr><td><span class="chip ${u.side==="call"?"up":"down"}">${u.side==="call"?"Call":"Put"}</span> $${u.strike} · ${new Date(u.expiry+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"})}</td><td class="num">${u.volume.toLocaleString("en-US")}</td>${anyOI?`<td class="num ks">${u.oi?u.oi.toLocaleString("en-US"):"New"}</td>`:""}${anyIV?`<td class="num">${ivOk(u.iv,u.expiry,null,ivRef)?pc(u.iv,0):"–"}</td>`:""}</tr>`).join("")}</tbody></table><p class="hint">Contracts trading more than twice their open interest (the contracts already held), a sign of fresh positioning.${anyOI?` "New" means none were held before today.`:" None of these were held before today."}</p>`:`<p class="hint">Nothing unusual in the nearest three expiries.</p>`}</div>
     <div class="dr-sec"><h4>Option chain</h4><div class="frm" style="margin-bottom:8px"><select id="optExp">${d.expirations.map(e=>`<option value="${e}" ${e===d.chain?.expiry?"selected":""}>${new Date(e+"T12:00:00Z").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",year:"numeric",timeZone:"UTC"})}</option>`).join("")}</select></div><div id="optChain">${chainTable(d)}</div></div>`;
 }
 function typicalEarningsMove(t){
@@ -210,7 +218,7 @@ function stockInsights(r){
   // momentum vs the fund
   const r1=r.rets?.["1M"], ex=r.ex?.["3M"];
   if(r1!=null&&r.ex?.["1M"]!=null&&Math.abs(r.ex["1M"])>0.03){ const a=r.ex["1M"]>0, same=ex!=null&&(ex>0)===a;
-    out.push({tone:cls(r.ex["1M"]),html:`<b>${a?"Outrunning":"Lagging"} ${esc(fundName)}:</b> ${pct(r1,1)} over the past month, ${pc(Math.abs(r.ex["1M"]),1)} ${a?"ahead of":"behind"} it.${ex!=null?` ${same?`Over 3 months it's ${pc(Math.abs(ex),0)} ${ex>0?"ahead":"behind"} too.`:`Over 3 months it's still ${pc(Math.abs(ex),0)} ${ex>0?"ahead":"behind"}.`}`:""}`}); }
+    out.push({tone:cls(r.ex["1M"]),html:`<b>${a?"Outrunning":"Lagging"} ${esc(fundName)}:</b> ${pct(r1,1)} over the past month, ${pc(Math.abs(r.ex["1M"]),1)} ${a?"ahead of":"behind"} it.${ex!=null?` ${same?`Over 3 months it's ${pc(Math.abs(ex),0)} ${ex>0?"ahead":"behind"} too.`:(Math.abs(ex)<0.005?`Over 3 months it's level with it.`:`Over 3 months it's still ${pc(Math.abs(ex),0)} ${ex>0?"ahead":"behind"}.`)}`:""}`}); }
   if(r.offHi!=null&&r.offHi>-0.02) out.push({tone:"up",html:`<b>At a 52-week high</b> (${money(r.hi)}).`});
   else if(r.lo&&r.last<=r.lo*1.03) out.push({tone:"down",html:`<b>Near its 52-week low</b> of ${money(r.lo)}, ${pct(r.offHi,0).replace("+","")} below the high.`});
   else if(r.vs200!=null&&r.vs50!=null&&Math.sign(r.vs50)!==Math.sign(r.vs200)) out.push({tone:"",html:`<b>Trend is turning:</b> ${r.vs50>0?"above":"below"} its 50-day average but ${r.vs200>0?"above":"below"} the 200-day.`});
@@ -218,12 +226,12 @@ function stockInsights(r){
     const top=(E.holdings||[]).reduce((a,h)=>a+(h.w||0),0); if(top) out.push({tone:"",html:`<b>${top>0.5?"Concentrated":"Spread out"}:</b> the top ${E.holdings.length} holdings are ${pc(top,0)} of the fund, led by ${E.holdings.slice(0,3).map(h=>esc(h.t)).join(", ")}.`,tab:"holdings",tabLabel:"Holdings"}); }
   // earnings: options-implied vs history
   const nextE=_nextEarn(t,info);
-  if(OP?.earnings?.move!=null){ const hist=typicalEarningsMove(t); out.push({tone:"",html:`<b>Earnings ${dayLabel(OP.earnings.earningsDate)==="Today"?"today":dayLabel(OP.earnings.earningsDate)}:</b> options price a ±${pc(OP.earnings.move,1)} move${hist!=null?` versus a typical ±${pc(hist,1)} after past reports`:""}.`,tab:"options",tabLabel:"Options"}); }
+  if(OP?.earnings?.move!=null){ const hist=typicalEarningsMove(t); out.push({tone:"",html:`<b>Earnings ${dayLabel(OP.earnings.earningsDate)==="Today"?"today":dayLabel(OP.earnings.earningsDate)}:</b> option prices imply a ±${pc(OP.earnings.move,1)} swing${hist!=null?` versus a typical ±${pc(hist,1)} after past reports`:""}.`,tab:"options",tabLabel:"Options"}); }
   else if(nextE&&nextE.days>=0&&nextE.days<=21) out.push({tone:"",html:`<b>Reports earnings ${nextE.days===0?"today":nextE.days===1?"tomorrow":"in "+nextE.days+" days"}.</b>`});
   // estimates moving
   const yr=A?.eps_trend?.["0y"], nx=A?.eps_trend?.["+1y"];
   if(yr?.current!=null&&yr["90daysAgo"]){ const c=yr.current/yr["90daysAgo"]-1; if(Math.abs(c)>=0.02){ const rv=A.eps_revisions?.["0y"]||{};
-    out.push({tone:cls(c),html:`<b>Estimates ${c>0?"rising":"falling"}:</b> analysts ${c>0?"raised":"cut"} this year's EPS forecast ${pc(Math.abs(c),1)} in 90 days${rv.upLast30days!=null?` (${rv.upLast30days} up, ${rv.downLast30days||0} down in the last month)`:""}.`,tab:"analysts",tabLabel:"Analysts"}); } }
+    out.push({tone:cls(c),html:`<b>Estimates ${c>0?"rising":"falling"}:</b> analysts ${c>0?"raised":"cut"} this year's earnings-per-share forecast ${pc(Math.abs(c),1)} in 90 days${rv.upLast30days!=null?` (${rv.upLast30days} up, ${rv.downLast30days||0} down in the last month)`:""}.`,tab:"analysts",tabLabel:"Analysts"}); } }
   else if(nx?.current!=null&&nx["90daysAgo"]){ const c=nx.current/nx["90daysAgo"]-1; if(Math.abs(c)>=0.02) out.push({tone:cls(c),html:`<b>Next year's estimates ${c>0?"rising":"falling"}</b> (${pct(c,1)} in 90 days).`,tab:"analysts",tabLabel:"Analysts"}); }
   // rating changes
   const recent=(A?.changes||[]).filter(c=>c.date>=shiftDays(nyToday(),-90));
@@ -233,7 +241,7 @@ function stockInsights(r){
   // fundamentals trend
   if(F){ const q=F.quarterly?.income, rev=rowOf(q,"Total Revenue"); const n=rev.length;
     if(n>=5&&rev[n-1]&&rev[n-5]){ const g=rev[n-1]/rev[n-5]-1, g0=n>=6&&rev[n-2]&&rev[n-6]?rev[n-2]/rev[n-6]-1:null;
-      out.push({tone:cls(g),html:`<b>Revenue ${g>=0?"up":"down"} ${pc(Math.abs(g),0)} year over year</b> last quarter${g0!=null?`, ${g>g0+0.02?"accelerating from":g<g0-0.02?"slowing from":"steady with"} ${pct(g0,0)}`:""}.`,tab:"financials",tabLabel:"Financials"}); }
+      out.push({tone:cls(g),html:`<b>Revenue ${g>=0?"up":"down"} ${pc(Math.abs(g),0)}:</b> last quarter vs a year earlier${g0!=null?`, ${g>g0+0.02?"accelerating from":g<g0-0.02?"slowing from":"steady with"} ${pct(g0,0)}`:""}.`,tab:"financials",tabLabel:"Financials"}); }
     else if(info.revenueGrowth!=null) out.push({tone:cls(info.revenueGrowth),html:`<b>Revenue ${info.revenueGrowth>=0?"up":"down"} ${pc(Math.abs(info.revenueGrowth),0)}</b> from a year earlier.`,tab:"financials",tabLabel:"Financials"}); }
   // insiders
   if(O){ const tx=O.insiders||[], b=tx.filter(x=>x.kind==="buy"), s=tx.filter(x=>x.kind==="sell"), bv=b.reduce((a,x)=>a+(x.value||0),0), sv=s.reduce((a,x)=>a+(x.value||0),0);

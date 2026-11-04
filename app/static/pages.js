@@ -104,7 +104,8 @@ function macroView(){
     const prev=p>=0?a[p]:null;
     const rets={"1D":prev?lastPx/prev-1:null};
     for(const h of ["1W","1M","3M","YTD","1Y"]){ const s=startIndex(d.dates,h), f=firstValid(a,s); rets[h]=f?lastPx/f.v-1:null; }
-    out[sym]={last:lastPx,prev,rets,spark:m.intraday?.spark?.[sym]||a.slice(-60)};
+    const sp=m.intraday?.spark?.[sym];   // a session that has barely started has too few points to draw; use the last few weeks instead
+    out[sym]={last:lastPx,prev,rets,spark:sp&&sp.filter(x=>x!=null).length>=8?sp:a.slice(-30)};
   }
   // outside market hours, index futures show their move since the 4 pm close
   const ov=m.overnight;
@@ -137,7 +138,7 @@ function overnightInsight(v){
   const when=sinceDay===today?"Since the 4 pm close":`Since ${since.toLocaleDateString("en-US",{weekday:"long",timeZone:"America/New_York"})}'s close`;
   const ud=x=>`${x>=0?"up":"down"} ${pct(Math.abs(x)).replace(/^\+/,"")}`;
   const rest=[["YM=F","the Dow"],["RTY=F","small caps"]].filter(([k])=>f(k)!=null).map(([k,n])=>`${n} ${pct(f(k))}`);
-  return {tone:cls(lead),html:`<b>Futures point to ${dir}.</b> ${when}, S&amp;P 500 futures are ${ud(es)}${nq!=null?` and Nasdaq futures ${ud(nq)}`:""}${rest.length?`; ${rest.join(", ")}`:""}.${ov.trading?"":" Futures are paused right now, so these are the last trades."}`};
+  return {tone:cls(lead),html:`<b>Futures point to ${dir}.</b> ${when}, S&amp;P 500 futures are ${ud(es)}${nq!=null?` and Nasdaq-100 futures ${ud(nq)}`:""}${rest.length?`; ${rest.join(", ")}`:""}.${ov.trading?"":" Futures are paused right now, so these are the last trades."}`};
 }
 function extInsight(){
   const spy=base?.funds?.SPY?.holdings; if(!spy) return null;
@@ -145,6 +146,14 @@ function extInsight(){
   if(!xs.length) return null;
   const lab=xs[0].x.lab, top=xs.slice(0,5);
   return {tone:"",html:`<b>${lab}, the biggest S&amp;P 500 movers:</b> ${top.map(o=>`<a href="#" data-sel="${o.t}">${o.t}</a> ${pct(o.x.chg,1)}`).join(", ")}${xs.length>top.length?`, and ${xs.length-top.length} more moving 2% or more`:""}. These trades are thinner than the regular session, so moves can shift by the open.`};
+}
+function statusNote(st){   // "Opens in 9 h 20 min", worked out from the opening time so it doesn't go stale
+  const ny={timeZone:"America/New_York"}, at=t=>t?new Date(t):null, o=at(st.open), c=at(st.close);
+  if(st.status==="open") return c&&!isNaN(c)?`Closes at ${c.toLocaleTimeString("en-US",{...ny,hour:"numeric",minute:"2-digit"}).toLowerCase()}`:"";
+  if(!o||isNaN(o)) return "";
+  const m=Math.round((o-Date.now())/60000); if(m<=0) return "";
+  if(m<18*60) return `Opens in ${m>=60?Math.floor(m/60)+"h ":""}${m%60}m`;
+  return `Opens ${o.toLocaleDateString("en-US",{...ny,weekday:"long"})} at ${o.toLocaleTimeString("en-US",{...ny,hour:"numeric",minute:"2-digit"}).toLowerCase()}`;
 }
 function marketInsights(v){
   const q=v.q, ins=[], open=v.status?.status==="open", verb=open?"is":"was";
@@ -173,7 +182,8 @@ function marketInsights(v){
   const nextEv=ev.filter(e=>e.date>=today&&e.actual==null&&MAJOR_EV.test(e.event)).slice(0,3);
   const mine=new Set([...(me?.watch||[]),...(me?.positions||[]).map(p=>p.t)]);
   const nextE=Object.entries(EARN).filter(([t,e])=>mine.has(t)&&e.date>=today&&e.reported==null).sort((a,b)=>a[1].date.localeCompare(b[1].date)).slice(0,3);
-  if(nextEv.length||nextE.length) ins.push({tone:"",html:`<b>Coming up:</b> ${[...nextE.map(([t,e])=>`<a href="#" data-sel="${t}">${t}</a> earnings ${dayLabel(e.date).toLowerCase()==="today"?"today":dayLabel(e.date)}`),...nextEv.map(e=>`${esc(e.event)} ${dayLabel(e.date)==="Today"?"today":dayLabel(e.date)} ${e.time}`)].join(" · ")}.`});
+  const nb=x=>String(x).trim().replace(/ /g,"\u00a0");   // keep "Thu Nov 6 8:30 AM" on one line
+  if(nextEv.length||nextE.length) ins.push({tone:"",html:`<b>Coming up:</b> ${[...nextE.map(([t,e])=>({k:e.date+" 99",h:`<a href="#" data-sel="${t}">${t}</a> earnings ${nb(dayLabel(e.date).toLowerCase()==="today"?"today":dayLabel(e.date))}`})),...nextEv.map(e=>({k:e.date+" "+(e.time||""),h:`${esc(econName(e.event))} ${nb((dayLabel(e.date)==="Today"?"today":dayLabel(e.date))+" "+(e.time||""))}`}))].sort((a,b)=>a.k.localeCompare(b.k)).map(x=>x.h).join(" · ")}.`});
   return ins;
 }
 const MAJOR_EV=/CPI|PPI|payroll|unemployment rate|GDP|FOMC|fed funds|retail sales|PCE|ISM (manufacturing|n-mfg|services) PMI|jobless claims|consumer confidence|sentiment|JOLTS|ADP|durable goods|housing starts/i;
@@ -202,14 +212,14 @@ function renderMarket(){
   if(err&&!v){ $("#mIns").innerHTML=errBox(err,"macro"); return; }
   if(!v) return;
   const st=v.status||{}, sp=v.q["^GSPC"];
-  $("#mEyebrow").innerHTML=`<span>Market today</span><span>·</span><span class="chip ${st.status==="open"?"up":""}">${st.status==="open"?"● Open":"Closed"}</span>${st.message?`<span class="hint" style="margin:0">${esc(st.message)}</span>`:""}`;
+  $("#mEyebrow").innerHTML=`<span>Market today</span><span>·</span><span class="chip ${st.status==="open"?"up":""}">${st.status==="open"?"● Open":"Closed"}</span>${statusNote(st)?`<span class="hint" style="margin:0">${esc(statusNote(st))}</span>`:""}`;
   if(sp){ const r=sp.rets["1D"]; $("#mTitle").innerHTML=`S&amp;P 500 <span class="${cls(r)}">${pct(r)}</span>`; }
   $("#mIns").innerHTML=insightList(marketInsights(v));
   // your stocks
   const my=myToday();
   $("#mMine").innerHTML=!my||!my.count?`<p class="hint">Add stocks to your watchlist or portfolio to see them here.</p><button class="btn ghost" data-page="mine">Go to My stocks</button>`:
     `${my.hasPos?`<div class="mval"><b>${money(my.V)}</b><span class="${cls(my.D)}">${my.D>=0?"+":"−"}${money(Math.abs(my.D))} · ${pct(my.dayPct)}</span></div>`:""}
-     ${my.hasPos&&my.XD!=null?`<div class="mx">${ic(my.xLab==="Pre-market"?"sun":"moon",12)}${my.xLab} <span class="num ${cls(my.XD)}">${my.XD>=0?"+":"−"}${money(Math.abs(my.XD))} · ${pct(my.V?my.XD/my.V:null)}</span></div>`:""}
+     ${my.hasPos&&my.XD!=null?`<div class="mxh">${ic(my.xLab==="Pre-market"?"sun":"moon",12)}${my.xLab} <span class="num ${cls(my.XD)}">${my.XD>=0?"+":"−"}${money(Math.abs(my.XD))} · ${pct(my.V?my.XD/my.V:null)}</span></div>`:""}
      <ul class="mlist">${my.moves.slice(0,5).map(x=>`<li data-sel="${x.t}"><b class="mono">${x.t}</b><span class="num">${money(x.last)}</span><span class="num ${cls(x.chg)}">${pct(x.chg,1)}${x.x?`<span class="xh" title="${x.x.lab} ${money(x.x.p)} at ${extTime(x.x.ts)}">${ic(x.x.s==="pre"?"sun":"moon",10)} <span class="${cls(x.x.chg)}">${pct(x.x.chg,1)}</span></span>`:""}</span></li>`).join("")}</ul>
      ${(()=>{ const b=briefItems().filter(x=>x.kind!=="move"); return b.length?`<div class="lbl" style="margin-top:16px">From your brief</div>${briefRows(b.slice(0,3))}<a class="lnk" href="#mine" data-page="mine" style="margin-top:6px">Open your brief ›</a>`:""; })()}`;
   // tiles
@@ -256,7 +266,7 @@ function industryHTML(ic){
 function quoteTable(rows,cols,opts={}){
   if(!rows?.length) return `<p class="hint">Nothing matched.</p>`;
   const H={t:"Stock",price:"Price",chg:"Today",rvol:"Volume vs avg",cap:"Mkt cap",pe:"P/E (fwd)",yr:"1 year",rating:"Analysts",yield:"Yield",add:""};
-  const C={t:q=>`<td class="l"><b class="mono">${esc(q.t)}</b><span class="qn">${esc(trunc(q.shortName||q.longName||"",28))}</span></td>`,
+  const C={t:q=>`<td class="l"><b class="mono">${esc(q.t)}</b><span class="qn" title="${esc(q.longName||q.shortName||"")}">${esc(niceName((q.shortName||"").length<28?q.shortName||q.longName||"":q.longName||q.shortName))}</span></td>`,
     price:q=>`<td class="num">${money(q.regularMarketPrice)}</td>`,
     chg:q=>`<td class="num ${cls(q.regularMarketChangePercent)}">${q.regularMarketChangePercent==null?"–":pct(q.regularMarketChangePercent/100,1)}</td>`,
     rvol:q=>`<td class="num">${q.regularMarketVolume&&q.averageDailyVolume3Month?(q.regularMarketVolume/q.averageDailyVolume3Month).toFixed(1)+"×":"–"}</td>`,
@@ -264,16 +274,39 @@ function quoteTable(rows,cols,opts={}){
     pe:q=>`<td class="num">${mult(q.forwardPE)}</td>`,
     yr:q=>`<td class="num ${cls(q.fiftyTwoWeekChangePercent)}">${q.fiftyTwoWeekChangePercent==null?"–":pct(q.fiftyTwoWeekChangePercent/100,0)}</td>`,
     rating:q=>`<td class="l ks">${esc((q.averageAnalystRating||"").replace(/^[\d.]+ - /,""))}</td>`,
-    yield:q=>`<td class="num">${q.dividendYield!=null?q.dividendYield.toFixed(2)+"%":"–"}</td>`,
+    yield:q=>`<td class="num">${q.dividendYield>0?q.dividendYield.toFixed(2)+"%":"–"}</td>`,
     add:q=>{ const on=me?.watch?.includes(q.t); return `<td><button class="star ${on?"on":""}" data-star="${esc(q.t)}" aria-label="${on?"Remove from":"Add to"} watchlist" title="${on?"On your watchlist":"Add to watchlist"}">${ic("star",16,on)}</button></td>`; }};
-  return `<div class="tbl-wrap"><table class="hold qt"><thead><tr>${cols.map(c=>`<th class="${c==="t"||c==="rating"?"l":""}">${H[c]}</th>`).join("")}</tr></thead><tbody>${rows.map(q=>`<tr data-sel="${esc(q.t)}">${cols.map(c=>C[c](q)).join("")}</tr>`).join("")}</tbody></table></div>`;
+  return `<div class="tbl-wrap"><table class="hold qt"><thead><tr>${cols.map(c=>`<th class="${c==="t"||c==="rating"?"l":""}" data-c="${c}">${H[c]}</th>`).join("")}</tr></thead><tbody>${rows.map(q=>`<tr data-sel="${esc(q.t)}">${cols.map(c=>C[c](q).replace(/^<td/,`<td data-c="${c}"`)).join("")}</tr>`).join("")}</tbody></table></div>`;
 }
+/* Yahoo's economic calendar uses wire-service shorthand; say it in words */
+const ECON_NAMES={"ADP National Employment":"ADP private jobs","Non-Farm Payrolls":"Jobs added (payrolls)","Unemployment Rate":"Unemployment rate",
+  "Initial Jobless Clm":"New jobless claims","Cont Jobless Clm":"Continuing jobless claims","Jobless Clm 4Wk Avg":"Jobless claims, 4-week average",
+  "CPI MM, SA":"Inflation (CPI), monthly","CPI YY, NSA":"Inflation (CPI), yearly","Core CPI MM, SA":"Core inflation, monthly","Core CPI YY, NSA":"Core inflation, yearly",
+  "CPI Index, NSA":"CPI index level","Core CPI Index, SA":"Core CPI index level","PPI Final Demand MM":"Producer prices, monthly","PPI Final Demand YY":"Producer prices, yearly",
+  "PPI exFood/Energy MM":"Core producer prices, monthly","PPI exFood/Energy YY":"Core producer prices, yearly","PPI ex Food/Energy/Tr MM":"Producer prices excl. food, energy, trade, monthly","PPI ex Food/Energy/Tr YY":"Producer prices excl. food, energy, trade, yearly",
+  "ISM Manufacturing PMI":"Factory activity (ISM)","ISM N-Mfg PMI":"Services activity (ISM)","ISM N-Mfg Bus Act":"Services business activity (ISM)","ISM Mfg Prices Paid":"Factory prices paid (ISM)",
+  "ISM N-Mfg Price Paid Idx":"Services prices paid (ISM)","ISM Manuf New Orders Idx":"Factory new orders (ISM)","ISM N-Mfg New Orders Idx":"Services new orders (ISM)",
+  "ISM Manuf Employment Idx":"Factory hiring (ISM)","ISM N-Mfg Employment Idx":"Services hiring (ISM)","Redbook YY":"Store sales (Redbook), yearly",
+  "Durable Goods, R MM":"Durable goods orders, monthly","Durables Ex-Def, R MM":"Durable goods excl. defense, monthly","Durables Ex-Transpt R MM":"Durable goods excl. transport, monthly",
+  "Nondef Cap Ex-Air R MM":"Business equipment orders, monthly","Retail Sales MM":"Retail sales, monthly","Retail Sales Ex-Autos MM":"Retail sales excl. autos, monthly",
+  "Retail Ex Gas/Autos":"Retail sales excl. gas and autos","Retail Control":"Retail sales, control group","U Mich Sentiment Prelim":"Consumer sentiment (U. Michigan)",
+  "U Mich 1Yr Inf Prelim":"Expected inflation, 1 year (U. Michigan)","U Mich 5-Yr Inf Prelim":"Expected inflation, 5 years (U. Michigan)",
+  "U Mich Conditions Prelim":"Consumer view of conditions (U. Michigan)","U Mich Expectations Prelim":"Consumer expectations (U. Michigan)",
+  "Exist. Home Sales % Chg":"Existing home sales, change","NAHB Housing Market Indx":"Homebuilder confidence","NFIB Business Optimism Idx":"Small-business optimism",
+  "MBA 30-Yr Mortgage Rate":"30-year mortgage rate","International Trade $":"Trade balance","Federal Budget,$":"Federal budget",
+  "Average Earnings MM":"Hourly earnings, monthly","Average Workweek Hrs":"Average workweek, hours","Wholesale Invt(y), R MM":"Wholesale inventories, monthly",
+  "EIA Wkly Crude Stk":"Crude oil stockpiles","EIA Wkly Gsln Stk":"Gasoline stockpiles","EIA-Nat Gas Chg Bcf":"Natural gas storage change","Factory Orders MM":"Factory orders, monthly","Factory Ex-Transp MM":"Factory orders excl. transport, monthly",
+  "Manuf Output MM":"Factory output, monthly","Industrial Production MM":"Industrial production, monthly","Capacity Utilization SA":"Factory capacity in use"};
+function econName(n){ n=String(n||"").trim(); if(ECON_NAMES[n]) return ECON_NAMES[n];
+  const per=/\bMM\b/.test(n)?", monthly":/\bYY\b/.test(n)?", yearly":/\bQQ\b/.test(n)?", quarterly":"";
+  n=n.replace(/\b(MM|YY|QQ)\b/,"").replace(/,?\s*\bR\b\s*$/,"").replace(/\bEx-?\s?/g,"excl. ").replace(/\bMfg\b|\bManuf\b/g,"manufacturing").replace(/\bIdx\b|\bIndx\b/g,"index").replace(/[\s,]+$/,"").replace(/\s+/g," ").trim();
+  return n.split(" ").map((w,i)=>i&&/^[A-Z][a-z]/.test(w)?w.toLowerCase():w).join(" ")+per; }
 function econList(rows,compact){
   if(!rows.length) return `<p class="hint">No US releases in this window.</p>`;
   const today=nyToday(), by=new Map(); rows.forEach(e=>{ if(!by.has(e.date)) by.set(e.date,[]); by.get(e.date).push(e); });
-  const fmt=v=>v==null?"–":(Math.abs(v)>=1000?v.toLocaleString("en-US"):String(+(+v).toFixed(2)));
+  const fmt=v=>v==null?"–":(v<0?"−":"")+(Math.abs(v)>=1000?Math.abs(v).toLocaleString("en-US"):String(+Math.abs(+v).toFixed(2)));
   return [...by].map(([d,list])=>`<div class="eg"><div class="egh ${d===today?"today":""}">${dayLabel(d,today)}</div><table class="hz econ"><tbody>${list.map(e=>{ const surprise=e.actual!=null&&e.expected!=null?e.actual-e.expected:null;
-    return `<tr class="${e.actual==null?"pending":""}"><td class="l mono ks" style="width:48px">${esc(e.time)}</td><td class="l">${esc(e.event)}${e.for?` <span class="ks">${esc(String(e.for))}</span>`:""}</td><td class="num"><b>${fmt(e.actual)}</b></td>${compact?"":`<td class="num ks">${fmt(e.expected)}</td>`}<td class="num ks">${fmt(e.last)}</td>${surprise!=null&&!compact?`<td class="num ${surprise>0?"up":surprise<0?"down":""}">${surprise>0?"▲":surprise<0?"▼":"="}</td>`:compact?"":"<td></td>"}</tr>`; }).join("")}</tbody></table></div>`).join("")
+    return `<tr class="${e.actual==null?"pending":""}"><td class="l mono ks" style="width:48px">${esc(e.time)}</td><td class="l" title="${esc(e.event)}">${esc(econName(e.event))}${e.for?` <span class="ks">${esc(String(e.for))}</span>`:""}</td><td class="num"><b>${fmt(e.actual)}</b></td>${compact?"":`<td class="num ks">${fmt(e.expected)}</td>`}<td class="num ks">${fmt(e.last)}</td>${surprise!=null&&!compact?`<td class="num sg ${surprise>0?"up":surprise<0?"down":""}">${surprise>0?"▲":surprise<0?"▼":"="}</td>`:compact?"":`<td class="num sg"></td>`}</tr>`; }).join("")}</tbody></table></div>`).join("")
    +`<p class="hint">${compact?"Bold is the actual figure, grey the previous one.":"Actual, then the forecast and the previous figure. ▲ ▼ show whether the actual came in above or below the forecast."}</p>`;
 }
 
@@ -316,12 +349,12 @@ function earnGrid(W,label,isMine){
   const byDay=new Map(); items.sort((a,b)=>a.date.localeCompare(b.date)||(b.w??0)-(a.w??0)||a.t.localeCompare(b.t)).forEach(e=>{ if(!byDay.has(e.date)) byDay.set(e.date,[]); byDay.get(e.date).push(e); });
   const up=items.filter(e=>e.date>=today&&e.reported==null), upW=up.reduce((a,e)=>a+(e.w||0),0);
   const done=items.filter(e=>e.reported!=null&&e.surprise!=null), beats=done.filter(e=>e.surprise>0).length;
-  const wtxt=(w)=>w==null?"":`<span class="ew">${w.toFixed(w<1?2:1)}%</span>`;
-  return `<p class="hint" style="margin:0 0 12px">${up.length} ${isMine?"of your stocks":"holdings"} report in the next two weeks${upW?`, ${upW.toFixed(1)}% of ${esc(label)} by weight`:""}.${done.length?` So far ${beats} of ${done.length} beat estimates.`:""} ☀ before the open, ☾ after the close. Past reports show the earnings surprise, then the stock's move the next session.</p>
+  const wtxt=(w)=>`<span class="ew">${w==null?"":w.toFixed(w<1?2:1)+"%"}</span>`;
+  return `<p class="hint" style="margin:0 0 12px">${up.length} ${isMine?(up.length===1?"of your stocks reports":"of your stocks report"):(up.length===1?"holding reports":"holdings report")} in the next two weeks${upW?`, ${upW.toFixed(1)}% of ${esc(label)} by weight`:""}.${done.length?` So far ${beats} of ${done.length} beat estimates.`:""} ☀ before the open, ☾ after the close. Past reports show the earnings surprise, then the stock's move the next session.</p>
    <div class="ecal">${[...byDay].map(([d,list])=>{ const past=d<today||list.every(e=>e.reported!=null), tw=list.reduce((a,e)=>a+(e.w||0),0);
      return `<div class="eday ${d===today?"today":""} ${past?"past":""}"><div class="edh">${dayLabel(d,today)}${tw?`<span>${tw.toFixed(1)}%</span>`:""}</div>
      ${list.slice(0,10).map(e=>{ const rx=e.reported!=null?reaction(e.t,e.date,e.timing==="BMO"?9:16):null;
-       return `<button class="eit" data-sel="${esc(e.t)}"><b class="mono">${esc(e.t)}</b><span class="et">${e.timing==="BMO"?"☀":e.timing==="AMC"?"☾":""}</span>${wtxt(e.w)}${e.reported!=null?`<span class="${cls(e.surprise)}">${e.surprise!=null?pct(e.surprise/100,0):""}</span>${rx!=null?`<span class="num ${cls(rx)}">${pct(rx,1)}</span>`:""}`:`<span class="ks">${e.epsEst!=null?"est $"+e.epsEst.toFixed(2):""}</span>`}</button>`; }).join("")}
+       return `<button class="eit" data-sel="${esc(e.t)}"><b class="mono">${esc(e.t)}</b><span class="et">${e.timing==="BMO"?"☀":e.timing==="AMC"?"☾":""}</span>${wtxt(e.w)}${e.reported!=null?`<span class="${cls(e.surprise)}">${e.surprise!=null?pct(e.surprise/100,0):""}</span><span class="num ${rx!=null?cls(rx):""}">${rx!=null?pct(rx,1):""}</span>`:`<span class="ks">${e.epsEst!=null?"est "+(e.epsEst<0?"−":"")+"$"+Math.abs(e.epsEst).toFixed(2):""}</span>`}</button>`; }).join("")}
      ${list.length>10?`<div class="ks" style="padding:4px 8px">+${list.length-10} more</div>`:""}</div>`; }).join("")}</div>`;
 }
 
@@ -330,11 +363,12 @@ let scrSel=load("scr","undervalued_growth_stocks"), scrSort={k:null,dir:-1};
 let scrForm={capMin:"10",capMax:"",peMax:"",growthMin:"",yieldMin:"",yearMin:"",yearMax:"",sector:"",sort:"marketcap"};
 try{ Object.assign(scrForm,JSON.parse(load("scrForm","{}"))); }catch(e){}
 const SCR_DESC={day_gainers:"Up the most today, $2B+ companies",day_losers:"Down the most today",most_actives:"Most shares traded today",
-  undervalued_growth_stocks:"Earnings growing 25%+ with P/E under 20",undervalued_large_caps:"Large companies with low P/E and PEG",
+  undervalued_growth_stocks:"Earnings growing 25%+ with a P/E under 20 on the past year's earnings",undervalued_large_caps:"Large companies with low P/E and PEG",
   growth_technology_stocks:"Tech with 25%+ revenue and earnings growth",aggressive_small_caps:"Small caps with fast earnings growth",
   small_cap_gainers:"Small caps up the most today",most_shorted_stocks:"Highest short interest",portfolio_anchors:"Low-cost, steady funds",
   solid_large_growth_funds:"Highly rated large-growth mutual funds",solid_midcap_growth_funds:"Highly rated mid-growth mutual funds",
-  top_mutual_funds:"Best-performing mutual funds",conservative_foreign_funds:"Low-risk international funds",high_yield_bond:"High-yield bond funds"};
+  top_mutual_funds:"Best-performing mutual funds",conservative_foreign_funds:"Low-risk international funds",high_yield_bond:"High-yield bond funds",
+  top_etfs_us:"Large, popular U.S. exchange-traded funds",top_performing_etfs:"ETFs with the best recent returns",technology_etfs:"Funds that hold tech stocks",bond_etfs:"Funds that hold bonds"};
 const SECTORS=["Technology","Healthcare","Financial Services","Consumer Cyclical","Communication Services","Industrials","Consumer Defensive","Energy","Basic Materials","Real Estate","Utilities"];
 function renderScreener(){
   if(!$("#scr")){
@@ -343,7 +377,7 @@ function renderScreener(){
     xget("screens").then(()=>page==="screener"&&renderScreener());
   }
   const L=xpeek("screens")?.data||[];
-  const stocks=L.filter(s=>!/fund|bond|anchor/.test(s.key)), funds=L.filter(s=>/fund|bond|anchor/.test(s.key));
+  const isF=k=>/fund|bond|anchor|etf/.test(k), stocks=L.filter(s=>!isF(s.key)), funds=L.filter(s=>isF(s.key));
   const item=s=>`<button class="scr-it ${s.key===scrSel?"on":""}" data-scr="${s.key}"><b>${esc(s.name)}</b><span>${esc(SCR_DESC[s.key]||"")}</span></button>`;
   $("#scrList").innerHTML=`<button class="scr-it build ${scrSel==="custom"?"on":""}" data-scr="custom"><b>Build your own</b><span>Size, valuation, growth, yield, momentum, sector</span></button>
     <div class="lbl" style="margin:14px 4px 6px">Stock ideas</div>${stocks.map(item).join("")||sk(200)}${funds.length?`<div class="lbl" style="margin:14px 4px 6px">Fund ideas</div>${funds.map(item).join("")}`:""}`;
@@ -352,7 +386,7 @@ function renderScreener(){
   if(scrSel==="custom"){
     const f=scrForm, inp=(k,ph,w=90)=>`<label><span>${ph}</span><input data-sf="${k}" value="${esc(f[k])}" type="number" step="any" style="width:${w}px"></label>`;
     head=`<form class="sform" id="sform">${inp("capMin","Market cap from ($B)")}${inp("capMax","to ($B)")}${inp("peMax","P/E at most")}${inp("growthMin","Revenue growth at least (%)")}${inp("yieldMin","Dividend yield at least (%)")}${inp("yearMin","1-year change from (%)")}${inp("yearMax","to (%)")}
-      <label><span>Sector</span><select data-sf="sector"><option value="">Any</option>${SECTORS.map(s=>`<option ${f.sector===s?"selected":""}>${s}</option>`).join("")}</select></label>
+      <label><span>Sector</span><select data-sf="sector"><option value="">Any</option>${SECTORS.map(s=>`<option value="${s}" ${f.sector===s?"selected":""}>${SECTOR_NAME[s]||s}</option>`).join("")}</select></label>
       <label><span>Sort by</span><select data-sf="sort">${[["marketcap","Size"],["change","Today's move"],["growth","Revenue growth"],["pe","P/E"],["yield","Dividend yield"],["year","1-year change"]].map(([k,l])=>`<option value="${k}" ${f.sort===k?"selected":""}>${l}</option>`).join("")}</select></label>
       <button class="btn">Find stocks</button></form>`;
     const params=Object.fromEntries(Object.entries(f).filter(([k,v])=>v!==""&&v!=null));
@@ -369,7 +403,7 @@ function renderScreener(){
     let rows=[...c.data];
     if(scrSort.k){ const g={price:q=>q.regularMarketPrice,chg:q=>q.regularMarketChangePercent,cap:q=>q.marketCap,pe:q=>q.forwardPE,yr:q=>q.fiftyTwoWeekChangePercent,yield:q=>q.dividendYield}[scrSort.k];
       if(g) rows.sort((a,b)=>{const x=g(a),y=g(b); if(x==null) return 1; if(y==null) return -1; return (x-y)*scrSort.dir;}); }
-    body=`<p class="hint" style="margin:10px 0">${rows.length} results. Click a column to sort, a row to open the stock.</p>`+quoteTable(rows,["t","price","chg","cap","pe","yr","yield","rating","add"]);
+    body=`<p class="hint" style="margin:10px 0">${rows.length} results. Sort by any column heading; open a stock from its row.</p>`+quoteTable(rows,["t","price","chg","cap","pe","yr","yield","rating","add"]);
   }
   main.innerHTML=head+`<div id="scrRes">${body}</div>`;
   const form=$("#sform");
