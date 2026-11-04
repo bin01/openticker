@@ -307,7 +307,30 @@ class State:
             col = df[c].tolist()
             px[c] = [None if (v is None or (isinstance(v, float) and math.isnan(v))) else round(float(v), 4)
                      for v in col]
+        # Yahoo's daily download sometimes leaves the latest session empty (it did on the evening of 2026-11-03),
+        # which would quietly roll every "today" number back a day. Fill the session from minute bars instead.
+        now_ny = dt.datetime.now(NY)
+        session = now_ny.strftime("%Y-%m-%d") if now_ny.weekday() < 5 and now_ny.time() >= dt.time(9, 30) else None
+        if session and dates and dates[-1] < session:
+            try:
+                m = download_closes(syms, period="1d", interval="1m")
+                day = pd.Timestamp(m.index[-1]).tz_convert(NY).strftime("%Y-%m-%d") if len(m.index) else None
+                if day == session:
+                    last = m.ffill().iloc[-1]
+                    dates.append(day)
+                    for t in px:
+                        v = last.get(t)
+                        px[t].append(round(float(v), 4) if v is not None and v == v else None)
+                    log(f"filled {day} from minute bars ({int(last.notna().sum())} symbols); the daily download didn't have it yet")
+            except Exception as e:
+                log(f"couldn't fill {session} from minute bars: {e!r}")
         with self.lock:
+            # never go backwards: if the download is behind what we already had, keep our newer session
+            if self.dates and dates and self.dates[-1] > dates[-1] and self.dates[-2:-1] == dates[-1:]:
+                dates.append(self.dates[-1])
+                for t in px:
+                    old = self.px.get(t)
+                    px[t].append(old[-1] if old else None)
             # keep any streamed price for today that is newer than the download
             if self.dates and dates and self.dates[-1] == dates[-1]:
                 for t, arr in self.px.items():
@@ -860,7 +883,12 @@ def health_report():
                  "ok": not open_ or (last_px and now - last_px < 300)})
     if open_ and (not last_px or now - last_px >= 300):
         problems.append(f"Live prices haven't updated since {_ago(now - last_px) if last_px else 'the app started'}. The feed status is “{stream}”.")
-    hist_ok = bool(hist_at) and now - hist_at < 30 * 3600
+    ny = dt.datetime.now(NY)
+    traded_today = bool(last_px) and dt.datetime.fromtimestamp(last_px, NY).date() == ny.date()   # false on holidays
+    behind = traded_today and ny.time() >= dt.time(16, 30) and last_day and last_day < ny.strftime("%Y-%m-%d") and now - hist_at > 600
+    if behind:
+        problems.append(f"Today's closing prices haven't come in yet, so “today” numbers still show {last_day}.")
+    hist_ok = bool(hist_at) and now - hist_at < 30 * 3600 and not behind
     rows.append({"name": "Daily price history", "detail": f"through {last_day}, fetched {_ago(now - hist_at) if hist_at else 'never'}", "ok": hist_ok})
     if not hist_ok:
         problems.append("Daily price history hasn't refreshed in over a day, so returns and charts may be behind.")
