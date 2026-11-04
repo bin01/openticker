@@ -177,11 +177,24 @@ def ownership(sym):
                 kind = ("buy" if re.search(r"Purchase|Buy", text, re.I) else
                         "sell" if re.search(r"Sale|Sell", text, re.I) else
                         "award" if re.search(r"Award|Grant|Gift|Conversion|Exercise", text, re.I) else "other")
+                # a finer label than `kind` (which the page uses): exercises and gifts aren't pay, and aren't trades either
+                what = ("exercise" if re.search(r"Conversion|Exercise", text, re.I) else
+                        "gift" if re.search(r"Gift", text, re.I) else kind)
+                px = re.search(r"price\s+([\d,.]+)", text, re.I)
                 rows.append({"date": iso(d), "insider": r.get("Insider"), "role": r.get("Position"), "text": text,
-                             "shares": clean(r.get("Shares")), "value": clean(r.get("Value")), "kind": kind})
-        out["insiders"] = rows[:60]
+                             "shares": clean(r.get("Shares")), "value": clean(r.get("Value")), "kind": kind, "what": what,
+                             "price": clean(float(px.group(1).replace(",", ""))) if px else None, "own": r.get("Ownership")})
+        out["insiders"] = rows[:100]
     except Exception:
         out["insiders"] = []
+    try:
+        ro = t.insider_roster_holders
+        out["roster"] = [{"name": r.get("Name"), "role": r.get("Position"), "last": r.get("Most Recent Transaction"),
+                          "lastDate": iso(r.get("Latest Transaction Date")),
+                          "direct": clean(r.get("Shares Owned Directly")), "indirect": clean(r.get("Shares Owned Indirectly"))}
+                         for r in ro.to_dict("records")] if isinstance(ro, pd.DataFrame) else []
+    except Exception:
+        out["roster"] = []
     try:
         ip = t.insider_purchases
         out["insiderSummary"] = [{"label": str(r.iloc[0]), "shares": clean(r.iloc[1]), "trans": clean(r.iloc[2])}
@@ -189,6 +202,17 @@ def ownership(sym):
     except Exception:
         out["insiderSummary"] = []
     return _need(out, "major", "institutions", "funds", "insiders")
+
+
+# ---------------------------------------------------------------- daily bars (for technicals)
+def ohlc(sym):
+    """Two years of daily bars, split-adjusted, oldest first."""
+    h = yf.Ticker(sym).history(period="2y", interval="1d", auto_adjust=True)
+    if h is None or h.empty:
+        raise RuntimeError("Yahoo didn't send price history just now. Try again in a minute.")
+    h = h.dropna(subset=["Close"])
+    return {"d": [i.strftime("%Y-%m-%d") for i in h.index], "o": [clean(x) for x in h["Open"]], "h": [clean(x) for x in h["High"]],
+            "l": [clean(x) for x in h["Low"]], "c": [clean(x) for x in h["Close"]], "v": [clean(x) for x in h["Volume"]]}
 
 
 # ---------------------------------------------------------------- options

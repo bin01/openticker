@@ -1,21 +1,32 @@
 ---
 name: sector-rotation
-description: Which sectors and styles are leading or lagging the stock market, over days to months, and what the rotation suggests. Use for "which sectors are leading", "sector rotation", "where is money moving".
+description: Shows which sectors are leading and lagging the stock market over days to months, names the pattern (risk-on, defensive, rate-driven) and the stocks behind it, and says what would confirm or break it. Use when the user asks which sectors are leading, about sector rotation, or where money is moving.
 metadata:
   blurb: "Leaders and laggards across sectors, and what the shift says"
+  order: 2
   label: "Which sectors lead?"
   scope: market
-  order: 2
   prompt: "Which sectors are leading and lagging right now, and what does it say?"
 ---
 
 # Sector rotation
 
-Data: `openticker market`, which includes the sector funds over 1D, 1W, 1M and 3M, and `openticker fund SPY --h 1M` for the stocks behind the moves.
+**Data**: `openticker market` for the 11 sector funds over 1D, 1W, 1M and 3M, and `openticker fund SPY --h 1M` for the stocks behind the moves.
 
-1. **Leaders and laggards**: the top three and bottom three sectors over 1 month, with 1-week and 3-month figures for context. Say whether leadership is new (1W against 3M) or established.
-2. **The pattern**: name it plainly. Examples are risk-on (tech, discretionary, financials leading), defensive (utilities, staples, health care), or rate-driven (real estate and utilities following yields), and tie it to the macro numbers (10-year yield, dollar, oil).
-3. **Who's doing the work**: the handful of large stocks behind the leading sector's move.
+## Cover
+
+1. **Leaders and laggards**: the top three and bottom three sectors over 1 month, with 1-week and 3-month figures. Leadership that shows in 1W but not 3M is new; leadership in both is established.
+2. **The pattern**, named plainly and tied to the macro numbers:
+   - Risk-on: tech, consumer discretionary and financials leading.
+   - Defensive: utilities, consumer staples and health care leading.
+   - Rate-driven: real estate and utilities moving with the 10-year yield.
+3. **Who's doing the work**: the few large stocks behind the leading sector's move.
 4. **What would confirm or break it** next.
 
-Keep it under 220 words. Use a small table for the sector numbers.
+## Answer shape
+
+A small table of the leaders and laggards, then the pattern, the stocks behind it and what to watch, under 220 words.
+
+## Before you send
+
+- The pattern you name is supported by at least two sectors moving the same way.

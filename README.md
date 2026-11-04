@@ -80,12 +80,14 @@ One click runs a playbook written for that question. Hover any insight and press
 | --- | --- |
 | Quick take | The story of a stock in 200 words: trend, analysts, what's next |
 | Why is it moving? | Market, sector or company news, sized against a normal day |
+| Earnings | Before a report: the bar to beat and the move options price in. After: what happened and how the stock took it |
+| Read the chart | Trend, momentum, volume, and the support and resistance levels that matter |
+| Insider trades | Who's buying or selling, how much of their stake, and whether it means anything |
 | Bull vs bear | Both cases from the numbers, and what would prove each right |
-| Earnings preview | What's expected, how it usually reacts, what options price in |
-| Analyst pulse | Ratings, targets and estimate revisions, and their direction |
+| What analysts say | Ratings, targets and estimate revisions, and their direction |
 | Is it expensive? | Multiples against growth, its own history and peers |
-| Portfolio checkup | Concentration, sector tilt, what's driving returns, what's next |
-| Week ahead | Earnings and economic data that matter for your stocks |
+| Check up on my portfolio | Concentration, sector tilt, what's driving returns, what's next |
+| What to watch this week | Earnings and economic data that matter for your stocks |
 | Market recap | What the market did and why, in plain English |
 | Which sectors lead? | Leaders and laggards across sectors, and what the shift says |
 | Macro backdrop | Rates, the dollar, oil and the VIX, and what they mean for stocks |
@@ -116,6 +118,8 @@ OpenTicker's data works outside the app too, in whatever agent you already use.
 ```bash
 openticker stock NVDA              # company, price and trend, analysts, earnings, insiders, options, news
 openticker earnings NVDA           # one section: analysts, earnings, ownership, options, news, financials, events
+openticker technicals NVDA         # trend, RSI, MACD, volume, support and resistance
+openticker insiders NVDA           # insider buying and selling in depth
 openticker portfolio               # your positions, watchlist and what changed
 openticker market                  # indexes, sectors, macro and today's movers
 openticker fund SMH --h 1M         # what drove a fund

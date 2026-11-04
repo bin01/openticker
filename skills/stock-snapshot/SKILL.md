@@ -1,6 +1,6 @@
 ---
 name: stock-snapshot
-description: Quick, plain-English take on a single stock - what the company is, how the stock is doing, what analysts and insiders are doing, and what's coming up. Use when someone asks "what's going on with TICKER" or "give me the quick take".
+description: Gives a quick, plain-English take on one stock - what kind of story it is right now, how it's trading against the market, what analysts and insiders are doing, and what's coming up. Use when the user asks what's going on with a stock, wants the quick take, or names a ticker without a specific question.
 metadata:
   blurb: "The story in 200 words: trend, analysts, what's next"
   order: 1
@@ -9,15 +9,23 @@ metadata:
   prompt: "Give me the quick take on {t}."
 ---
 
-# Stock snapshot
+# Quick take
 
-Get the data with `openticker stock TICKER` unless it is already in front of you.
+**Data**: `openticker stock TICKER`, unless it's already in the conversation.
 
-Write it in this order:
-1. **One-line verdict**: what kind of story this stock is right now. Examples: "a momentum leader cooling off", "a value name with estimates rising", "a broken chart waiting on earnings".
-2. **How it's trading**: today, 1 month and YTD versus the S&P 500, where it sits against its 50 and 200-day averages, and its distance from the 52-week high.
-3. **What the pros think**: the consensus, the average target as upside or downside, and the direction of the last few rating or target changes. Say whether EPS estimates are rising or falling over 30 and 90 days.
-4. **Watch next**: the next earnings date and the move options imply, any insider buying, and unusual options.
-5. If the user owns it, one line on what it means for their position, such as its size or gain.
+## Write it in this order
 
-Keep it under 200 words. Use numbers, not adjectives.
+1. **The story in one line**: name the kind of situation, such as "a momentum leader cooling off", "a cheap stock with estimates rising" or "a broken chart waiting on earnings".
+2. **How it's trading**: today, 1 month and year to date against the S&P 500; where it sits against its 50- and 200-day averages; the distance from the 52-week high.
+3. **What the pros think**: the consensus, the average target as upside or downside, and the direction of the last few rating and target changes. Say whether EPS estimates are rising or falling over 30 and 90 days, since revisions move stocks more than ratings do.
+4. **Watch next**: the next earnings date and the move options imply; insider buying, if any; unusual options activity.
+5. **If the user owns it**: one line on their position, such as its size or gain.
+
+## Answer shape
+
+Four or five short paragraphs or bullets, under 200 words. No headings: it's a quick take.
+
+## Before you send
+
+- The one-line story is backed by at least two numbers below it.
+- Anything missing from the data is skipped, not guessed.

@@ -1,6 +1,6 @@
 ---
 name: portfolio-checkup
-description: Health check of the user's portfolio and watchlist - concentration, sector tilt, what's driving returns, risks and upcoming events. Use for "how is my portfolio", "portfolio review".
+description: Checks the health of the user's portfolio and watchlist - what's working, concentration, sector tilt, what changed recently and what's coming up - and raises the biggest risk as a question. Use when the user asks how their portfolio is doing, for a portfolio review, or about their own positions.
 metadata:
   blurb: "What's working, concentration, risks and what's coming up"
   order: 1
@@ -11,12 +11,21 @@ metadata:
 
 # Portfolio check-up
 
-Data: `openticker portfolio`, then `openticker stock TICKER` for the one or two biggest positions or biggest movers.
+**Data**: `openticker portfolio`, then `openticker stock TICKER` for the one or two biggest positions or biggest movers.
 
-1. **Scorecard**: the value, today's move and the total gain. Name the position doing the most work and the one hurting most.
-2. **Shape**: concentration (the largest position, the top 3), sector tilt, and anything doubling up through similar stocks.
-3. **What's changed**: the most important brief items (ratings, targets, insiders, options) for holdings.
-4. **Coming up**: earnings dates for holdings in the next two weeks, with implied moves where known.
-5. **One thing to think about**: the biggest risk or imbalance, framed as a question rather than an instruction.
+## Cover
 
-If there are no positions, review the watchlist instead and say how to add positions in the app (My stocks, then Positions).
+1. **Scorecard**: total value, today's move and the total gain. Name the position doing the most work and the one hurting most.
+2. **Shape**: concentration (the largest position and the top three as a share of the total), sector tilt, and doubling up through similar stocks, such as owning NVDA and SMH.
+3. **What changed**: the most important brief items for holdings, such as rating changes, target moves, insider trades or unusual options.
+4. **Coming up**: earnings for holdings in the next two weeks, with implied moves.
+5. **One thing to think about**: the biggest risk or imbalance, framed as a question, such as "NVDA is 40% of the portfolio. Is that on purpose?"
+
+## Answer shape
+
+Use these headings: **Scorecard**, **Shape**, **What changed**, **Coming up**, **One thing to think about**. Under 250 words. Use a small table for positions only when there are more than three.
+
+## Before you send
+
+- With no positions, review the watchlist instead, and say positions are added under My stocks, then Positions.
+- The question at the end is a question, not an instruction to trade.

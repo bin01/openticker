@@ -21,6 +21,8 @@ App
 Data, as Markdown (for you or any agent)
   openticker stock NVDA              company, price and trend, analysts, earnings, insiders, options, news
   openticker analysts NVDA           one section (also: earnings, ownership, options, news, financials, events)
+  openticker insiders NVDA           insider trades in depth: who, how much, against what they still hold
+  openticker technicals NVDA         trend, moving averages, RSI, MACD, volume, support and resistance
   openticker portfolio               your positions, watchlist, upcoming earnings and brief
   openticker brief                   what changed for your stocks
   openticker market                  SPY, QQQ, SMH, SOXX, sectors, macro and today's movers
@@ -69,7 +71,7 @@ CONFIG = paths.HOME / "config.json"
 LOG = paths.LOGS / "server.log"
 MAC = sys.platform == "darwin"
 INSTALLED = any((v / "bin" / "python").exists() for v in (ROOT / ".venv", APP / ".venv"))
-SECTIONS = ("analysts", "earnings", "ownership", "options", "news", "financials", "events")
+SECTIONS = ("analysts", "earnings", "ownership", "options", "news", "financials", "events", "insiders", "technicals")
 DATA_CMDS = {"stock", "portfolio", "brief", "market", "fund", "compare", "history", "calendar", "search"} | set(SECTIONS)
 
 # --------------------------------------------------------------------------- output
@@ -624,8 +626,16 @@ def cmd_check(args):
     need = ("label", "scope", "prompt", "blurb", "order")
     for d in skill_dirs():
         meta = (d / "SKILL.md").read_text().split("---")[1] if (d / "SKILL.md").read_text().startswith("---") else ""
-        if not re.search(r"^name:", meta, re.M) or not re.search(r"^description:", meta, re.M):
+        nm = re.search(r"^name:\s*(.+)$", meta, re.M)
+        ds = re.search(r"^description:\s*(.+)$", meta, re.M)
+        if not nm or not ds:
             fails.append(f"skills/{d.name}/SKILL.md: needs name and description")
+            continue
+        if nm.group(1).strip() != d.name or not re.fullmatch(r"[a-z0-9-]{1,64}", d.name):
+            fails.append(f"skills/{d.name}/SKILL.md: name must match the folder, in lowercase letters, numbers and hyphens (64 at most)")
+        desc = ds.group(1).strip().strip('"')
+        if len(desc) > 1024 or "Use when" not in desc or re.match(r"(I|We|You)\b", desc):
+            fails.append(f"skills/{d.name}/SKILL.md: description should say what it does in the third person, then \"Use when ...\" (1024 characters at most)")
         elif not re.search(r"hidden:\s*\"?true", meta):
             miss = [k for k in need if not re.search(rf"^\s+{k}:", meta, re.M)]
             if miss:

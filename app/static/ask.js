@@ -20,7 +20,8 @@ const TICK="Tick";
 /* skills ship with the server; this copy lets things render before /api/ask/info answers */
 const ASK_SKILLS_FALLBACK=[
   {name:"stock-snapshot",label:"Quick take",scope:"stock"},{name:"explain-move",label:"Why is it moving?",scope:"stock"},
-  {name:"bull-bear",label:"Bull vs bear",scope:"stock"},{name:"earnings-preview",label:"Earnings preview",scope:"stock"},
+  {name:"earnings-preview",label:"Earnings",scope:"stock"},{name:"technical-analysis",label:"Read the chart",scope:"stock"},
+  {name:"insider-trades",label:"Insider trades",scope:"stock"},{name:"bull-bear",label:"Bull vs bear",scope:"stock"},
   {name:"analyst-pulse",label:"What analysts say",scope:"stock"},{name:"valuation-check",label:"Is it expensive?",scope:"stock"},
   {name:"portfolio-checkup",label:"Check up on my portfolio",scope:"portfolio"},{name:"week-ahead",label:"What to watch this week",scope:"portfolio"},
   {name:"market-recap",label:"Market recap",scope:"market"},{name:"sector-rotation",label:"Which sectors lead?",scope:"market"},{name:"macro-check",label:"Macro backdrop",scope:"market"}];
@@ -106,7 +107,7 @@ function setMood(m){ ASK.mood=m; document.querySelectorAll(".tick.live").forEach
 /* entry points on the page ------------------------------------------------------------------------ */
 function askRow(t,scope){
   scope=scope||(t?"stock":"market");
-  const S=askSkills(scope).slice(0,scope==="stock"?4:3);
+  const S=askSkills(scope).slice(0,scope==="stock"?5:3);
   return `<div class="askrow"><span class="askl">${tickFace(16)}Ask ${TICK}</span>${S.map(s=>`<button class="askchip" data-ask-skill="${esc(s.name)}" data-ask-scope="${scope}"${t?` data-ask-t="${esc(t)}"`:""}>${esc(s.label)}</button>`).join("")}</div>`;
 }
 function askCmd(q){ return {cmd:"ask:free",label:`Ask ${TICK} “${q.length>60?q.slice(0,58)+"…":q}”`,hint:TICK,icon:"spark",run:()=>openAsk({q,send:true})}; }

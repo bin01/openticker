@@ -57,7 +57,13 @@ The scripts are classic `<script>` tags sharing globals, loaded in this order: t
 
 **Change how Tick talks.** Edit `SYSTEM` in `app/agent.py`. It's an f-string, so double any literal `{` `}`. Restart.
 
-**Add a playbook** (a one-click question). Copy a folder in `skills/`, rename it, and edit the front matter: `name`, `description`, and under `metadata`: `label` (the button), `scope` (`stock`, `portfolio` or `market`), `prompt` (use `{t}` for the ticker), `blurb`, `order`. The body tells the agent how to answer, using only `openticker` commands for data. `openticker skills install` updates the copies outside agents use.
+**Add a playbook** (a one-click question). Copy a folder in `skills/`, rename it, and edit the front matter: `name` (same as the folder), `description`, and under `metadata`: `label` (the button), `scope` (`stock`, `portfolio` or `market`), `prompt` (use `{t}` for the ticker), `blurb`, `order`. Follow the shape the others use, which comes from Anthropic's skill-writing guidance:
+- The description says what the playbook does in the third person, then "Use when ..." with the words people actually type. Agents outside the app pick skills by this line alone.
+- The body starts with **Data** (only `openticker` commands), then how to read the data, then **Answer shape** (order, length, an example opening line), then **Before you send** (two or three checks specific to this playbook).
+- Give the reason behind any threshold ("RSI above 70 says the run is stretched"), keep it short, and leave out what any good analyst already knows. Shared rules (lead with the answer, no buy or sell calls) live in `SYSTEM` and `skills/openticker`.
+- Test it: ask Tick with the playbook on two or three different stocks, and read the answers like the person would.
+
+`openticker check` validates the front matter; `openticker skills install` updates the copies outside agents use.
 
 **Give Tick new data.** Add a function to `app/agent.py` that returns Markdown, wire it into `text_for()`, add the command name to `DATA_CMDS` in `bin/openticker` (and `data_query()` if it takes arguments), optionally an MCP tool in `MCP_TOOLS`, and a row in `skills/openticker/SKILL.md` so agents know it exists. Example: `history`.
 

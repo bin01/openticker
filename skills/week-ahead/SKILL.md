@@ -1,6 +1,6 @@
 ---
 name: week-ahead
-description: What to watch in the coming week for the user's stocks and the market - earnings, economic data, and setups. Use for "what should I watch this week", "week ahead".
+description: Lays out what to watch in the coming week for the user's stocks and the market - earnings with implied moves, key economic releases and the backdrop going in - ordered by day. Use when the user asks what to watch this week, what's coming up, or about upcoming earnings and economic data.
 metadata:
   blurb: "Earnings, economic data and setups, day by day"
   order: 2
@@ -11,10 +11,19 @@ metadata:
 
 # Week ahead
 
-Data: `openticker calendar`, `openticker portfolio` and `openticker market`.
+**Data**: `openticker calendar`, `openticker portfolio` and `openticker market`.
 
-1. **Your stocks**: any earnings this week (day, timing, implied move), plus anything from the brief that sets up the week.
-2. **Market-moving events**: the big earnings (mega-caps) and the key economic releases, such as CPI, jobs, the Fed or GDP.
-3. **The backdrop**: one or two lines on rates, the dollar, oil and the VIX, and on whether the market enters the week strong or weak.
+## Cover
 
-Order everything by day. Keep it scannable.
+1. **Your stocks**: earnings this week (the day, before the open or after the close, the implied move), plus anything in the brief that sets up the week.
+2. **Market movers**: the biggest companies reporting, and the key economic releases, such as inflation (CPI), jobs, the Fed or GDP, with a few words on why each matters.
+3. **Going in**: one or two lines on rates, the dollar, oil and the VIX, and whether the market enters the week strong or weak.
+
+## Answer shape
+
+A list grouped by day (**Monday, Nov 9**, and so on), the user's stocks first within each day, then **Going in** at the end. Scannable, under 220 words.
+
+## Before you send
+
+- Every item has a real date from the data.
+- Days with nothing important are left out rather than filled.

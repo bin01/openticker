@@ -1,21 +1,30 @@
 ---
 name: valuation-check
-description: Is a stock cheap or expensive? Compares its multiples with its growth, its history and peers. Use for "is TICKER expensive", "valuation".
+description: Answers whether a stock is cheap or expensive by comparing its multiples (P/E, price/sales, PEG) with its growth, its own history and close peers, in plain words. Use when the user asks if a stock is expensive, overvalued or cheap, or about its valuation or P/E.
 metadata:
   blurb: "Multiples against growth and peers, in plain words"
-  order: 6
+  order: 8
   label: "Is it expensive?"
   scope: stock
   prompt: "Is {t} expensive right now?"
 ---
 
-# Valuation check
+# Is it expensive?
 
-Data: `openticker stock TICKER`. For peers, use `openticker compare TICKER PEER1 PEER2 PEER3` with three close competitors.
+**Data**: `openticker stock TICKER`, then `openticker compare TICKER PEER1 PEER2 PEER3` with three close competitors.
 
-1. The headline multiples: trailing and forward P/E, price/sales and PEG, explained in plain words. For example, "you pay $X for each $1 of next year's expected profit."
-2. Growth-adjusted: is the forward P/E justified by the expected EPS growth?
-3. Against peers: use a small table.
-4. What's priced in: the growth the current price implies, roughly, and what happens if growth disappoints.
+## Work through
 
-Answer the question directly at the top: cheap, fair or expensive, and relative to what.
+1. **The multiples in plain words**: trailing and forward P/E, price/sales and PEG. For example, "you pay $26 for each $1 of the last year's profit, and $13 for each $1 expected next year."
+2. **Against growth**: whether the forward P/E is justified by expected EPS growth. A PEG near 1 is the usual rough line for "fairly priced for its growth".
+3. **Against peers**: a small table of the same multiples and growth.
+4. **What's priced in**: roughly what growth the price assumes, and what happens to the multiple if growth disappoints.
+
+## Answer shape
+
+Answer at the top: cheap, fair or expensive, and against what. Then the four points, under 220 words, with the peer table.
+
+## Before you send
+
+- Each multiple is explained in plain words the first time it appears.
+- Peers are real competitors in the same business, not just the same sector.

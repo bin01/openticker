@@ -1,6 +1,6 @@
 ---
 name: openticker
-description: Live market data and the user's own portfolio from OpenTicker, a dashboard running on their Mac. Use for any question about a stock, ETF, the market, earnings, analysts, insiders, options, or the user's watchlist and positions, and when the user mentions OpenTicker.
+description: Provides live market data and the user's own portfolio from OpenTicker, a dashboard running on their Mac. Use when the user asks about a stock, ETF, the market, earnings, analysts, insiders, options, technicals, or their watchlist and positions, or mentions OpenTicker.
 metadata:
   hidden: "true"
 ---
@@ -13,6 +13,8 @@ OpenTicker runs on the user's Mac and serves live data from Yahoo Finance plus t
 | --- | --- |
 | `openticker stock NVDA` | Company, price and trend vs the S&P 500, fund membership, analysts, earnings, insiders, options, news, events |
 | `openticker analysts NVDA` | One section; also `earnings`, `ownership`, `options`, `news`, `financials`, `events` |
+| `openticker insiders NVDA` | Insider trades in depth: buys and sales by person, cluster buying, how much of their stake they sold |
+| `openticker technicals NVDA` | Trend, moving averages, RSI, MACD, volume, volatility, support and resistance, strength vs the market and sector |
 | `openticker portfolio` | The user's positions with P&L, watchlist, upcoming earnings, recent changes |
 | `openticker brief` | What changed for the user's stocks: ratings, targets, insider trades, unusual options |
 | `openticker market` | SPY, QQQ, SMH, SOXX, sector ETFs, rates, oil, dollar, VIX and the day's S&P 500 movers |
@@ -33,4 +35,4 @@ If the command isn't found, OpenTicker isn't installed. Tell the user they can i
 - Compare to something: the S&P 500, the stock's own history, its peers, or what was expected.
 - Separate facts from interpretation, and say what would change the picture.
 - Don't tell the user to buy or sell. Lay out the tradeoffs and what to watch.
-- For a specific playbook (quick take, why it's moving, bull vs bear, earnings preview, analyst pulse, valuation, portfolio checkup, week ahead, market recap, sector rotation, macro check), use the matching `openticker-*` skill if you have it.
+- For a specific playbook (quick take, why it's moving, earnings, the chart, insider trades, bull vs bear, analyst pulse, valuation, portfolio check-up, week ahead, market recap, sector rotation, macro backdrop), use the matching `openticker-*` skill if you have it.

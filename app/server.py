@@ -758,6 +758,7 @@ EXTRA = {
     "ownership":  (True,  12 * 3600, lambda s, q: X.ownership(s)),
     "options":    (True,  None,      lambda s, q: X.options(s, _upcoming_earnings(s), (q.get("exp") or [None])[0])),
     "events":     (True,  24 * 3600, lambda s, q: X.events(s)),
+    "ohlc":       (True,  None,      lambda s, q: X.ohlc(s)),
     "etf":        (True,  24 * 3600, lambda s, q: X.etf(s)),
     "macro":      (False, None,      lambda s, q: {"daily": cached(("macro-daily",), 1800, X.macro_daily),
                                                    "intraday": cached(("macro-intra",), _live_ttl(60, 1800), X.macro_intraday),
@@ -784,6 +785,8 @@ def extra(name, q):
             raise ValueError("bad symbol")
     if name == "options":
         ttl = _live_ttl(600, 3 * 3600)
+    if name == "ohlc":
+        ttl = _live_ttl(300, 6 * 3600)
     if name == "macro":
         return jsonable(fn(sym, q))
     key = ("x", name, sym, tuple(sorted((k, tuple(v)) for k, v in q.items() if k != "t")))

@@ -62,7 +62,13 @@ def _money(x):
         return f"{s}${a / 1e9:.2f}B"
     if a >= 1e6:
         return f"{s}${a / 1e6:.1f}M"
+    if a >= 1000 or a == 0:
+        return f"{s}${a:,.0f}"
     return f"{s}${a:,.2f}"
+
+
+def _n(k, word, plural=None):
+    return f"{k} {word if k == 1 else plural or word + 's'}"
 
 
 def _num(x, d=1, suffix=""):
@@ -287,22 +293,34 @@ def sec_earnings(sym, hist, opts):
     em = (opts or {}).get("earnings") or {}
     if em.get("move"):
         L.append(f"Options price a ±{em['move'] * 100:.1f}% move through the {em.get('expiry')} expiry, which covers earnings.")
-    rows = []
+    rows, moves, beats, n = [], [], 0, 0
     dates, arr = _series(sym)
     for h in (hist or [])[:12]:
         if h.get("eps") is None:
             continue
-        rx = ""
-        if h["date"] in dates:   # next-session reaction
+        rx = rx5 = ""
+        if h["date"] in dates:   # the first session that could react (the same day for a report before the open)
             i = dates.index(h["date"]) + (1 if (h.get("hour") or 0) >= 12 else 0)
             if 0 < i < len(arr) and arr[i] and arr[i - 1]:
-                rx = _pct(arr[i] / arr[i - 1] - 1)
+                moves.append(arr[i] / arr[i - 1] - 1)
+                rx = _pct(moves[-1])
+                if i + 4 < len(arr) and arr[i + 4]:
+                    rx5 = _pct(arr[i + 4] / arr[i - 1] - 1)
+        if h.get("epsEst") is not None:
+            n += 1
+            beats += h["eps"] > h["epsEst"]
         rows.append([h["date"], f"${h['eps']:.2f}", f"${h['epsEst']:.2f}" if h.get("epsEst") is not None else "n/a",
-                     _pct(h["surprise"] / 100) if h.get("surprise") is not None else "n/a", rx or "n/a"])
-        if len(rows) >= 6:
+                     _pct(h["surprise"] / 100) if h.get("surprise") is not None else "n/a", rx or "n/a", rx5 or "n/a"])
+        if len(rows) >= 8:
             break
     if rows:
-        L += ["", "Earnings history:", _table(["Date", "EPS", "Expected", "Surprise", "Stock next session"], rows)]
+        L += ["", "Earnings history:", _table(["Date", "EPS", "Expected", "Surprise", "Stock next session", "After 5 sessions"], rows)]
+    if moves:
+        avg = sum(abs(x) for x in moves) / len(moves)
+        L.append(f"Beat the EPS estimate {beats} of {n} times. Average next-session move ±{avg * 100:.1f}% (largest {_pct(max(moves, key=abs))}); "
+                 f"up {sum(1 for x in moves if x > 0)} of {len(moves)} times."
+                 + (f" Options now price ±{em['move'] * 100:.1f}%, {'more' if em['move'] > avg * 1.1 else 'less' if em['move'] < avg * 0.9 else 'about the same'} than the average past move." if em.get("move") else ""))
+    L.append("For revenue, margins and the latest quarter's numbers, see `openticker financials`; for guidance, check the news or the company's release.")
     return L
 
 
@@ -334,6 +352,262 @@ def sec_ownership(o):
     inst = o.get("institutions") or []
     if inst:
         L.append("Top institutions: " + "; ".join(f"{i['holder']} {(i.get('pct') or 0) * 100:.1f}%" + (f" ({_pct(i['chg'])} last filing)" if i.get("chg") is not None else "") for i in inst[:5]) + ".")
+    return L
+
+
+# ---------------------------------------------------------------- technicals (computed from daily bars)
+def _sma_at(xs, n, end):
+    """Average of the n values ending at index `end` (inclusive), or None."""
+    if end + 1 < n:
+        return None
+    return sum(xs[end + 1 - n:end + 1]) / n
+
+
+def _ema(xs, n):
+    k, out, e = 2 / (n + 1), [], None
+    for x in xs:
+        e = x if e is None else x * k + e * (1 - k)
+        out.append(e)
+    return out
+
+
+def _rsi(c, n=14):
+    """Wilder's RSI, the standard 14-day setting."""
+    if len(c) <= n:
+        return []
+    g = [max(c[i] - c[i - 1], 0) for i in range(1, len(c))]
+    lo = [max(c[i - 1] - c[i], 0) for i in range(1, len(c))]
+    ag, al = sum(g[:n]) / n, sum(lo[:n]) / n
+    out = [None] * n
+    for i in range(n, len(g)):
+        ag, al = (ag * (n - 1) + g[i]) / n, (al * (n - 1) + lo[i]) / n
+        out.append(100 if al == 0 else 100 - 100 / (1 + ag / al))
+    return [None] + out
+
+
+def _levels(h, l, c, d, look=126, w=5, tol=0.015):
+    """Support and resistance from swing points: a bar whose high (low) is the highest (lowest) of the w bars on
+    each side. Swings within 1.5% of each other are one level; more touches make a level stronger."""
+    n = len(c)
+    pts = []
+    for i in range(max(w, n - look), n - w):
+        if h[i] == max(h[i - w:i + w + 1]):
+            pts.append((h[i], d[i]))
+        if l[i] == min(l[i - w:i + w + 1]):
+            pts.append((l[i], d[i]))
+    pts.sort()
+    groups = []
+    for p, day in pts:
+        if groups and p <= groups[-1]["avg"] * (1 + tol):
+            g = groups[-1]
+            g["px"].append(p)
+            g["avg"] = sum(g["px"]) / len(g["px"])
+            g["last"] = max(g["last"], day)
+        else:
+            groups.append({"px": [p], "avg": p, "last": day})
+    return [(g["avg"], len(g["px"]), g["last"]) for g in groups]
+
+
+def _sector_etf(info):
+    key = str(info.get("sector") or "").lower().replace(" ", "-")
+    return next((e for e, _, k in srv.X.SECTOR_ETFS if k == key), None)
+
+
+def sec_technicals(sym, b, info):
+    if not b or len(b.get("c") or []) < 60:
+        return []
+    d, o, h, l, c, v = b["d"], b["o"], b["h"], b["l"], b["c"], [x or 0 for x in b["v"]]
+    n, last = len(c), c[-1]
+    L = [f"Last close ${last:,.2f} on {d[-1]}. Computed from {n} daily bars (split-adjusted)."]
+
+    # trend: the averages, their direction over two weeks, and where price sits
+    rows, avg = [], {}
+    for k in (20, 50, 200):
+        a, prev = _sma_at(c, k, n - 1), _sma_at(c, k, n - 11)
+        if a is None:
+            continue
+        avg[k] = a
+        slope = a / prev - 1 if prev else None
+        way = "n/a" if slope is None else "rising" if slope > 0.005 else "falling" if slope < -0.005 else "flat"
+        rows.append([f"{k}-day", f"${a:,.2f}", _pct(last / a - 1), f"{way} ({_pct(slope)} in 10 sessions)" if slope is not None else way])
+    a20, a50, a200 = avg.get(20), avg.get(50), avg.get(200)
+    if a50 and a200:
+        s50 = _sma_at(c, 50, n - 11)
+        up50 = s50 and a50 > s50
+        if last > a50 > a200 and up50:
+            trend = "Uptrend: price above a rising 50-day, which is above the 200-day."
+        elif last < a50 < a200 and not up50:
+            trend = "Downtrend: price below a falling 50-day, which is below the 200-day."
+        elif a50 > a200 and last < a50:
+            trend = "Pullback within an uptrend: the 50-day is still above the 200-day, but price has slipped under the 50-day."
+        elif a50 < a200 and last > a50:
+            trend = "Bounce within a downtrend: price is back above the 50-day, but the 50-day is still under the 200-day."
+        else:
+            trend = "Mixed: the averages don't agree."
+        L.append("Trend: " + trend)
+    L += ["", _table(["Average", "Level", "Price vs it", "Direction"], rows)]
+
+    # the last golden or death cross (50-day crossing the 200-day)
+    if n >= 210:
+        diff = [(_sma_at(c, 50, i) or 0) - (_sma_at(c, 200, i) or 0) for i in range(199, n)]
+        for j in range(len(diff) - 1, 0, -1):
+            if (diff[j] > 0) != (diff[j - 1] > 0):
+                i = j + 199
+                L.append(f"Last cross: {'golden cross (50-day above 200-day)' if diff[j] > 0 else 'death cross (50-day below 200-day)'} on {d[i]}, {n - 1 - i} sessions ago.")
+                break
+        else:
+            L.append(f"No 50/200-day cross in the last {n - 200} sessions; the 50-day has stayed {'above' if diff[-1] > 0 else 'below'} the 200-day.")
+
+    # momentum
+    r = _rsi(c)
+    if r and r[-1] is not None:
+        tag = "overbought (above 70)" if r[-1] >= 70 else "oversold (below 30)" if r[-1] <= 30 else "neutral (30 to 70)"
+        L.append(f"RSI (14-day): {r[-1]:.0f}, {tag}; it was {r[-6]:.0f} five sessions ago." if r[-6] is not None else f"RSI (14-day): {r[-1]:.0f}, {tag}.")
+    e12, e26 = _ema(c, 12), _ema(c, 26)
+    macd = [a - b2 for a, b2 in zip(e12, e26)]
+    sig = _ema(macd, 9)
+    hist = [m - s for m, s in zip(macd, sig)]
+    cross = next((i for i in range(n - 1, max(n - 61, 1), -1) if (hist[i] > 0) != (hist[i - 1] > 0)), None)
+    L.append(f"MACD (12, 26, 9): {macd[-1]:+.2f}, signal {sig[-1]:+.2f}, so momentum is {'above' if hist[-1] > 0 else 'below'} its signal line"
+             + (f"; it crossed {'up' if hist[cross] > 0 else 'down'} on {d[cross]}" if cross else "; no cross in the last 60 sessions")
+             + f", and MACD is {'above' if macd[-1] > 0 else 'below'} zero.")
+
+    # volatility
+    tr = [max(h[i] - l[i], abs(h[i] - c[i - 1]), abs(l[i] - c[i - 1])) for i in range(max(1, n - 14), n)]
+    atr = sum(tr) / len(tr)
+    mid = a20 or last
+    sd = (sum((x - mid) ** 2 for x in c[-20:]) / 20) ** 0.5
+    if sd:
+        pb = (last - (mid - 2 * sd)) / (4 * sd)
+        bw = [(lambda m, s: 4 * s / m if m else 0)(sum(c[i - 19:i + 1]) / 20, (sum((x - sum(c[i - 19:i + 1]) / 20) ** 2 for x in c[i - 19:i + 1]) / 20) ** 0.5)
+              for i in range(max(19, n - 126), n)]
+        rank = sum(1 for x in bw if x <= bw[-1]) / len(bw)
+        L.append(f"Volatility: average true range ${atr:,.2f} a day ({atr / last * 100:.1f}% of price). Bollinger bands (20-day, 2 standard deviations) "
+                 f"${mid - 2 * sd:,.2f} to ${mid + 2 * sd:,.2f}; price sits at {pb * 100:.0f}% of the band. Band width is narrower than "
+                 f"{(1 - rank) * 100:.0f}% of the last 6 months" + (" (a squeeze: quiet stretches often end in a bigger move)." if rank <= 0.1 else "."))
+
+    # volume
+    v50 = sum(v[-50:]) / 50 if n >= 50 else None
+    if v50:
+        upv = sum(v[i] for i in range(n - 20, n) if c[i] > c[i - 1])
+        dnv = sum(v[i] for i in range(n - 20, n) if c[i] < c[i - 1])
+        big = max(range(n - 20, n), key=lambda i: v[i])
+        L.append(f"Volume: last session {v[-1] / v50:.1f}× its 50-day average ({v50 / 1e6:.1f}M shares). Over 20 sessions, up days traded "
+                 f"{upv / dnv:.2f}× the volume of down days" + (" (buyers more active)" if upv > dnv * 1.2 else " (sellers more active)" if dnv > upv * 1.2 else "") +
+                 f". Heaviest day: {d[big]}, {v[big] / v50:.1f}× average, {_pct(c[big] / c[big - 1] - 1)}." if dnv else "")
+
+    # levels
+    yr = range(max(0, n - 252), n)
+    hi_i, lo_i = max(yr, key=lambda i: h[i]), min(yr, key=lambda i: l[i])
+    L.append(f"52-week high ${h[hi_i]:,.2f} on {d[hi_i]} ({_pct(last / h[hi_i] - 1)} from it, {n - 1 - hi_i} sessions ago); "
+             f"low ${l[lo_i]:,.2f} on {d[lo_i]} ({_pct(last / l[lo_i] - 1)} above it).")
+    lv = _levels(h, l, c, d)
+    below = sorted([x for x in lv if x[0] < last * 0.995], key=lambda x: -x[0])[:3]
+    above = sorted([x for x in lv if x[0] > last * 1.005], key=lambda x: x[0])[:3]
+    rows = [["Resistance", f"${p:,.2f}", _pct(p / last - 1), k, day] for p, k, day in reversed(above)] + \
+           [["Support", f"${p:,.2f}", _pct(p / last - 1), k, day] for p, k, day in below]
+    if rows:
+        L += ["", "Levels from swing highs and lows over 6 months (more touches, stronger level):",
+              _table(["Kind", "Price", "From here", "Touches", "Last touch"], rows)]
+
+    # relative strength against the market and the sector
+    def ret(cs, k):
+        return cs[-1] / cs[-1 - k] - 1 if len(cs) > k and cs[-1 - k] else None
+    peers = [("SPY", "S&P 500")] + ([(_sector_etf(info), "sector")] if _sector_etf(info) else [])
+    rows = []
+    for t, lab in peers:
+        try:
+            pc = srv.extra("ohlc", {"t": [t]})["c"]
+        except Exception:
+            continue
+        rows.append([f"{sym} vs {t} ({lab})"] + [_pct(ret(c, k) - ret(pc, k)) if ret(c, k) is not None and ret(pc, k) is not None else "n/a" for k in (21, 63, 126, 252)])
+    if rows:
+        L += ["", "Relative strength (return difference, positive means outperforming):", _table(["", "1M", "3M", "6M", "1Y"], rows)]
+
+    # the last ten sessions
+    rows = [[d[i], f"${c[i]:,.2f}", _pct(c[i] / c[i - 1] - 1), f"{v[i] / v50:.1f}×" if v50 else "n/a"] for i in range(n - 1, n - 11, -1)]
+    L += ["", "Last 10 sessions:", _table(["Date", "Close", "Change", "Volume vs 50-day"], rows)]
+    return L
+
+
+# ---------------------------------------------------------------- insider trades in depth
+WHAT = {"buy": "Open-market buy", "sell": "Sale", "exercise": "Option exercise", "award": "Stock award", "gift": "Gift", "other": "Other"}
+
+
+def sec_insiders(o, price):
+    if not o:
+        return []
+    tx = o.get("insiders") or []
+    today = dt.date.today()
+
+    def age(x):
+        try:
+            return (today - dt.date.fromisoformat(x["date"][:10])).days
+        except Exception:
+            return 9999
+    for x in tx:
+        x.setdefault("what", x.get("kind"))
+    L = []
+    m = o.get("major") or {}
+    if m.get("insidersPercentHeld") is not None:
+        L.append(f"Insiders own {m['insidersPercentHeld'] * 100:.2f}% of the shares.")
+    for n in (90, 365):
+        win = [x for x in tx if age(x) <= n]
+        b = [x for x in win if x["what"] == "buy"]
+        s = [x for x in win if x["what"] == "sell"]
+        def part(xs, word):
+            if not xs:
+                return f"no {word}s"
+            return f"{_n(len(xs), word)} by {_n(len({x['insider'] for x in xs}), 'person', 'people')} ({_money(sum(x.get('value') or 0 for x in xs))})"
+        L.append(f"Last {n} days: {part(b, 'open-market buy')}; {part(s, 'sale')}; "
+                 f"{_n(sum(1 for x in win if x['what'] == 'exercise'), 'option exercise')}, {_n(sum(1 for x in win if x['what'] == 'award'), 'stock award')}, "
+                 f"{_n(sum(1 for x in win if x['what'] == 'gift'), 'gift')}.")
+    # cluster buying: several different insiders buying within 30 days is the strongest signal in this data
+    buys = sorted((x for x in tx if x["what"] == "buy"), key=lambda x: x["date"])
+    clusters = []
+    for i, x in enumerate(buys):
+        d0 = dt.date.fromisoformat(x["date"][:10])
+        grp = [y for y in buys[i:] if (dt.date.fromisoformat(y["date"][:10]) - d0).days <= 30]
+        who = {y["insider"] for y in grp}
+        if len(who) >= 2 and not any(set(who) <= c["who"] for c in clusters):
+            clusters.append({"start": x["date"], "end": grp[-1]["date"], "who": who, "value": sum(y.get("value") or 0 for y in grp)})
+    L.append("Cluster buying (2+ insiders buying within 30 days): " + ("; ".join(
+        f"{len(c['who'])} insiders from {c['start']} to {c['end']}, {_money(c['value'])}" for c in clusters) if clusters else "none in the last year") + ".")
+
+    # who is trading, against what they still hold
+    def key(name):
+        return re.sub(r"[^A-Z]", "", str(name or "").upper())
+    held = {key(r.get("name")): (r.get("direct") or 0) + (r.get("indirect") or 0) for r in o.get("roster") or []}
+    people = {}
+    for x in tx:
+        if x["what"] not in ("buy", "sell"):
+            continue
+        p = people.setdefault(x["insider"], {"role": x.get("role") or "", "b": 0, "s": 0, "bs": 0, "ss": 0, "n": 0, "last": x["date"]})
+        p["n"] += 1
+        p["last"] = max(p["last"], x["date"])
+        if x["what"] == "buy":
+            p["b"] += x.get("value") or 0
+            p["bs"] += x.get("shares") or 0
+        else:
+            p["s"] += x.get("value") or 0
+            p["ss"] += x.get("shares") or 0
+    rows = []
+    for name, p in sorted(people.items(), key=lambda kv: -(kv[1]["b"] + kv[1]["s"]))[:10]:
+        now = held.get(key(name))
+        stake = f"{p['ss'] / (p['ss'] + now) * 100:.0f}%" if now and p["ss"] else ("0%" if now else "n/a")
+        rows.append([str(name).title(), p["role"], _money(p["b"]) if p["b"] else "", _money(p["s"]) if p["s"] else "", p["n"], p["last"],
+                     f"{now / 1e6:.2f}M" if now and now >= 1e6 else f"{now:,.0f}" if now else "n/a", stake])
+    if rows:
+        L += ["", "By insider, last 12 months (buys and sales only):",
+              _table(["Insider", "Role", "Bought", "Sold", "Trades", "Last", "Shares held now", "Sold as % of stake"], rows)]
+    rows = [[x["date"], str(x.get("insider") or "").title(), x.get("role") or "", WHAT.get(x["what"], x["what"]),
+             f"{x['shares']:,.0f}" if x.get("shares") else "", f"${x['price']:,.2f}" if x.get("price") else "",
+             _money(x.get("value")) if x.get("value") else "", _pct(price / x["price"] - 1) if price and x.get("price") else ""]
+            for x in tx if x["what"] in ("buy", "sell", "exercise")][:15]
+    if rows:
+        L += ["", "Recent trades:", _table(["Date", "Insider", "Role", "Type", "Shares", "Price", "Value", "Price now vs then"], rows)]
+    L.append("Notes: Yahoo doesn't say which sales were pre-planned (10b5-1 trading plans) or sold to cover taxes on vesting stock. "
+             "Shares held now come from each insider's latest filing.")
     return L
 
 
@@ -421,6 +695,8 @@ SECTIONS = {
     "news": ("News", ["detail"]),
     "financials": ("Financials", ["financials"]),
     "events": ("Dividends, splits and filings", ["events"]),
+    "insiders": ("Insider trades", ["ownership"]),
+    "technicals": ("Technicals", ["ohlc"]),
 }
 
 
@@ -453,7 +729,9 @@ def stock_context(sym, uid=None, only=None, timeout=25):
                 "options": lambda: sec_options(got.get("options")),
                 "news": lambda: sec_news(d.get("news")),
                 "financials": lambda: sec_financials(got.get("financials")),
-                "events": lambda: sec_events(got.get("events"))}[k]()
+                "events": lambda: sec_events(got.get("events")),
+                "insiders": lambda: sec_insiders(got.get("ownership"), price),
+                "technicals": lambda: sec_technicals(sym, got.get("ohlc"), info)}[k]()
         missing = [n for n in SECTIONS[k][1] if n not in got]
         L += ["", f"## {SECTIONS[k][0]}"] + (body or [f"(Yahoo didn't return this just now{': ' + ', '.join(missing) if missing else ''}.)"])
     return "\n".join(L).strip() + "\n"
@@ -1001,7 +1279,8 @@ def _describe_tool(name, inp):
             what = {"stock": "the full picture", "analysts": "analyst data", "earnings": "earnings history", "ownership": "insider and holder data",
                     "options": "options activity", "news": "the news", "financials": "the financial statements", "events": "dividends and filings",
                     "portfolio": "your portfolio", "brief": "your brief", "market": "the market", "fund": "fund drivers",
-                    "compare": "a comparison", "calendar": "the calendar", "search": "a ticker"}.get(m.group(1), m.group(1))
+                    "compare": "a comparison", "calendar": "the calendar", "search": "a ticker",
+                    "insiders": "insider trades", "technicals": "the chart", "history": "price history"}.get(m.group(1), m.group(1))
             return f"Checking {what}" + (f" for {m.group(2).strip().upper()}" if m.group(2).strip() and m.group(1) not in ("search", "fund") else "")
         return "Running a command"
     if name in ("WebSearch", "web_search"):
