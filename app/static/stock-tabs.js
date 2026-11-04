@@ -45,7 +45,7 @@ const qLabel=(d,freq)=>{ const x=new Date(d+"T12:00:00Z"); return freq==="annual
 const PERIOD={"0q":"This quarter","+1q":"Next quarter","0y":"This year","+1y":"Next year","LTG":"Long-term (5 yr)"};
 
 /* ---------- small charts, drawn at the size they're shown so text matches the other charts (10.5px labels, light grid) ---------- */
-const paneW=()=>Math.round(Math.min(720,Math.max(300,$("#drPane")?.clientWidth||520)));
+const paneW=()=>{ const w=$("#drPane")?.clientWidth||520; return Math.round($("#drawer.full")&&w>=760?(w-40)/2:Math.min(720,Math.max(300,w))); };
 const shortUsd=x=>x==null||!isFinite(x)?"–":(x<0?"−":"")+"$"+(a=>a>=1e12?(a/1e12).toFixed(1)+"T":a>=1e9?(a/1e9).toFixed(0)+"B":a>=1e6?(a/1e6).toFixed(0)+"M":a>=1e3?(a/1e3).toFixed(0)+"K":a.toFixed(a<10&&a%1?2:0))(Math.abs(x));
 const swatch=se=>`<span><i class="sw" style="background:${se.color};opacity:${se.soft?.5:.9}"></i>${esc(se.name)}</span>`;
 function barChart(labels,series,{h=150,fmt=usdB,axis=shortUsd,note}={}){
@@ -70,9 +70,12 @@ function lineChart(labels,series,{h=140,fmt=v=>pc(v,0)}={}){
   const X=i=>L+(W-L-R)*i/(n-1), Y=v=>T+(H-T-B)*(1-(v-lo)/(hi-lo));
   let s=`<svg class="chart" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`;
   niceTicks(lo,hi,3).forEach(t=>{ s+=`<line x1="${L}" x2="${W-R}" y1="${Y(t).toFixed(1)}" y2="${Y(t).toFixed(1)}" stroke="var(--grid)"/><text x="${L-6}" y="${(Y(t)+3.5).toFixed(1)}" font-size="10" text-anchor="end" class="mono" fill="var(--ink-3)">${fmt(t)}</text>`; });
+  const ends=[];
   series.forEach(se=>{ const pts=se.values.map((v,i)=>[i,v]).filter(p=>p[1]!=null); if(pts.length<2) return;
     s+=`<path d="${pts.map((p,j)=>(j?"L":"M")+X(p[0]).toFixed(1)+","+Y(p[1]).toFixed(1)).join("")}" fill="none" stroke="${se.color}" stroke-width="1.75" stroke-linejoin="round" opacity="${se.soft?.6:1}"/>`;
-    const e=pts[pts.length-1]; s+=`<circle cx="${X(e[0]).toFixed(1)}" cy="${Y(e[1]).toFixed(1)}" r="2.5" fill="${se.color}"/><text x="${(X(e[0])+6).toFixed(1)}" y="${(Y(e[1])+3.5).toFixed(1)}" font-size="10.5" class="mono" fill="${se.soft?"var(--ink-2)":se.color}">${fmt(e[1])}</text>`; });
+    const e=pts[pts.length-1]; s+=`<circle cx="${X(e[0]).toFixed(1)}" cy="${Y(e[1]).toFixed(1)}" r="2.5" fill="${se.color}"/>`; ends.push({x:X(e[0])+6,y:Y(e[1])+3.5,v:e[1],se}); });
+  ends.sort((a,b)=>a.y-b.y).forEach((e,i,a)=>{ if(i&&e.y-a[i-1].y<11) e.y=a[i-1].y+11; });
+  ends.forEach(e=>{ s+=`<text x="${e.x.toFixed(1)}" y="${e.y.toFixed(1)}" font-size="10.5" class="mono" fill="${e.se.soft?"var(--ink-2)":e.se.color}">${fmt(e.v)}</text>`; });
   labels.forEach((lab,i)=>{ s+=`<text x="${X(i).toFixed(1)}" y="${H-6}" font-size="10.5" text-anchor="middle" fill="var(--ink-3)">${esc(lab)}</text>`; });
   return `<div class="legend" style="margin-bottom:6px">${series.map(swatch).join("")}</div>`+s+"</svg>";
 }
@@ -101,10 +104,10 @@ function paneFinancials(d){
   const tbl=(blk)=>`<table class="hz fin"><thead><tr><th></th>${(blk.periods||[]).map(p=>`<th>${qLabel(p,finFreq)}</th>`).join("")}</tr></thead><tbody>${(blk.rows||[]).map(r=>`<tr><td>${esc(r.label)}</td>${r.values.map(v=>`<td class="num">${r.key==="Diluted EPS"?(v==null?"–":"$"+v.toFixed(2)):r.key==="Ordinary Shares Number"?shs(v):usdB(v)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
   return `<div class="seg sm" style="margin-bottom:12px"><button data-freq="quarterly" aria-pressed="${finFreq==="quarterly"}">Quarterly</button><button data-freq="annual" aria-pressed="${finFreq==="annual"}">Annual</button></div>
     ${notes.length?insightList(notes.map(t=>({html:t}))):""}
-    <div class="dr-sec"><h4>Revenue and profit</h4>${barChart(labs,[{name:"Revenue",values:s.rev,color:C1,top:gTop},{name:"Net income",values:s.ni,color:C2,soft:1}],{note:"Top label: growth vs a year earlier"})}</div>
-    <div class="dr-sec"><h4>Margins</h4>${lineChart(labs,[{name:"Gross",values:m(s.gp),color:C2,soft:1},{name:"Operating",values:m(s.op),color:C1},{name:"Net",values:m(s.ni),color:C3}])}</div>
-    ${cfP.length?`<div class="dr-sec"><h4>Cash generated and returned</h4>${barChart(cfP.map(p=>qLabel(p,finFreq)),[{name:"Free cash flow",values:fcf,color:C1},{name:"Buybacks",values:bb,color:C2,soft:1},{name:"Dividends",values:dv,color:C3}])}</div>`:""}
-    ${bsP.length?`<div class="dr-sec"><h4>Cash and debt</h4>${barChart(bsP.map(p=>qLabel(p,finFreq)),[{name:"Cash and investments",values:cash,color:C1},{name:"Total debt",values:debt,color:C3}])}</div>`:""}
+    <div class="dr-sec half"><h4>Revenue and profit</h4>${barChart(labs,[{name:"Revenue",values:s.rev,color:C1,top:gTop},{name:"Net income",values:s.ni,color:C2,soft:1}],{note:"Top label: growth vs a year earlier"})}</div>
+    <div class="dr-sec half"><h4>Margins</h4>${lineChart(labs,[{name:"Gross",values:m(s.gp),color:C2,soft:1},{name:"Operating",values:m(s.op),color:C1},{name:"Net",values:m(s.ni),color:C3}])}</div>
+    ${cfP.length?`<div class="dr-sec half"><h4>Cash generated and returned</h4>${barChart(cfP.map(p=>qLabel(p,finFreq)),[{name:"Free cash flow",values:fcf,color:C1},{name:"Buybacks",values:bb,color:C2,soft:1},{name:"Dividends",values:dv,color:C3}])}</div>`:""}
+    ${bsP.length?`<div class="dr-sec half"><h4>Cash and debt</h4>${barChart(bsP.map(p=>qLabel(p,finFreq)),[{name:"Cash and investments",values:cash,color:C1},{name:"Total debt",values:debt,color:C3}])}</div>`:""}
     <details class="dr-sec"><summary><h4 style="display:inline">All figures</h4></summary>${tbl(s.inc)}${tbl(s.cf)}${tbl(s.bs)}</details>`;
 }
 
