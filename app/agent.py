@@ -883,6 +883,13 @@ def market_context():
         if rows:
             rows.sort(key=lambda r: -float(r[4].rstrip("%")) if r[4] != "n/a" else 0)
             L += ["", "## Sectors (SPDR sector funds, sorted by 1M)", _table(["Sector", "Fund", "1D", "1W", "1M", "3M"], rows)]
+        ov = m.get("overnight") or {}
+        if ov.get("q"):
+            rows = [[ov["names"].get(sym, sym) + " futures", f"{f['last']:,.2f}", _pct(f["chg"])] for sym, f in ov["q"].items()]
+            L += ["", f"## Index futures since the stock close ({ov['since'][:16].replace('T', ' ')} New York)"
+                  + ("" if ov.get("trading") else ", paused now, last trades"),
+                  "Stocks are closed; futures trade overnight and are the best read on the next open.",
+                  _table(["Future", "Price", "Since close"], rows)]
         st = m.get("status") or {}
         if st.get("message"):
             L.append(f"Status: {st['message']}.")

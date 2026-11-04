@@ -418,6 +418,53 @@ def macro_intraday():
     return {"last": last, "spark": spark}
 
 
+# Stock index futures trade almost around the clock (Sunday 6 pm to Friday 5 pm New York time, with an hour's
+# pause at 5 pm each day), so outside market hours they are the best read on how stocks will open.
+FUTURES = [("ES=F", "S&P 500"), ("NQ=F", "Nasdaq"), ("YM=F", "Dow"), ("RTY=F", "Russell 2000")]
+
+
+def futures_trading(now=None):
+    t = (now or pd.Timestamp.now(tz=NY))
+    wd, hm = t.weekday(), t.hour * 60 + t.minute
+    if wd == 5 or (wd == 6 and hm < 18 * 60) or (wd == 4 and hm >= 17 * 60):
+        return False
+    return not (17 * 60 <= hm < 18 * 60)
+
+
+def last_close_time(now=None):
+    """The most recent 4 pm New York close on a weekday, at or before now (market holidays aside)."""
+    t = (now or pd.Timestamp.now(tz=NY))
+    c = t.normalize() + pd.Timedelta(hours=16)
+    while c > t or c.weekday() >= 5:
+        c -= pd.Timedelta(days=1)
+        c = c.normalize() + pd.Timedelta(hours=16)
+    return c
+
+
+def futures_overnight():
+    """Each index future's move since the last 4 pm stock close, with a spark line of the move."""
+    syms = [f[0] for f in FUTURES]
+    close = _series(syms, "5d", "5m")
+    if close.index.tz is None:
+        close.index = close.index.tz_localize("UTC")
+    close.index = close.index.tz_convert(NY)
+    since = last_close_time()
+    out = {}
+    for sym in syms:
+        if sym not in close.columns:
+            continue
+        s = close[sym].dropna()
+        before, after = s[s.index < since], s[s.index >= since]   # the 3:55 bar closes at 4:00
+        if not len(before) or not len(after):
+            continue
+        ref, last = float(before.iloc[-1]), float(after.iloc[-1])
+        out[sym] = {"ref": clean(round(ref, 2)), "last": clean(round(last, 2)), "chg": clean(last / ref - 1),
+                    "at": after.index[-1].isoformat(), "spark": [clean(round(float(v), 2)) for v in [ref] + after.tolist()][-200:]}
+    if not out:
+        raise RuntimeError("no futures prices since the close")
+    return {"since": since.isoformat(), "trading": futures_trading(), "q": out, "names": dict(FUTURES)}
+
+
 def market_status():
     try:
         st = yf.Market("US").status or {}

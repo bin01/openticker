@@ -1236,6 +1236,14 @@ def health_report():
     return {"ok": not problems, "rows": rows, "problems": problems, "checked": now}
 
 
+def _quiet(fn):
+    """A nice-to-have part of a response: if it fails, leave it out rather than fail the whole thing."""
+    try:
+        return fn()
+    except Exception:
+        return None
+
+
 def _live_ttl(open_ttl, closed_ttl):
     return open_ttl if market_open() else closed_ttl
 
@@ -1252,6 +1260,8 @@ EXTRA = {
     "macro":      (False, None,      lambda s, q: {"daily": cached(("macro-daily",), 1800, X.macro_daily),
                                                    "intraday": cached(("macro-intra",), _live_ttl(60, 1800), X.macro_intraday),
                                                    "status": cached(("mstatus",), 300, X.market_status),
+                                                   "overnight": None if market_open() else _quiet(lambda: cached(
+                                                       ("overnight",), 60 if X.futures_trading() else 1800, X.futures_overnight)),
                                                    "names": {m[0]: [m[1], m[2]] for m in X.MACRO},
                                                    "sectors": [list(x) for x in X.SECTOR_ETFS]}),
     "sector":     (False, 24 * 3600, lambda s, q: X.sector_detail(re.sub(r"[^a-z-]", "", (q.get("key") or [""])[0]))),

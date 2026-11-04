@@ -102,6 +102,9 @@ function macroView(){
     for(const h of ["1W","1M","3M","YTD","1Y"]){ const s=startIndex(d.dates,h), f=firstValid(a,s); rets[h]=f?lastPx/f.v-1:null; }
     out[sym]={last:lastPx,prev,rets,spark:m.intraday?.spark?.[sym]||a.slice(-60)};
   }
+  // outside market hours, index futures show their move since the 4 pm close
+  const ov=m.overnight;
+  if(ov?.q) for(const [sym,f] of Object.entries(ov.q)) if(out[sym]&&f.last!=null){ out[sym]={...out[sym],last:f.last,overnight:f.chg,spark:f.spark}; }
   return {q:out,names:m.names,sectors:m.sectors,status:m.status};
 }
 function rateVal(v){ return v==null?null:(v>20?v/10:v); }
@@ -121,8 +124,19 @@ function myToday(){
   moves.sort((a,b)=>Math.abs(b.chg)-Math.abs(a.chg));
   return {V,D,dayPct:V-D?D/(V-D):null,moves,hasPos:pos.length>0,count:syms.length};
 }
+function overnightInsight(v){
+  const ov=xpeek("macro")?.data?.overnight; if(!ov?.q||v.status?.status==="open") return null;
+  const f=k=>ov.q[k]?.chg, es=f("ES=F"), nq=f("NQ=F"); if(es==null) return null;
+  const lead=(es+(nq??es))/2, dir=lead>0.0015?"a higher open":lead<-0.0015?"a lower open":"a flat open";
+  const since=new Date(ov.since), today=nyToday(), sinceDay=since.toLocaleDateString("en-CA",{timeZone:"America/New_York"});
+  const when=sinceDay===today?"Since the 4 pm close":`Since ${since.toLocaleDateString("en-US",{weekday:"long",timeZone:"America/New_York"})}'s close`;
+  const ud=x=>`${x>=0?"up":"down"} ${pct(Math.abs(x)).replace(/^\+/,"")}`;
+  const rest=[["YM=F","the Dow"],["RTY=F","small caps"]].filter(([k])=>f(k)!=null).map(([k,n])=>`${n} ${pct(f(k))}`);
+  return {tone:cls(lead),html:`<b>Futures point to ${dir}.</b> ${when}, S&amp;P 500 futures are ${ud(es)}${nq!=null?` and Nasdaq futures ${ud(nq)}`:""}${rest.length?`; ${rest.join(", ")}`:""}.${ov.trading?"":" Futures are paused right now, so these are the last trades."}`};
+}
 function marketInsights(v){
   const q=v.q, ins=[], open=v.status?.status==="open", verb=open?"is":"was";
+  const ovl=overnightInsight(v); if(ovl) ins.push(ovl);
   const sp=q["^GSPC"], nd=q["^IXIC"], rt=q["^RUT"];
   if(sp){ const r=sp.rets["1D"]; const dir=r>0.002?"higher":r<-0.002?"lower":"little changed";
     ins.push({tone:cls(r),html:`<b>Stocks ${open?"are":"closed"} ${dir}.</b> The S&amp;P 500 ${verb} ${pct(r)}${nd?`, the Nasdaq ${pct(nd.rets["1D"])}`:""}${rt?` and small caps ${pct(rt.rets["1D"])}`:""}.`}); }
@@ -155,8 +169,9 @@ function tileValue(sym,v){
   const kind=v?.names?.[sym]?.[1], x=v.q[sym];
   if(kind==="rate"){ const y=rateVal(x.last), p=rateVal(x.prev); const bp=p!=null?Math.round((y-p)*100):null; return {val:y.toFixed(2)+"%",chg:bp==null?"":`${bp>=0?"+":"−"}${Math.abs(bp)} bp`,c:bp}; }
   if(kind==="vol") return {val:x.last.toFixed(2),chg:x.prev?`${x.last-x.prev>=0?"+":"−"}${Math.abs(x.last-x.prev).toFixed(2)}`:"",c:x.prev?-(x.last-x.prev):null};
-  const dp=x.last>=1000?0:2;
-  return {val:x.last.toLocaleString("en-US",{minimumFractionDigits:dp,maximumFractionDigits:dp}),chg:pct(x.rets["1D"]),c:x.rets["1D"]};
+  const dp=x.last>=1000?0:2, val=x.last.toLocaleString("en-US",{minimumFractionDigits:dp,maximumFractionDigits:dp});
+  if(x.overnight!=null) return {val,chg:`${pct(x.overnight)} <small>since close</small>`,c:x.overnight};
+  return {val,chg:pct(x.rets["1D"]),c:x.rets["1D"]};
 }
 function renderMarket(){
   const app=$("#app");
