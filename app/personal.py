@@ -155,6 +155,16 @@ def add_position(uid, t, shares, cost, opened="", note=""):
                  (uid, t, float(shares), float(cost), opened or "", note or "", time.time()))
 
 
+def import_positions(uid, rows, replace=False):
+    """Positions from a broker's file: rows of (ticker, shares, cost per share). replace clears the old ones first."""
+    with _lock:
+        if replace:
+            _conn.execute("delete from positions where user_id=?", (uid,))
+        _conn.executemany("insert into positions(user_id, t, shares, cost, opened, note, created) values(?,?,?,?,?,?,?)",
+                          [(uid, t, shares, cost, "", "imported", time.time()) for t, shares, cost in rows])
+        _conn.commit()
+
+
 def update_position(uid, pid, shares, cost, opened=""):
     _exec("update positions set shares=?, cost=?, opened=? where id=? and user_id=?",
           (float(shares), float(cost), opened or "", int(pid), uid))

@@ -265,34 +265,43 @@ class State:
 
     def track(self, sym):
         """Add a searched ticker: fetch its daily closes on the same calendar as everything else."""
+        return sym in self.track_many([sym])
+
+    def track_many(self, syms):
+        """track() for several tickers in one download. Returns the ones that now have prices."""
         with self.lock:
-            if sym in self.px:
-                return True
+            have = {s for s in syms if s in self.px}
             dates = list(self.dates)
-        if not dates:
-            return False
-        df = download_closes([sym], start=(dt.date.fromisoformat(dates[0]) - dt.timedelta(days=5)).isoformat())
-        if df.empty or sym not in df.columns:
-            return False
-        col = df[sym]
-        col.index = [d.strftime("%Y-%m-%d") for d in col.index]
-        col = col[~col.index.duplicated()].reindex(dates)
-        arr = [None if v != v else round(float(v), 4) for v in col.tolist()]
-        if all(v is None for v in arr):
-            return False
+        todo = [s for s in dict.fromkeys(syms) if s not in have]
+        if not todo or not dates:
+            return have
+        df = download_closes(todo, start=(dt.date.fromisoformat(dates[0]) - dt.timedelta(days=5)).isoformat())
+        got = {}
+        for sym in todo:
+            if df.empty or sym not in df.columns:
+                continue
+            col = df[sym].copy()
+            col.index = [d.strftime("%Y-%m-%d") for d in col.index]
+            col = col[~col.index.duplicated()].reindex(dates)
+            arr = [None if v != v else round(float(v), 4) for v in col.tolist()]
+            if any(v is not None for v in arr):
+                got[sym] = arr
+        if not got:
+            return have
         with self.lock:
-            if len(self.dates) != len(dates):   # a new session row opened meanwhile
-                arr += [arr[-1]] * (len(self.dates) - len(dates))
-            self.px[sym] = arr
-            if sym not in self.extras:
-                self.extras = (self.extras + [sym])[-60:]
+            for sym, arr in got.items():
+                if len(self.dates) != len(dates):   # a new session row opened meanwhile
+                    arr += [arr[-1]] * (len(self.dates) - len(dates))
+                self.px[sym] = arr
+                if sym not in self.extras and sym not in personal.all_symbols():
+                    self.extras = (self.extras + [sym])[-60:]
             self.version += 1
-        try:  # stream live ticks for it too
+        try:  # stream live ticks for them too
             if getattr(self, "ws", None):
-                self.ws.subscribe([sym])
+                self.ws.subscribe(list(got))
         except Exception:
             pass
-        return True
+        return have | set(got)
 
     # daily bars ---------------------------------------------------------
     def load_history(self):
@@ -1358,7 +1367,7 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self.send(400, json.dumps({"error": str(e)}).encode(), "application/json")
         try:
-            body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 65536)) or b"{}")
+            body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 262144)) or b"{}")
         except Exception:
             return self.send(400, b"bad json", "text/plain")
         uid, path = user_for(self), self.path.split("?")[0]
@@ -1394,6 +1403,35 @@ class Handler(BaseHTTPRequestHandler):
                     personal.update_position(uid, body["id"], shares, cost, opened)
                 else:
                     personal.add_position(uid, sym(), shares, cost, opened)
+            elif path == "/api/me/positions/import":
+                rows = body.get("rows") or []
+                if not isinstance(rows, list) or not rows or len(rows) > 500:
+                    raise ValueError("Nothing to import.")
+                clean_rows, bad = [], []
+                for r in rows:
+                    t = yahoo_symbol(str((r or {}).get("t") or ""))
+                    try:   # no cost in the file: count gains from today's price
+                        shares, cost = float(r.get("shares")), (-1.0 if r.get("cost") in (None, "") else float(r.get("cost")))
+                    except (TypeError, ValueError):
+                        bad.append(t or "?")
+                        continue
+                    if not VALID.fullmatch(t) or not (0 < shares < 1e12) or not (cost == -1 or 0 <= cost < 1e9):
+                        bad.append(t or "?")
+                        continue
+                    clean_rows.append((t, shares, cost))
+                priced = S.track_many([t for t, _, _ in clean_rows])
+                bad += sorted({t for t, _, _ in clean_rows if t not in priced})
+                with S.lock:
+                    last = {t: next((v for v in reversed(S.px.get(t) or []) if v is not None), None) for t in priced}
+                keep = [(t, sh, c if c >= 0 else last[t]) for t, sh, c in clean_rows if t in priced and (c >= 0 or last[t])]
+                if not keep:
+                    raise ValueError("None of those rows had a ticker with prices on Yahoo.")
+                personal.import_positions(uid, keep, replace=bool(body.get("replace")))
+                out = me_payload(uid)
+                out["imported"], out["skipped"] = len(keep), bad
+                with S.lock:
+                    S.version += 1
+                return self.send(200, json.dumps(out).encode(), "application/json")
             elif path == "/api/me/position/delete":
                 personal.delete_position(uid, body.get("id"))
             elif path == "/api/me/alert":

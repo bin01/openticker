@@ -816,6 +816,22 @@ body.no-tfloat .tfloat{display:none}
 #gear.warn{position:relative}
 #gear.warn::after{content:"";position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--warn,#d99a2b);box-shadow:0 0 0 2px var(--bg)}
 @media (min-width:761px){body.no-tfloat:not(.tick-docked) #askOpen{display:inline-flex}}
+/* import positions: reuses the Settings sheet */
+dialog.imp{width:min(560px,calc(100vw - 32px))}
+.imp .shead{padding-bottom:14px}.imp .shead>div{display:flex;flex-direction:column;gap:2px}
+.isub{font-size:12.5px;color:var(--ink-3)}
+.imsg{margin:16px 2px 12px;font-size:13.5px;line-height:1.5;color:var(--ink-2)}
+.itbl{background:var(--panel);border:1px solid var(--rule);border-radius:12px;max-height:320px;overflow:auto}
+.itbl table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.itbl th,.itbl td{padding:7px 12px;text-align:right;border-bottom:1px solid var(--grid);white-space:nowrap;font-size:13px}
+.itbl th{font:600 10.5px/1.2 var(--f-body);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);position:sticky;top:0;background:var(--panel)}
+.itbl .l{text-align:left}.itbl td.tk{font:600 13px var(--f-mono)}.itbl tr:last-child td{border-bottom:0}
+.imode{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:14px;font-size:13px;color:var(--ink-2)}
+.inote{margin:12px 2px 0;font-size:12px}
+.idone{display:flex;gap:10px;align-items:flex-start;margin:18px 2px 4px}.idone .ic{color:var(--up);flex:none;margin-top:1px}
+.idone>div{display:flex;flex-direction:column;gap:4px}.idone b{font:600 14px var(--f-body)}.idone small{font-size:12.5px;color:var(--ink-3);line-height:1.45}
+.ifoot{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:12px 18px;border-top:1px solid var(--rule)}
+.ifoot .err{margin-right:auto}
 @media (max-width:600px){
   dialog.sets{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;border:0}
   .srow{flex-wrap:wrap;gap:10px}.srow .sc{flex-basis:100%}.srow:has(.tgl) .sc{flex-basis:auto}
@@ -1192,10 +1208,14 @@ function renderRead(){
   if(Math.abs(gap)<0.005){tag=m.R>=0?"Broad advance":"Broad decline"; lead=`the average holding moved about as much (${pct(s.ew,1)}), so the move is broad-based`;}
   else if(gap<0){tag=m.R>=0?"Narrow rally":"Heavyweights led down"; lead=`the average holding returned ${pct(s.ew,1)}, so the largest names ${m.R>=0?"carried the fund":"did most of the damage"}`;}
   else {tag=m.R>=0?"Broad rally":"Heavyweights lagged"; lead=`the average holding did better at ${pct(s.ew,1)}, so the largest names ${m.R>=0?"held the fund back":"dragged it down"}`;}
+  const spy=isPseudo(fund)?series(base.px.SPY,m.i0,1e6).pop():null;
+  if(spy){ const g=m.R-spy[1], pts=Math.abs(g*100).toFixed(1);
+    tag=Math.abs(g)<0.005?"In line with the S&P 500":g>0?"Ahead of the S&P 500":"Behind the S&P 500";
+    lead=`the S&P 500 ${spy[1]>=0?"rose":"fell"} ${(Math.abs(spy[1])*100).toFixed(1)}%, so ${Math.abs(g)<0.005?"you kept pace with the market":`you're ${pts} points ${g>0?"ahead":"behind"}`}`; }
   const dn=s.drivers.slice(0,3).map(r=>`<b>${esc(r.t)}</b> ${pct(r.r,1)}`).join(", ");
   const share=m.Rpp?Math.round(s.top5/m.Rpp*100):null;
   const trend=s.above200>=.6?"most holdings remain above their 200-day average":s.above200<=.4?"most holdings are below their 200-day average":"holdings are split around their 200-day average";
-  $("#read").innerHTML=`<span class="tag">${tag}</span><p><b>${fund} ${pct(m.R)}</b> over ${hzWords(hz)}, while ${lead}. ${m.R>=0?"Biggest lifts":"Biggest drags"}: ${dn}${share!=null?`. The top five account for ${share}% of the move`:""}. ${s.up} of ${s.n} holdings are up, and ${trend} (${Math.round(s.above200*100)}%).</p>`;
+  $("#read").innerHTML=`<span class="tag">${tag}</span><p><b>${fund==="Portfolio"?"Your portfolio":fund==="Watchlist"?"Your watchlist":fund} ${pct(m.R)}</b> over ${hzWords(hz)}, while ${lead}. ${m.R>=0?"Biggest lifts":"Biggest drags"}: ${dn}${share!=null?`. The top five account for ${share}% of the move`:""}. ${s.up} of ${s.n} holdings are up, and ${trend} (${Math.round(s.above200*100)}%).</p>`;
 }
 
 /* ======================= hero ======================= */
@@ -1216,16 +1236,18 @@ function renderHero(){
   $("#heroEyebrow").innerHTML=`<span>${esc(m.f.name)}</span><span>·</span><span>${hz}</span>${live?'<span class="chip up" style="letter-spacing:.04em">● Live</span>':""}`;
   const el=$("#heroR"); el.className="big-r "+cls(m.R); if(shownFund!==fund+hz){ shownR=null; shownFund=fund+hz; } countTo(el,m.R,v=>pct(v));
   $("#heroSub").textContent=`From the ${longDate(d0)} close to ${live?"now":longDate(d1)}`;
-  const F=series(base.px[fund],m.i0,400), E=ewSeries();
-  $("#heroLeg").innerHTML=`<span><i class="sw" style="background:var(--ink)"></i>${fund} (weighted by size)</span><span><i class="sw" style="background:var(--accent)"></i>Average stock (equal weight)</span>`;
+  // your own stocks are measured against the S&P 500; a fund against its own average stock
+  const vsM=isPseudo(fund)&&!!base.px.SPY, F=series(base.px[fund],m.i0,400), E=vsM?series(base.px.SPY,m.i0,400):ewSeries();
+  const nF=fund==="Portfolio"?"Your portfolio":fund==="Watchlist"?"Your watchlist":fund, nE=vsM?"S&P 500":"Average stock";
+  $("#heroLeg").innerHTML=`<span><i class="sw" style="background:var(--ink)"></i>${fund==="Portfolio"?"Your portfolio (today's shares)":fund==="Watchlist"?"Your watchlist (equal weight)":fund+" (weighted by size)"}</span><span><i class="sw" style="background:var(--accent)"></i>${vsM?"S&P 500 (SPY)":"Average stock (equal weight)"}</span>`;
   const W=600,H=250,L=38,R=58,T=10,B=24, all=[...F,...E].map(p=>p[1]); if(!all.length){$("#heroChart").innerHTML="";return;}
   let lo=Math.min(0,...all),hi=Math.max(0,...all); const pad=(hi-lo)*.1||.01; lo-=pad; hi+=pad;
   const n=base.dates.length, i0=m.i0, X=k=>L+(W-L-R)*(n-1===i0?1:(k-i0)/(n-1-i0)), Y=v=>T+(H-T-B)*(1-(v-lo)/(hi-lo));
   const path=p=>p.map((q,j)=>(j?"L":"M")+X(q[0]).toFixed(1)+","+Y(q[1]).toFixed(1)).join("");
-  let s=`<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${fund} versus the average holding">`;
+  let s=`<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${nF} versus the ${vsM?"S&P 500":"average holding"}">`;
   niceTicks(lo,hi,4).forEach(t=>{s+=`<line x1="${L}" x2="${W-R}" y1="${Y(t)}" y2="${Y(t)}" stroke="${t===0?"var(--ink-3)":"var(--grid)"}" ${t===0?'stroke-dasharray="3 3"':""}/><text x="${L-6}" y="${Y(t)+4}" font-size="10.5" text-anchor="end" class="mono" fill="var(--ink-3)">${pct(t,0)}</text>`;});
   const nn=n-1-i0,c=Math.min(5,nn+1); for(let j=0;j<c;j++){const k=Math.round(i0+nn*j/Math.max(1,c-1)); s+=`<text x="${X(k)}" y="${H-5}" font-size="10.5" text-anchor="middle" fill="var(--ink-3)">${shortDate(base.dates[k])}</text>`;}
-  // shade the gap between the two lines: where the average stock beat the fund
+  // shade the gap between the two lines
   if(F.length>1&&E.length>1&&F.length===E.length){ s+=`<path d="${path(E)}${[...F].reverse().map(q=>"L"+X(q[0]).toFixed(1)+","+Y(q[1]).toFixed(1)).join("")}Z" fill="var(--accent)" opacity=".07"/>`; }
   s+=`<path d="${path(E)}" fill="none" stroke="var(--accent)" stroke-width="2"/><path d="${path(F)}" fill="none" stroke="var(--ink)" stroke-width="2.2"/>`;
   const eF=F[F.length-1], eE=E[E.length-1]; let yF=Y(eF[1])+4, yE=eE?Y(eE[1])+4:0; if(eE&&Math.abs(yF-yE)<14){ if(yF<yE){yF-=7;yE+=7;}else{yF+=7;yE-=7;} }
@@ -1236,7 +1258,7 @@ function renderHero(){
   const svg=$("#heroChart svg"),hov=svg.querySelector("#hhov"),xh=svg.querySelector("#hxh");
   hov.addEventListener("mousemove",ev=>{const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;const p=pt.matrixTransform(svg.getScreenCTM().inverse());
     const k=clamp(Math.round(i0+(p.x-L)/(W-L-R)*(n-1-i0)),i0,n-1); xh.setAttribute("x1",X(k));xh.setAttribute("x2",X(k));xh.setAttribute("opacity",1);
-    const vf=F.find(q=>q[0]===k),ve=E.find(q=>q[0]===k); showTip(ev,`<b>${longDate(base.dates[k])}</b><br>${fund} ${vf?pct(vf[1]):"–"}<br>Average stock ${ve?pct(ve[1]):"–"}`);});
+    const vf=F.find(q=>q[0]===k),ve=E.find(q=>q[0]===k); showTip(ev,`<b>${longDate(base.dates[k])}</b><br>${nF} ${vf?pct(vf[1]):"–"}<br>${nE} ${ve?pct(ve[1]):"–"}`);});
   hov.addEventListener("mouseleave",()=>{xh.setAttribute("opacity",0);hideTip();});
 }
 let shownFund=null;
@@ -1253,11 +1275,11 @@ function renderTape(){
 
 /* ======================= KPIs ======================= */
 function renderKpis(){
-  const m=model,s=m.st, d0=base.dates[m.i0], d1=base.dates[base.dates.length-1];
+  const m=model,s=m.st, d0=base.dates[m.i0], d1=base.dates[base.dates.length-1], fw=fund==="Portfolio"?"your portfolio":fund==="Watchlist"?"your watchlist":"the fund";
   $("#kpis").innerHTML=`
-   <div><div class="lbl">Average stock</div><div class="kv ${cls(s.ew)}">${pct(s.ew)}</div><div class="ks">Equal-weight, ${s.ew-m.R>=0?"ahead of":"behind"} the fund by ${Math.abs((s.ew-m.R)*100).toFixed(1)} pts</div></div>
+   <div><div class="lbl">Average stock</div><div class="kv ${cls(s.ew)}">${pct(s.ew)}</div><div class="ks">Equal-weight, ${s.ew-m.R>=0?"ahead of":"behind"} ${fw} by ${Math.abs((s.ew-m.R)*100).toFixed(1)} pts</div></div>
    <div><div class="lbl">Breadth</div><div class="kv">${s.up}<span class="ks"> / ${s.n} up</span></div><div class="meter"><i style="width:${s.up/s.n*100}%;background:var(--up)"></i><i style="flex:1;background:var(--down);opacity:.75"></i></div></div>
-   <div><div class="lbl">Beating ${fund}</div><div class="kv">${s.beat.length}<span class="ks"> names</span></div><div class="ks">${Math.round(s.beatW*100)}% of the fund by weight</div></div>
+   <div><div class="lbl">Beating ${fw==="the fund"?fund:fw}</div><div class="kv">${s.beat.length}<span class="ks"> names</span></div><div class="ks">${Math.round(s.beatW*100)}% of ${fw} by weight</div></div>
    <div><div class="lbl">Trend</div><div class="duo"><span>50-day</span><div class="meter"><i style="width:${s.above50*100}%;background:var(--accent)"></i></div><span class="num">${Math.round(s.above50*100)}%</span><span>200-day</span><div class="meter"><i style="width:${s.above200*100}%;background:var(--accent)"></i></div><span class="num">${Math.round(s.above200*100)}%</span></div><div class="ks">Holdings above their average</div></div>
    <div><div class="lbl">Concentration</div><div class="kv">${m.Rpp?Math.round(s.top5/m.Rpp*100)+"%":"–"}</div><div class="ks">of the move from 5 names · top 10 hold ${Math.round(s.top10w)}%</div></div>
    <div><div class="lbl">52-week extremes</div><div class="kv"><span class="up">${s.nearHi}</span><span class="ks"> near highs</span></div><div class="ks"><span class="down num">${s.nearLo}</span> near lows · within 2%</div></div>`;
@@ -1824,8 +1846,8 @@ function renderMine(){
     return {...p,last,value:last*p.shares,day:prev?(last-prev)*p.shares:null,dayPct:F.chg,pl:(last-p.avg)*p.shares,plPct:p.avg?last/p.avg-1:null}; }).filter(r=>r.last!=null);
   const V=rows.reduce((a,r)=>a+r.value,0), C=rows.reduce((a,r)=>a+r.costTotal,0), D=rows.reduce((a,r)=>a+(r.day||0),0);
   rows.sort((a,b)=>b.value-a.value);
-  const usd=(x,sg)=>x==null?"–":(sg?(x>0?"+":x<0?"−":""):(x<0?"−":""))+"$"+Math.abs(x).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
-  el.innerHTML=`<div class="ph"><div><h2>Your portfolio</h2><div class="hint">${rows.length} positions at live prices. Contribution and the charts below treat today's shares as held for the whole period.</div></div></div>
+  const usd=(x,sg)=>x==null?"–":(x=Math.round(x*100)/100,0)||(sg?(x>0?"+":x<0?"−":""):(x<0?"−":""))+"$"+Math.abs(x).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+  el.innerHTML=`<div class="ph"><div><h2>Your portfolio</h2><div class="hint">${rows.length} positions at live prices. Contribution and the charts below treat today's shares as held for the whole period.</div></div><button class="btn ghost" id="pImp" title="Read a positions CSV from Fidelity, Schwab, Vanguard, E*TRADE and others">Import from broker</button></div>
    <div class="kf mine-k"><div><div class="lbl">Value</div><div class="v">${usd(V)}</div></div>
      <div><div class="lbl">Today</div><div class="v ${cls(D)}">${usd(D,1)}</div><div class="ks ${cls(D)}">${pct(V-D?D/(V-D):null)}</div></div>
      <div><div class="lbl">Total gain</div><div class="v ${cls(V-C)}">${usd(V-C,1)}</div><div class="ks ${cls(V-C)}">${pct(C?V/C-1:null)} on ${usd(C)} cost</div></div></div>
@@ -1833,7 +1855,7 @@ function renderMine(){
      <td class="l tk">${esc(r.t)}</td><td class="num">${(+r.shares.toFixed(4)).toLocaleString("en-US")}</td><td class="num">${money(r.avg)}</td><td class="num ${flashes[r.t]||""}">${money(r.last)}</td><td class="num">${usd(r.value)}</td><td class="num">${V?(r.value/V*100).toFixed(1):"–"}%</td>
      <td class="num ${cls(r.day)}">${usd(r.day,1)} <small>${pct(r.dayPct,1)}</small></td><td class="num ${cls(r.pl)}">${usd(r.pl,1)} <small>${pct(r.plPct,1)}</small></td><td class="num" style="color:var(--ink-3)">${r.lots>1?r.lots+" lots":""}</td></tr>`).join("")}</tbody></table></div>
    <form class="frm" id="pForm" style="margin-top:12px"><b style="font-size:13px">Add a position</b><input id="pT" placeholder="Ticker" maxlength="10" style="width:90px" required><input id="pS" type="number" step="any" min="0" placeholder="Shares" style="width:100px" required><input id="pC" type="number" step="any" min="0" placeholder="Cost per share" style="width:130px" required><input id="pD" type="date" aria-label="Date bought (optional)"><button class="btn">Add</button><span class="err" id="pErr"></span></form>`;
-  $("#pForm").onsubmit=posSubmit("p");
+  $("#pForm").onsubmit=posSubmit("p"); $("#pImp").onclick=pickBrokerFile;
 }
 function posSubmit(px,t0){ return async e=>{ e.preventDefault(); try{ await api("/api/me/position",{t:t0||$("#"+px+"T").value.trim(),shares:$("#"+px+"S").value,cost:$("#"+px+"C").value,opened:$("#"+px+"D").value}); }catch(x){ $("#"+px+"Err").textContent=x.message; } }; }
 function renderEmptyMine(){
@@ -1841,8 +1863,86 @@ function renderEmptyMine(){
   $("#app").innerHTML=`<section class="panel empty" id="emptyMine"><h2>${w?"Start a watchlist":"Add your portfolio"}</h2>
    <p class="hint" style="font-size:14px;max-width:60ch">${w?"Follow the stocks you care about. You get a daily brief of what changed for them (big moves, upgrades and downgrades, price-target changes, insider buying, unusual options, earnings ahead), alerts on your phone, and the same views as the funds.":"Enter what you own to see your value and gains, a daily brief of what changed for your stocks, and an X-ray of your sector mix against the S&P 500, your overlap with SPY and QQQ, risk and dividend income. It stays on this Mac."}</p>
    ${w?`<form class="frm" id="eForm"><input id="eT" placeholder="Ticker, e.g. NVDA" maxlength="10" required><button class="btn">Add to watchlist</button><span class="err" id="eErr"></span></form><p class="hint">You can also press Watch on any stock page.</p>`
-     :`<form class="frm" id="eForm"><input id="eT" placeholder="Ticker" maxlength="10" style="width:100px" required><input id="eS" type="number" step="any" min="0" placeholder="Shares" style="width:110px" required><input id="eC" type="number" step="any" min="0" placeholder="Cost per share" style="width:140px" required><input id="eD" type="date" aria-label="Date bought (optional)"><button class="btn">Add position</button><span class="err" id="eErr"></span></form>`}</section>`;
+     :`<form class="frm" id="eForm"><input id="eT" placeholder="Ticker" maxlength="10" style="width:100px" required><input id="eS" type="number" step="any" min="0" placeholder="Shares" style="width:110px" required><input id="eC" type="number" step="any" min="0" placeholder="Cost per share" style="width:140px" required><input id="eD" type="date" aria-label="Date bought (optional)"><button class="btn">Add position</button><span class="err" id="eErr"></span></form><p class="hint">Or <button type="button" class="lnk" id="eImp">import the positions file from your broker</button>. Most brokers let you download one as a CSV from their Positions page.</p>`}</section>`;
   $("#eForm").onsubmit=w?async e=>{ e.preventDefault(); try{ await api("/api/me/watch",{t:$("#eT").value.trim(),on:true}); }catch(x){ $("#eErr").textContent=x.message; } }:posSubmit("e");
+  if(!w) $("#eImp").onclick=pickBrokerFile;
+}
+
+/* import positions from a broker's CSV (Fidelity, Schwab, Vanguard, E*TRADE, and most others).
+   Everything is read here in the browser; only ticker, shares and cost per share go to the server. */
+function csvTable(text){
+  text=text.replace(/^﻿/,"");
+  const first=text.split(/\r?\n/).slice(0,40).join("\n"), d=(first.match(/\t/g)||[]).length>(first.match(/,/g)||[]).length?"\t":(first.match(/;/g)||[]).length>(first.match(/,/g)||[]).length?";":",";
+  const rows=[]; let row=[],f="",q=false;
+  for(let i=0;i<text.length;i++){ const c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){f+='"';i++;} else q=false; } else f+=c; }
+    else if(c==='"') q=true;
+    else if(c===d){ row.push(f); f=""; }
+    else if(c==="\n"||c==="\r"){ if(c==="\r"&&text[i+1]==="\n") i++; row.push(f); rows.push(row); row=[]; f=""; }
+    else f+=c; }
+  if(f||row.length){ row.push(f); rows.push(row); }
+  return rows.map(r=>r.map(x=>x.trim()));
+}
+function brokerNum(s){ s=String(s??"").trim(); if(!s||/^(--|-|n\/?a|null)$/i.test(s)) return null;
+  const neg=/^\(.*\)$/.test(s)||/^-/.test(s.replace(/[$\s]/g,"")); const v=parseFloat(s.replace(/[^0-9.]/g,"")); return isFinite(v)?(neg?-v:v):null; }
+const MMF=/^(FCASH|CORE|SPAXX|FDRXX|SPRXX|FZFXX|FZDXX|SWVXX|SNVXX|SNSXX|VMFXX|VMMXX|VUSXX|TTTXX)$/;
+const isCash=t=>/\*\*$/.test(t)||MMF.test(t)||/\s/.test(t)&&/CASH|MONEY MARKET|SWEEP|PENDING/.test(t);
+function parseBroker(text){
+  const T=csvTable(text), norm=s=>s.toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+  let h=-1, col={};
+  for(let i=0;i<Math.min(T.length,40)&&h<0;i++){
+    const H=T[i].map(norm), find=re=>H.findIndex(x=>re.test(x));
+    const sym=find(/^(symbol|ticker|ticker symbol|security symbol|symbol cusip|instrument symbol)$/), qty=find(/^(qty|quantity|shares|share quantity|qty quantity|quantity shares|units|shares held)$|^(quantity|qty)\b/);
+    if(sym<0||qty<0) continue;
+    h=i; const per=find(/\b(average|avg|unit)\b.*\bcost|cost (per )?share|price paid|cost price|purchase price/);
+    col={sym,qty,per,tot:H.findIndex((x,j)=>j!==per&&/^(cost basis total|cost basis|total cost|total cost basis|cost|book value|cost basis \$)$/.test(x))};
+  }
+  if(h<0) return {error:"This file doesn't have a Symbol column and a Quantity column. In your broker's site, open Positions, choose Download or Export, and pick that file."};
+  const got=new Map(), skip={cash:[],other:[]};
+  for(const r of T.slice(h+1)){
+    let t=(r[col.sym]||"").toUpperCase().trim(); if(!t) continue;
+    const q=brokerNum(r[col.qty]);
+    if(isCash(t)){ if(q&&!/\s/.test(t)) skip.cash.push(t.replace(/\*+$/,"")); else if(q) skip.cash.push("cash"); continue; }
+    t=t.replace(/\//g,".");
+    if(!/^[A-Z]{1,5}([.-][A-Z]{1,2})?$/.test(t)||q==null||q<=0){ if(q) skip.other.push(t); continue; }
+    const tot=col.tot>=0?brokerNum(r[col.tot]):null, per=col.per>=0?brokerNum(r[col.per]):null;
+    const c=per!=null&&per>=0?per*q:tot!=null&&tot>=0?tot:null;
+    const e=got.get(t)||{t,shares:0,cost:0,known:true}; e.shares+=q; if(c==null) e.known=false; else e.cost+=c; got.set(t,e);
+  }
+  const rows=[...got.values()].map(e=>({t:e.t,shares:+e.shares.toFixed(6),cost:e.known?+(e.cost/e.shares).toFixed(4):null}));
+  return {rows,skip,noCost:col.per<0&&col.tot<0};
+}
+function pickBrokerFile(){
+  const inp=document.createElement("input"); inp.type="file"; inp.accept=".csv,.txt,text/csv";
+  inp.onchange=async()=>{ const f=inp.files[0]; if(!f) return; if(f.size>4e6) return openImport({error:"That file is larger than a positions file usually is. Pick the positions or holdings download."},f.name);
+    openImport(parseBroker(await f.text()),f.name); };
+  inp.click();
+}
+function openImport(P,name){
+  $("#imp")?.remove();
+  const d=document.createElement("dialog"); d.className="sets imp"; d.id="imp"; d.setAttribute("aria-label","Import positions");
+  document.body.appendChild(d); d.addEventListener("close",()=>d.remove()); d.addEventListener("click",e=>{ if(e.target===d) d.close(); });
+  const have=(me?.positions||[]).length, rows=P.rows||[];
+  let replace=have>0;
+  const draw=(done)=>{
+    const sk=P.skip||{cash:[],other:[]}, n=rows.length, noCost=rows.filter(r=>r.cost==null).length;
+    const mm=[...new Set(sk.cash)].filter(x=>x!=="cash"), skipLine=[sk.cash.length?(mm.length?`cash and money market funds (${mm.slice(0,4).join(", ")})`:"cash"):"",sk.other.length?(sk.other.length===1?"1 line that isn't a stock or fund":`${sk.other.length} lines that aren't stocks or funds, such as options`):""].filter(Boolean).join(" and ");
+    const body=P.error?`<p class="imsg">${esc(P.error)}</p>`
+      :done?`<div class="idone">${ic("check",18)}<div><b>Imported ${done.imported} position${done.imported===1?"":"s"}.</b>${done.skipped?.length?`<small>No prices on Yahoo for ${esc(done.skipped.slice(0,8).join(", "))}${done.skipped.length>8?" and others":""}, so ${done.skipped.length===1?"it was":"they were"} left out.</small>`:""}</div></div>`
+      :!n?`<p class="imsg">No stock or fund positions in this file.${skipLine?` It only had ${esc(skipLine)}.`:""}</p>`
+      :`<p class="imsg">${n} position${n===1?"":"s"} found${skipLine?`. Leaving out ${esc(skipLine)}`:""}.${noCost?` ${noCost===n?"The file has no cost":"Some lines have no cost"}, so gains for ${noCost===n?"them":"those"} start from today's price.`:""}</p>
+       <div class="itbl"><table><thead><tr><th class="l">Ticker</th><th>Shares</th><th>Cost per share</th><th>Cost</th></tr></thead><tbody>${rows.map(r=>`<tr><td class="l tk">${esc(r.t)}</td><td>${(+r.shares.toFixed(4)).toLocaleString("en-US")}</td><td>${r.cost==null?"–":money(r.cost)}</td><td>${r.cost==null?"–":"$"+Math.round(r.cost*r.shares).toLocaleString("en-US")}</td></tr>`).join("")}</tbody></table></div>
+       ${have?`<div class="imode"><span>You have ${have} position${have===1?"":"s"} already.</span>${setSeg("imode",[["replace","Replace them"],["add","Add to them"]],replace?"replace":"add")}</div>`:""}`;
+    d.innerHTML=`<div class="shead"><div><h2>Import positions</h2><small class="isub">${esc(name||"")}</small></div><button class="x" id="impX" aria-label="Close">${ic("close",16)}</button></div>
+      <div class="sbody">${body}<p class="hint inote">${done?"":"Read on this Mac. Only the ticker, shares and cost are kept."}</p></div>
+      <div class="ifoot"><span class="err" id="impErr"></span>${done||P.error||!n?`<button class="btn" id="impOk">${P.error||!n?"Close":"Done"}</button>`:`<button class="btn ghost" id="impNo">Cancel</button><button class="btn" id="impGo">${replace?"Replace with":"Import"} ${n} position${n===1?"":"s"}</button>`}</div>`;
+    $("#impX").onclick=()=>d.close(); $("#impNo")&&($("#impNo").onclick=()=>d.close()); $("#impOk")&&($("#impOk").onclick=()=>d.close());
+    d.querySelectorAll("[data-set-imode]").forEach(b=>b.onclick=()=>{ replace=b.dataset.setImode==="replace"; draw(); });
+    $("#impGo")&&($("#impGo").onclick=async()=>{ const b=$("#impGo"); b.disabled=true; b.textContent="Importing…";
+      try{ const r=await api("/api/me/positions/import",{rows,replace}); draw(r); }
+      catch(x){ b.disabled=false; b.textContent=`${replace?"Replace with":"Import"} ${n} position${n===1?"":"s"}`; $("#impErr").textContent=x.message; } });
+  };
+  draw(); d.showModal();
 }
 
 /* earnings calendar for the selected fund */

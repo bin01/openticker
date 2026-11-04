@@ -52,7 +52,7 @@ Whichever you pick, OpenTicker installs to `~/.openticker`, runs in the backgrou
 | --- | --- |
 | **Market** | The day in plain English, then indexes, rates, the dollar, oil, the VIX and the 11 sectors |
 | **Funds** | Which stocks drove SPY, QQQ, SMH and SOXX over a day, a week or a year, holding by holding |
-| **My stocks** | Your watchlist and positions with gains and losses, a brief of what changed, a portfolio X-ray, alerts that say why a stock moved, and a note on your phone at the close |
+| **My stocks** | Your watchlist and positions (typed in, or imported from your broker's CSV) with gains and losses, how you're doing against the S&P 500, a brief of what changed, a portfolio X-ray, alerts that say why a stock moved, and a note on your phone at the close |
 | **Any stock** | A chart with earnings and events marked, analysts, earnings history, ownership, options, financials and news |
 | **Calendar** | Upcoming earnings and economic events |
 | **Screener** | Filter the S&P 500 |
