@@ -182,8 +182,9 @@ function renderMarket(){
   $("#mRng").innerHTML=MKT_RANGES.map(k=>`<button data-mr="${k}" aria-pressed="${k===mktRange}">${k}</button>`).join("");
   const secs=(v.sectors||[]).map(([s,n,key])=>({s,n,key,r:v.q[s]?.rets[mktRange],r1:v.q[s]?.rets["1D"]})).filter(x=>x.r!=null).sort((a,b)=>b.r-a.r);
   const spR=sp?.rets[mktRange], mx=Math.max(...secs.map(x=>Math.abs(x.r)),Math.abs(spR||0))||0.01;
-  $("#mSectors").innerHTML=`<div class="sbars">${secs.map(x=>`<button class="sbar ${sectorOpen===x.key?"on":""}" data-sector="${x.key}" data-sname="${esc(x.n)}"><span class="sn">${esc(x.n)}<small class="mono">${x.s}</small></span><span class="strk"><span class="szero"></span><i style="${x.r>=0?"left:50%":"right:50%"};width:${(Math.abs(x.r)/mx*50).toFixed(1)}%;background:${x.r>=0?"var(--up)":"var(--down)"}"></i>${spR!=null?`<em style="left:${(50+spR/mx*50).toFixed(1)}%" title="S&amp;P 500 ${pct(spR)}"></em>`:""}</span><span class="num ${cls(x.r)}">${pct(x.r,1)}</span></button>`).join("")}</div>
-    ${spR!=null?`<p class="hint" style="margin:8px 0 0">The blue mark on each bar is the S&amp;P 500 (${pct(spR,1)}) over ${mktRange==="1D"?"today":"the same "+mktRange}.</p>`:""}`;
+  const spX=spR!=null?(50+spR/mx*50):null;
+  $("#mSectors").innerHTML=`<div class="sbars">${spX!=null?`<div class="sbhead" aria-hidden="true"><span></span><span class="strk"><b style="left:${spX.toFixed(1)}%;transform:translateX(${spX<12?"-10%":spX>88?"-90%":"-50%"})">S&amp;P 500 ${pct(spR,1)}</b></span><span></span></div>`:""}${secs.map(x=>`<button class="sbar ${sectorOpen===x.key?"on":""}" data-sector="${x.key}" data-sname="${esc(x.n)}"><span class="sn">${esc(x.n)}<small class="mono">${x.s}</small></span><span class="strk"><span class="szero"></span><i style="${x.r>=0?"left:50%":"right:50%"};width:${(Math.abs(x.r)/mx*50).toFixed(1)}%;background:${x.r>=0?"var(--up)":"var(--down)"}"></i>${spX!=null?`<em style="left:${spX.toFixed(1)}%" title="S&amp;P 500 ${pct(spR)}"></em>`:""}</span><span class="num ${cls(x.r)}">${pct(x.r,1)}</span></button>`).join("")}</div>
+    ${spR!=null?`<p class="hint" style="margin:8px 0 0">The blue line is the S&amp;P 500 ${mktRange==="1D"?"today":"over "+mktRange}. Sectors that end to its right did better than the market, to its left worse.</p>`:""}`;
   renderSectorDetail();
   // movers
   const ms=load("movers","day_gainers");
