@@ -61,6 +61,8 @@ function renderSettings(){
      setRow("Alerts on your phone",`Uses <a href="https://ntfy.sh" target="_blank" rel="noopener">ntfy</a>, a free push app. Install it, tap <b>+</b>, and subscribe to this topic. Anyone who knows the name can read it, so keep the random one.`,
        st.ntfyTopic?`<span class="on-pill">On</span>`:"","wrap")
      +`<form class="srow frm" id="setNt"><input id="setTopic" class="mono" value="${esc(st.ntfyTopic||randTopic())}" maxlength="64" aria-label="ntfy topic"><button class="btn">${st.ntfyTopic?"Save":"Turn on"}</button>${st.ntfyTopic?`<button class="btn ghost" type="button" id="setNtTest">Send test</button><button class="btn ghost" type="button" id="setNtOff">Turn off</button>`:""}<span class="err" id="setNtErr"></span></form>`
+     +setRow("A note at the close","About 4:15 pm New York time on trading days: how your stocks did, what moved them, and who reports next. It lands in Alerts, and on your phone if that's on above. <button type=\"button\" class=\"lnk\" id=\"setCnPrev\">See today's</button>",setTgl("setCn",st.closeNote!==false,"Send a note at the close"))
+     +`<div class="srow col cnprev" id="setCnBox" hidden></div>`
      +setRow("Alerts in this window","Show a notification here when a rule triggers, while OpenTicker is open.",setTgl("setBr",notifyOn,"Notifications in this window"))
      +setRow("Alert rules","Price moves, levels and earnings for your stocks.",`<button type="button" class="btn ghost" id="setRules">Edit rules</button>`))}
   ${sec("phone","Your phone",
@@ -99,6 +101,11 @@ function bindSettings(d,{cur,st}){
   $("#setNt").onsubmit=async e=>{ e.preventDefault(); try{ await api("/api/me/settings",{ntfyTopic:$("#setTopic").value.trim(),ntfyServer:st.ntfyServer}); renderSettings(); }catch(x){ $("#setNtErr").textContent=x.message; } };
   $("#setNtTest")?.addEventListener("click",async()=>{ const m=$("#setNtErr"); try{ await api("/api/me/test-push"); m.textContent="Sent. Check your phone."; m.className="ok"; }catch(x){ m.textContent=x.message; } });
   $("#setNtOff")?.addEventListener("click",async()=>{ await api("/api/me/settings",{ntfyTopic:"",ntfyServer:st.ntfyServer}).catch(()=>{}); renderSettings(); });
+  $("#setCn").onchange=async e=>{ await api("/api/me/settings",{closeNote:e.target.checked}).catch(()=>{}); };
+  $("#setCnPrev").onclick=async()=>{ const b=$("#setCnBox"); b.hidden=false; b.innerHTML=`<small>Writing it…</small>`;
+    try{ const n=await (await fetch("/api/me/close-note")).json();
+      b.innerHTML=n.title?`<div class="cn"><b>${esc(n.title)}</b><p>${esc(n.body)}</p><small>${n.live?"With prices right now. The real one goes out after the close.":"From the last closing prices."}</small></div>`:`<small>There's no price data yet.</small>`; }
+    catch(x){ b.innerHTML=`<small>Couldn't write it: ${esc(x.message)}</small>`; } };
   $("#setBr").onchange=async e=>{ if(e.target.checked&&"Notification" in window){ const p=await Notification.requestPermission(); if(p!=="granted"){ e.target.checked=false; return; } } notifyOn=e.target.checked; save("notify",notifyOn?"1":"0"); };
   $("#setRules").onclick=()=>{ d.close(); openAlerts(); };
   $("#setPhone")?.addEventListener("change",async e=>{ const r=await fetch("/api/app/terminal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({step:e.target.checked?"phone-on":"phone-off"})}).catch(()=>null);

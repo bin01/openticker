@@ -823,11 +823,200 @@ def alerts_loop():
                 dates = list(S.dates)
             names = symbol_names()
             for uid in personal.users():
-                for t, title, _ in personal.evaluate(uid, px, dates, names, EARN, LINK_BASE):
+                for t, title, _ in personal.evaluate(uid, px, dates, names, EARN, LINK_BASE, explain=explain_move):
                     log(f"alert for {uid}: {title}")
         except Exception as e:
             log(f"alerts failed: {e!r}")
         time.sleep(30)
+
+
+# ---------------------------------------------------------------- why it moved: context for alerts and the close note
+def day_change(a):
+    last, prev, _ = personal._last2(a or [])
+    return None if last is None or not prev else last / prev - 1
+
+
+def typical_move(a, n=60):
+    """The median size of a daily move over the last n sessions before today: what 'a normal day' means for this stock."""
+    v = [x for x in (a or [])[:-1] if x is not None][-(n + 1):]
+    r = sorted(abs(b / x - 1) for x, b in zip(v, v[1:]) if x)
+    return r[len(r) // 2] if len(r) >= 20 else None
+
+
+def _updown(c):
+    return f"{'up' if c >= 0 else 'down'} {abs(c) * 100:.1f}%"
+
+
+def move_reason(t, a, spy=None, peer=None):
+    """Why a stock moved today, from numbers alone: how big the move is for this stock, and how much of it the
+    market or its group explains. peer is (label, closes[, fund ticker]) or None. Returns {"size": x or None, "typ", "who", ...}."""
+    c = day_change(a)
+    if c is None:
+        return None
+    typ = typical_move(a)
+    m = day_change(spy)
+    p = day_change(peer[1]) if peer else None
+    who = None
+    if abs(c) >= 0.005:
+        if m is not None and m * c > 0 and abs(m) >= 0.6 * abs(c):
+            who = "market"
+        elif p is not None and p * c > 0 and abs(p) >= 0.6 * abs(c):
+            who = "group"
+        else:
+            base = p if p is not None else m
+            who = "own" if base is None or base * c <= 0 or abs(base) < 0.3 * abs(c) else "mixed"
+    return {"t": t, "c": c, "typ": typ, "size": abs(c) / typ if typ and typ > 0.001 else None,
+            "m": m, "p": p, "peer": peer[0] if peer else None, "etf": peer[2] if peer and len(peer) > 2 else None, "who": who}
+
+
+def reason_sentence(r, live=True):
+    """The long form, appended to an alert: two plain sentences."""
+    if not r:
+        return ""
+    out, t, c = [], r["t"], r["c"]
+    if r["size"] and r["size"] >= 1.5:
+        out.append(f"That's about {r['size']:.0f}× a normal day for {t}, which usually moves about {r['typ'] * 100:.1f}%.")
+    elif r["size"] and r["size"] < 0.8 and abs(c) >= 0.01:
+        out.append(f"That's an ordinary day for {t}, which usually moves about {r['typ'] * 100:.1f}%.")
+    verb = "is" if live else "closed"
+    parts = ([f"the S&P 500 {verb} {_updown(r['m'])}"] if r["m"] is not None and t != "SPY" else []) \
+        + ([f"{r['peer']}{' (' + r['etf'] + ')' if r.get('etf') else ''} {'are' if live else 'closed'} {_updown(r['p'])}"]
+           if r["p"] is not None else [])
+    end = {"market": "so most of this is the whole market", "group": "so most of this is the group",
+           "own": f"so this move is about {t} itself", "mixed": f"so it's partly the group and partly {t} itself"}.get(r["who"])
+    if parts:
+        s = " and ".join(parts)
+        out.append(s[0].upper() + s[1:] + (f", {end}." if end else "."))
+    return " ".join(out)
+
+
+def reason_phrase(r):
+    """The short form, for one line of the close note."""
+    if not r:
+        return ""
+    bits = []
+    if r["size"] and r["size"] >= 1.5:
+        bits.append(f"{r['size']:.0f}× a normal day")
+    bits.append({"market": "mostly the market", "group": f"mostly {r['peer'] or 'its group'}",
+                 "own": "its own news", "mixed": f"partly {r['peer'] or 'its group'}"}.get(r["who"], ""))
+    return ", ".join(b for b in bits if b)
+
+
+def peer_for(t):
+    """The group a stock moves with: chip stocks for anything in SMH or SOXX, otherwise its sector fund.
+    Returns (label, closes) or None."""
+    if t in FUNDS or any(t == e for e, _, _ in X.SECTOR_ETFS):
+        return None
+    with S.lock:
+        if any(h["t"] == t for f in ("SMH", "SOXX") for h in S.holdings.get(f, {}).get("holdings", [])):
+            a = S.px.get("SMH")
+            return ("chip stocks", list(a[-3:]), "SMH") if a else None
+        sector = str(S.sectors.get(t) or "").lower().replace(" ", "-")
+        day = S.dates[-1] if S.dates else None
+    etf = next(((e, n) for e, n, k in X.SECTOR_ETFS if k == sector), None)
+    pair = _macro_pair(etf[0], day) if etf and day else None
+    return (f"{etf[1].lower()} stocks", pair, etf[0]) if pair else None
+
+
+def _macro_pair(sym, day):
+    """[previous close, today] for an index or sector fund from the Market page's data, or None."""
+    try:
+        m = extra("macro", {})
+        d = m["daily"]
+        a = d["px"].get(sym) or []
+        prev = [v for x, v in zip(d["dates"], a) if x < day and v is not None]
+        today = (m["intraday"].get("last") or {}).get(sym) or next((v for x, v in zip(d["dates"], a) if x == day), None)
+        return [prev[-1], today] if prev and today else None
+    except Exception:
+        return None
+
+
+def explain_move(t):
+    with S.lock:
+        a, spy = list(S.px.get(t) or [])[-80:], list(S.px.get("SPY") or [])[-3:]
+    return reason_sentence(move_reason(t, a, spy, peer_for(t)), live=market_open())
+
+
+def _signed(c, places=1):
+    return f"{'+' if c >= 0 else '−'}{abs(c) * 100:.{places}f}%"
+
+
+def _when(day, other):
+    d0, d1 = dt.date.fromisoformat(day), dt.date.fromisoformat(other)
+    return "tomorrow" if (d1 - d0).days == 1 else d1.strftime("%A")
+
+
+def close_note(uid, fetch=True):
+    """The note sent at the close: the market in one line, your portfolio, your biggest movers and why, who reports next."""
+    snap = personal.snapshot(uid)
+    with S.lock:
+        dates = list(S.dates)
+        px = {t: list(a[-80:]) for t, a in S.px.items()}
+        spy_hold = [h["t"] for h in S.holdings.get("SPY", {}).get("holdings", [])]
+    if not dates:
+        return None
+    day = dates[-1]
+    # the same index numbers the Market page leads with; the funds stand in when Yahoo's index data isn't there
+    idx = [("S&P 500", day_change(_macro_pair("^GSPC", day)) if fetch else None, "SPY"),
+           ("Nasdaq", day_change(_macro_pair("^IXIC", day)) if fetch else None, "QQQ")]
+    idx = [(n, c if c is not None else day_change(px.get(f)), f) for n, c, f in idx]
+    title = "Market close: " + ", ".join(f"{n} {_signed(c, 2)}" for n, c, _ in idx if c is not None)
+    lines = []
+    pos = [p for p in snap["positions"] if px.get(p["t"])]
+    if pos:
+        now = prev = 0.0
+        for p in pos:
+            last, before, _ = personal._last2(px[p["t"]])
+            if last is not None and before:
+                now += p["shares"] * last
+                prev += p["shares"] * before
+        if prev:
+            d = now - prev
+            lines.append(f"Your portfolio {'rose' if d >= 0 else 'fell'} {abs(d / prev) * 100:.1f}% "
+                         f"({'+' if d >= 0 else '−'}${abs(d):,.0f}).")
+    mine = sorted(set(snap["watch"]) | {p["t"] for p in snap["positions"]})
+    pool = mine or spy_hold
+    moves = sorted(((t, day_change(px.get(t))) for t in pool), key=lambda x: -abs(x[1] or 0))
+    moves = [(t, c) for t, c in moves if c is not None][:3]
+    if moves:
+        if mine and abs(moves[0][1]) < 0.01:
+            lines.append("Your stocks had a quiet day: none moved more than 1%.")
+        else:
+            head = "Your biggest movers" if mine else "Biggest moves in the S&P 500"
+            items = []
+            for t, c in moves:
+                why = reason_phrase(move_reason(t, px.get(t), px.get("SPY"), peer_for(t))) if abs(c) >= 0.01 else ""
+                items.append(f"{t} {_signed(c)}" + (f" ({why})" if why else ""))
+            lines.append(f"{head}: " + "; ".join(items) + ".")
+    nxt = personal._next_day(day)
+    rep = []
+    for t in mine:
+        e = earnings_info(t, fetch=False)
+        if (e.get("date") or "")[:10] == nxt and e.get("reported") is None:
+            rep.append(t + {"BMO": " before the open", "AMC": " after the close"}.get(e.get("timing"), ""))
+    if rep:
+        lines.append(f"Reporting {_when(day, nxt)}: " + ", ".join(rep) + ".")
+    return {"day": day, "title": title, "body": "\n".join(lines) or "A quiet day.", "live": market_open()}
+
+
+def close_note_loop():
+    """Once per trading day, about 15 minutes after the close, while the server runs."""
+    time.sleep(60)
+    while True:
+        try:
+            now = dt.datetime.now(NY)
+            day = now.strftime("%Y-%m-%d")
+            if now.weekday() < 5 and now.time() >= dt.time(16, 15) and S.dates and S.dates[-1] == day:
+                for uid in personal.users():
+                    if personal.settings(uid).get("close_note", "on") == "off" or personal.has_event(uid, f"close|{day}"):
+                        continue
+                    n = close_note(uid)
+                    if n and personal.add_event(uid, None, "close", n["title"], n["body"], f"close|{day}"):
+                        personal.push(uid, n["title"], n["body"], tag="bell", click=f"{LINK_BASE}/#mine" if LINK_BASE else None)
+                        log(f"close note for {uid}: {n['title']}")
+        except Exception as e:
+            log(f"close note failed: {e!r}")
+        time.sleep(60)
 
 
 def user_for(handler) -> str:
@@ -1215,12 +1404,15 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/me/alert/delete":
                 personal.delete_alert(uid, body.get("id"))
             elif path == "/api/me/settings":
-                topic = re.sub(r"[^A-Za-z0-9_-]", "", str(body.get("ntfyTopic") or ""))[:64]
-                personal.set_setting(uid, "ntfy_topic", topic)
-                srv = str(body.get("ntfyServer") or "https://ntfy.sh").strip()
-                if not re.fullmatch(r"https://[A-Za-z0-9.-]+(:\d+)?", srv.rstrip("/")):
-                    raise ValueError("The ntfy server must be an https:// address.")
-                personal.set_setting(uid, "ntfy_server", srv.rstrip("/"))
+                if "closeNote" in body:
+                    personal.set_setting(uid, "close_note", "on" if body.get("closeNote") else "off")
+                if "ntfyTopic" in body:
+                    topic = re.sub(r"[^A-Za-z0-9_-]", "", str(body.get("ntfyTopic") or ""))[:64]
+                    srv = str(body.get("ntfyServer") or "https://ntfy.sh").strip()
+                    if not re.fullmatch(r"https://[A-Za-z0-9.-]+(:\d+)?", srv.rstrip("/")):
+                        raise ValueError("The ntfy server must be an https:// address.")
+                    personal.set_setting(uid, "ntfy_topic", topic)
+                    personal.set_setting(uid, "ntfy_server", srv.rstrip("/"))
             elif path == "/api/me/read":
                 personal.mark_read(uid)
             elif path == "/api/me/test-push":
@@ -1386,6 +1578,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200, json.dumps(brief(user_for(self))).encode(), "application/json")
         elif path == "/api/me":
             self.send(200, json.dumps(me_payload(user_for(self))).encode(), "application/json")
+        elif path == "/api/me/close-note":
+            self.send(200, json.dumps(jsonable(close_note(user_for(self)) or {})).encode(), "application/json")
         elif path == "/api/earnings":
             with S.lock:
                 syms = set(S.px)
@@ -1442,6 +1636,7 @@ def main():
     S.load_history()
     threading.Thread(target=earnings_loop, daemon=True).start()
     threading.Thread(target=alerts_loop, daemon=True).start()
+    threading.Thread(target=close_note_loop, daemon=True).start()
     threading.Thread(target=brief_loop, daemon=True).start()
     if not args.no_stream:
         threading.Thread(target=stream_loop, daemon=True).start()

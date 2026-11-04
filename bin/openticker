@@ -717,10 +717,15 @@ def cmd_shot(args):
     path = Path(out).expanduser().resolve() if out else paths.HOME / "shots" / name
     path.parent.mkdir(parents=True, exist_ok=True)
     w, h = (390, 844) if phone else (1440, 900)
-    r = subprocess.run([chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check",
-                        f"--window-size={w},{h}", "--force-device-scale-factor=2", "--virtual-time-budget=9000",
-                        f"--screenshot={path}", url] + (["--no-sandbox"] if os.geteuid() == 0 else []),
-                       capture_output=True, text=True, timeout=120)
+    try:
+        r = subprocess.run([chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check",
+                            # never touch the keychain: a fresh or test HOME has none, and macOS would ask the person about it
+                            "--use-mock-keychain", "--password-store=basic",
+                            f"--window-size={w},{h}", "--force-device-scale-factor=2", "--virtual-time-budget=9000",
+                            f"--screenshot={path}", url] + (["--no-sandbox"] if os.geteuid() == 0 else []),
+                           capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        die("Chrome didn't finish the screenshot within two minutes. Is a dialog open on screen?")
     if r.returncode != 0 or not path.exists():
         die("Chrome couldn't take the screenshot: " + (r.stderr.strip().splitlines() or ["unknown error"])[-1])
     print(path)

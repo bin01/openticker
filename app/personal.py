@@ -125,7 +125,8 @@ def snapshot(uid):
         "positions": positions(uid),
         "alerts": alerts(uid),
         "kinds": KINDS,
-        "settings": {"ntfyTopic": s.get("ntfy_topic", ""), "ntfyServer": s.get("ntfy_server", "https://ntfy.sh")},
+        "settings": {"ntfyTopic": s.get("ntfy_topic", ""), "ntfyServer": s.get("ntfy_server", "https://ntfy.sh"),
+                     "closeNote": s.get("close_note", "on") != "off"},
         "events": events(uid),
         "unread": unread(uid),
     }
@@ -191,6 +192,10 @@ def mark_read(uid):
     _exec("update events set read=1 where user_id=? and read=0", (uid,))
 
 
+def has_event(uid, dedup):
+    return _q("select 1 from events where user_id=? and dedup=?", (uid, dedup), one=True) is not None
+
+
 def add_event(uid, t, kind, title, body, dedup):
     """Record an alert once per dedup key. Returns True if it is new."""
     with _lock:
@@ -225,8 +230,9 @@ def _last2(a):
     return vals[-1][1], vals[-2][1], vals[-1][0]
 
 
-def evaluate(uid, px, dates, names, earnings, link_base=""):
-    """Check this user's rules against current prices. px: {t: [daily closes]}, last = today/live."""
+def evaluate(uid, px, dates, names, earnings, link_base="", explain=None):
+    """Check this user's rules against current prices. px: {t: [daily closes]}, last = today/live.
+    explain(t), if given, returns a sentence on why t moved, added to price alerts."""
     if not dates:
         return []
     day = dates[-1]
@@ -235,7 +241,16 @@ def evaluate(uid, px, dates, names, earnings, link_base=""):
     fired = []
 
     def fire(rule, t, title, body, key):
-        if add_event(uid, t, rule["kind"], title, body, f"{rule['id']}|{t}|{key}"):
+        dedup = f"{rule['id']}|{t}|{key}"
+        if has_event(uid, dedup):
+            return
+        if explain and rule["kind"] != "earnings":
+            try:
+                why = explain(t)
+            except Exception:
+                why = ""
+            body = f"{body} {why}" if why else body
+        if add_event(uid, t, rule["kind"], title, body, dedup):
             fired.append((t, title, body))
             push(uid, title, body, click=f"{link_base}/#{t}" if link_base else None)
 
@@ -285,8 +300,9 @@ def evaluate(uid, px, dates, names, earnings, link_base=""):
                 if d in (day, _next_day(day)) and e.get("reported") is None:
                     when = {"BMO": "before the open", "AMC": "after the close"}.get(e.get("timing"), "")
                     est = f" EPS estimate ${e['epsEst']:.2f}." if e.get("epsEst") is not None else ""
-                    fire(rule, t, f"{t} reports {'today' if d == day else 'tomorrow'}",
-                         f"{nm} reports earnings {('today' if d == day else 'tomorrow')} {when}.{est}".replace("  ", " "), d)
+                    when_day = "today" if d == day else "tomorrow"
+                    fire(rule, t, f"{t} reports {when_day}",
+                         f"{nm} reports earnings {when_day}{' ' + when if when else ''}.{est}", d)
     return fired
 
 

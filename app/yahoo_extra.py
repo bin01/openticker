@@ -387,7 +387,10 @@ def _series(syms, period="1y", interval="1d"):
 
 def macro_daily():
     syms = [m[0] for m in MACRO] + [s[0] for s in SECTOR_ETFS]
-    close = _series(syms, "13mo", "1d").ffill()
+    raw = _series(syms, "13mo", "1d")
+    # fill holes inside a series only: Yahoo often leaves today's daily bar empty for a while after the close,
+    # and a trailing fill would copy yesterday into today and make every daily change read 0.00%
+    close = raw.ffill().where(raw.bfill().notna())
     dates = [d.strftime("%Y-%m-%d") for d in close.index]
     px = {c: [clean(round(float(v), 4)) if v == v else None for v in close[c].tolist()] for c in close.columns}
     return {"dates": dates, "px": px}

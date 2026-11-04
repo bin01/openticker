@@ -311,7 +311,7 @@ table.hz{width:100%;border-collapse:collapse;font-size:13px}
 .evs li{border-bottom:1px solid var(--grid)}
 .evs li.new{background:var(--accent-soft);border-radius:8px}
 .lnk-row{display:grid;gap:2px;width:100%;text-align:left;border:0;background:none;padding:9px 8px;cursor:pointer;color:var(--ink)}
-.lnk-row span{font-size:13px;color:var(--ink-2)}.lnk-row small{font-size:11px;color:var(--ink-3)}
+.lnk-row span{font-size:13px;color:var(--ink-2);white-space:pre-line}.lnk-row small{font-size:11px;color:var(--ink-3)}
 .rules td{padding:7px 4px;font-size:13px}.rules td.l{text-align:left}
 .rules + .frm{margin-top:12px}
 .sw2{display:flex;gap:8px;align-items:center;cursor:pointer}
@@ -778,6 +778,9 @@ dialog.sets::backdrop{background:rgba(10,14,12,.38);backdrop-filter:blur(2px)}
 .srow .sc{flex:none;display:flex;gap:8px;align-items:center}
 .srow.col{flex-direction:column;align-items:stretch;gap:4px}
 .srow.col .sc{flex:auto}
+.cnprev{border-top:0;padding-top:0}.cnprev small{font-size:12px;color:var(--ink-3)}
+.cn{background:var(--bg);border:1px solid var(--grid);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.cn b{font:600 13.5px/1.35 var(--f-body)}.cn p{margin:0;font-size:13px;line-height:1.5;color:var(--ink-2);white-space:pre-line}
 .srow .lnk{padding:0;font-size:12.5px}
 .srow select{height:32px;max-width:260px;border:1px solid var(--rule);border-radius:9px;background:var(--bg);color:var(--ink);font:500 13px var(--f-body);padding:0 8px}
 .srow.frm{flex-wrap:wrap;gap:8px;border-top:0;padding-top:0}
