@@ -405,6 +405,12 @@ function askRender(){
   B.innerHTML=ASK.conv.map((m,i)=>{
     if(m.role==="user"){ const k=m.ctx?ctxLabel(m.ctx):null, show=k&&k!==lastCtx; lastCtx=k||lastCtx;
       return `${show?`<div class="ctxsep"><span>${esc(k)}</span></div>`:""}<div class="am u"><p>${esc(m.text)}</p></div>`; }
+    return amHTML(m,i);
+  }).join("");
+  drawCharts(B,true);
+  if(ASK.stick!==false) B.scrollTop=B.scrollHeight;
+}
+function amHTML(m,i){
     const live=!m.done, steps=(m.steps||[]).filter(Boolean);
     return `<div class="am a${live?" live":""}" data-i="${i}">
       ${live&&!m.text?`<div class="log">${steps.slice(-5).map((s,k,a)=>stepRow(s,k===a.length-1)).join("")||stepRow(m.status||"Thinking",true)}</div>`
@@ -412,9 +418,19 @@ function askRender(){
       <div class="md">${mdToHtml(m.text,m)}${live&&m.text?`<span class="caret"></span>`:""}</div>
       ${m.error?`<div class="aerr">${esc(m.error)}</div>`:""}
       ${m.done?`<div class="af">${m.text?`<button class="ib" data-ask-copy="${i}" title="Copy" aria-label="Copy">${ic("copy",14)}</button>`:""}${i===ASK.conv.length-1?`<button class="ib" data-ask-retry title="Ask again" aria-label="Ask again">${ic("retry",14)}</button>`:""}<span>${m.secs!=null?`Worked for <b>${dur(m.secs)}</b>`:""}${m.by?` · ${esc(m.by.split(" · ").map((x,j)=>j?prettyModel(x):x).join(" · "))}`:""}</span></div>`:""}</div>`;
-  }).join("");
-  drawCharts(B);
+}
+/* While Tick streams, only the answer being written changes: patch that one message in place instead of rebuilding
+   the conversation every frame, keep charts that are already drawn, and keep "How I got there" open if it was. */
+function askPatchLive(){
+  const B=$("#askB"), i=ASK.conv.length-1, m=ASK.conv[i]; if(!B||ASK.view||!m||m.role==="user") return false;
+  const el=B.querySelector(`.am.a[data-i="${i}"]`); if(!el) return false;
+  const tmp=document.createElement("div"); tmp.innerHTML=amHTML(m,i); const nu=tmp.firstElementChild; if(!nu) return false;
+  const drawn=new Map([...el.querySelectorAll("figure.tkc[data-drawn]")].map(f=>[f.dataset.c,f]));
+  nu.querySelectorAll("figure.tkc[data-c]").forEach(f=>{ const o=drawn.get(f.dataset.c); if(o) f.replaceWith(o); });
+  const open=el.querySelector("details.how")?.open, d=nu.querySelector("details.how"); if(open&&d) d.open=true;
+  el.replaceWith(nu); drawCharts(nu);
   if(ASK.stick!==false) B.scrollTop=B.scrollHeight;
+  return true;
 }
 document.addEventListener("click",e=>{ const b=e.target.closest("[data-nt]"); if(!b) return; const n=ASK.notes?.[+b.dataset.nt]; if(!n) return; ASK.ctx={scope:n.go.scope,t:n.go.t||null}; ASK.pinned=n.go.scope==="stock"; askSend({skill:n.go.skill}); });
 
@@ -507,7 +523,7 @@ async function askSend({q,skill,retry}){
   const msg={role:"assistant",text:"",status:"Gathering the data",steps:[],done:false,by:askProvLabel(prov)}; ASK.conv.push(msg); ASK.stick=true;
   ASK.also=[];
   const ctl=new AbortController(), t0=Date.now(); ASK.run=ctl; setMood("think"); askRender();
-  let toolSince=false, raf=0, started=false; const paint=()=>{ if(!raf) raf=requestAnimationFrame(()=>{ raf=0; askRender(); }); };
+  let toolSince=false, raf=0, started=false; const paint=()=>{ if(!raf) raf=requestAnimationFrame(()=>{ raf=0; if(!askPatchLive()) askRender(); }); };
   try{
     const r=await fetch("/api/ask",{method:"POST",headers:askHeaders(),signal:ctl.signal,body:JSON.stringify({provider:prov.id,model:askModelOf(prov)||undefined,effort:(prov.efforts?.length&&askEffortOf(prov))||undefined,scope:c.scope,t:c.t,
       skill:sk&&!q?sk.name:undefined,q:full||undefined,show:shown,history,chat:ASK.chat})});
@@ -658,12 +674,14 @@ function chartSVG(c,W){
   g+=`<g class="ch-hov" hidden><line class="ch-x" y1="${T}" y2="${H-B}"/></g>`;
   return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(c.title)}" data-l="${L}" data-r="${R}">${g}</svg><div class="ch-tip" hidden></div>`;
 }
-function drawCharts(root){
+function drawCharts(root,force){
   root.querySelectorAll("figure.tkc[data-c]").forEach(fg=>{
+    if(!force&&fg.dataset.drawn) return;
     let c=null; try{ c=chartSpec(JSON.parse(decodeURIComponent(fg.dataset.c))); }catch(e){}
     if(!c){ fg.remove(); return; }
     const W=Math.max(240,Math.round((fg.clientWidth||324)-24)); CH_SPECS.set(fg,c);
     fg.innerHTML=`${c.title?`<figcaption>${esc(c.title)}</figcaption>`:""}<div class="ch-box">${chartSVG(c,W)}</div>`;
+    fg.dataset.drawn="1";
   });
 }
 /* hover a line chart: a guide line and the values on that day */
@@ -677,7 +695,7 @@ document.addEventListener("pointermove",e=>{
   tip.innerHTML=`<b>${esc(chDate(c.x[i]))}</b>${c.series.map((s,k)=>`<span><i style="background:${c.series.length===1?"var(--ink-2)":CH_COL[k]}"></i>${c.series.length>1?esc(s.name)+" ":""}<em>${chFmt(s.values[i],c.unit)}</em></span>`).join("")}`;
   const left=x*r.width/W; tip.style.left=Math.min(r.width-tip.offsetWidth,Math.max(0,left-tip.offsetWidth/2))+"px";
 },{passive:true});
-let chRT=0; addEventListener("resize",()=>{ clearTimeout(chRT); chRT=setTimeout(()=>{ const B=$("#askB"); if(B) drawCharts(B); },150); });
+let chRT=0; addEventListener("resize",()=>{ clearTimeout(chRT); chRT=setTimeout(()=>{ const B=$("#askB"); if(B) drawCharts(B,true); },150); });
 
 /* wiring --------------------------------------------------------------------------------------------- */
 document.addEventListener("click",e=>{
