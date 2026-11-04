@@ -268,6 +268,8 @@ class State:
         self.px: dict[str, list] = {}
         self.version = 0
         self.last_tick = 0.0          # wall time of the last streamed regular-hours tick
+        self.tick_at: dict = {}       # sym -> wall time of its last streamed regular-hours tick
+        self.stream_since = 0.0
         self.ticks = 0
         self.last_poll = 0.0
         self.history_fetched = 0.0
@@ -319,12 +321,7 @@ class State:
                 if sym not in self.extras and sym not in personal.all_symbols():
                     self.extras = (self.extras + [sym])[-60:]
             self.version += 1
-        try:  # stream live ticks for them too
-            if getattr(self, "ws", None):
-                self.ws.subscribe(list(got))
-        except Exception:
-            pass
-        return have | set(got)
+        return have | set(got)   # stream_loop subscribes them within half a minute
 
     # daily bars ---------------------------------------------------------
     def load_history(self):
@@ -489,9 +486,10 @@ def ext_session(when):
 S = State()
 
 
-def stream_loop():
-    """Yahoo streaming quotes. Reconnects forever."""
-    def on_msg(m):
+STREAM_CHUNK = 90   # Yahoo's stream only sends about 100 symbols per connection and drops the rest without a word
+
+
+def on_stream_msg(m):
         try:
             ts = int(m.get("time", 0)) / 1000
             if m.get("market_hours") != 1:      # pre-market or after hours: kept apart from the daily close
@@ -501,25 +499,46 @@ def stream_loop():
                 return
             day = dt.datetime.fromtimestamp(ts, NY).strftime("%Y-%m-%d")
             S.apply_price(m["id"], m.get("price"), day)
-            S.last_tick = time.time()
+            S.last_tick = S.tick_at[m["id"]] = time.time()
             S.ticks += 1
             S.stream_status = "live"
         except Exception:
             pass
 
+
+def stream_shard(syms):
+    """One stream connection for up to STREAM_CHUNK symbols. Reconnects forever."""
     while True:
         try:
-            syms = S.tickers()
             ws = yf.WebSocket(verbose=False)
             ws.subscribe(syms)
-            S.ws = ws
-            S.stream_status = "connected"
-            log(f"stream subscribed to {len(syms)} symbols")
-            ws.listen(on_msg)
+            if S.stream_status != "live":
+                S.stream_status = "connected"
+            ws.listen(on_stream_msg)
         except Exception as e:
-            S.stream_status = "reconnecting"
-            log(f"stream dropped: {e!r}")
+            if time.time() - S.last_tick > 60:
+                S.stream_status = "reconnecting"
+            log(f"stream dropped ({len(syms)} symbols from {syms[0]}): {e!r}")
         time.sleep(5)
+
+
+def stream_loop():
+    """Yahoo streaming quotes, split across connections. Symbols added later (a searched ticker, a new position)
+    get their own connection within half a minute."""
+    covered = set()
+    S.stream_since = time.time()
+    while True:
+        try:
+            new = [t for t in S.tickers() if t not in covered]
+            for i in range(0, len(new), STREAM_CHUNK):
+                part = new[i:i + STREAM_CHUNK]
+                covered.update(part)
+                threading.Thread(target=stream_shard, args=(part,), daemon=True).start()
+            if new:
+                log(f"stream subscribed to {len(covered)} symbols over {math.ceil(len(covered) / STREAM_CHUNK)}+ connections")
+        except Exception as e:
+            log(f"stream setup failed: {e!r}")
+        time.sleep(30)
 
 
 def poll_loop():
@@ -534,8 +553,12 @@ def poll_loop():
                 S.holdings = {k: v for k, v in load_holdings().items() if k in FUNDS} or old
                 S.load_history()
                 continue
-            if open_ and time.time() - S.last_tick > POLL_FALLBACK and time.time() - S.last_poll > POLL_FALLBACK:
-                syms = S.tickers()
+            quiet = time.time() - S.last_tick > POLL_FALLBACK
+            # symbols the stream hasn't priced in five minutes (it can go silent on some while others keep ticking)
+            stale = [t for t in S.tickers() if time.time() - S.tick_at.get(t, 0) > 300] \
+                if open_ and not quiet and S.stream_since and time.time() - S.stream_since > 300 else []
+            if open_ and (quiet or len(stale) > 20) and time.time() - S.last_poll > (POLL_FALLBACK if quiet else 180):
+                syms = S.tickers() if quiet else stale
                 df = download_closes(syms, period="1d", interval="1m")
                 day = now_ny.strftime("%Y-%m-%d")
                 last = df.ffill().iloc[-1]
@@ -545,7 +568,7 @@ def poll_loop():
                 S.last_poll = time.time()
                 if S.stream_status != "live":
                     S.stream_status = "polling"
-                log("polled prices (stream quiet)")
+                log("polled prices (stream quiet)" if quiet else f"polled {len(syms)} prices the stream hasn't sent")
         except Exception as e:
             log(f"poll failed: {e!r}")
 
