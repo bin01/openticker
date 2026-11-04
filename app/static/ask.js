@@ -107,7 +107,7 @@ function setMood(m){ ASK.mood=m; document.querySelectorAll(".tick.live").forEach
 /* entry points on the page ------------------------------------------------------------------------ */
 function askRow(t,scope){
   scope=scope||(t?"stock":"market");
-  const S=askSkills(scope).slice(0,scope==="stock"?5:3);
+  const S=askSkills(scope).slice(0,scope==="stock"?4:3);
   return `<div class="askrow"><span class="askl">${tickFace(16)}Ask ${TICK}</span>${S.map(s=>`<button class="askchip" data-ask-skill="${esc(s.name)}" data-ask-scope="${scope}"${t?` data-ask-t="${esc(t)}"`:""}>${esc(s.label)}</button>`).join("")}</div>`;
 }
 function askCmd(q){ return {cmd:"ask:free",label:`Ask ${TICK} “${q.length>60?q.slice(0,58)+"…":q}”`,hint:TICK,icon:"spark",run:()=>openAsk({q,send:true})}; }
