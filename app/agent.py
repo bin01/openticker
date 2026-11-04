@@ -171,6 +171,10 @@ def _fetch(name, sym):
     return srv.extra(name, {"t": [sym]})
 
 
+def _cache_key(name, sym):
+    return {"detail": ("info", sym), "earnhist": ("earnhist", sym)}.get(name, ("x", name, sym, ()))
+
+
 def gather(sym, names, timeout=25):
     """Fetch several research blocks in parallel; whatever isn't back in time is reported as missing."""
     out = {}
@@ -283,13 +287,23 @@ def sec_analysts(a, info, price):
 
 def sec_earnings(sym, hist, opts):
     L = []
-    e = srv.EARN.get(sym) or {}
+    e = srv.earnings_info(sym)
     if e.get("date"):
-        when = {"BMO": "before the open", "AMC": "after the close"}.get(e.get("timing"), "")
-        if e.get("reported") is None and e["date"] >= dt.date.today().isoformat():
-            L.append(f"Next earnings: {e['date']} {when}".rstrip() + (f", EPS estimate ${e['epsEst']:.2f}" if e.get("epsEst") else "") + ".")
+        timing = e.get("timing")
+        if not timing and hist:      # the company's usual time of day, from past reports
+            timing = "AMC" if (hist[0].get("hour") or 0) >= 12 else "BMO"
+        when = {"BMO": "before the open", "AMC": "after the close"}.get(timing, "")
+        today = dt.date.today().isoformat()
+        known = next((h for h in hist or [] if h.get("date") == e["date"] and h.get("eps") is not None), None)
+        est = (f", EPS estimate ${e['epsEst']:.2f}" if e.get("epsEst") else "") + (f", revenue estimate {_money(e['revEst'])}" if e.get("revEst") else "")
+        if e.get("reported") is None and not known and e["date"] > today:
+            L.append(f"Next earnings: {e['date']} {when}".rstrip() + est + ".")
+        elif e.get("reported") is None and not known:
+            L.append(f"Reported {'today' if e['date'] == today else 'on ' + e['date']} {when}".rstrip() + est
+                     + ". Yahoo hasn't posted the results yet: check the news or the company's release for the numbers.")
         else:
-            L.append(f"Last reported {e['date']}" + (f": EPS ${e['reported']:.2f} vs ${e['epsEst']:.2f} expected" if e.get("reported") is not None and e.get("epsEst") else "") + ".")
+            rep = e.get("reported") if e.get("reported") is not None else (known or {}).get("eps")
+            L.append(f"Last reported {e['date']}" + (f": EPS ${rep:.2f} vs ${e['epsEst']:.2f} expected" if rep is not None and e.get("epsEst") else "") + ".")
     em = (opts or {}).get("earnings") or {}
     if em.get("move"):
         L.append(f"Options price a ±{em['move'] * 100:.1f}% move through the {em.get('expiry')} expiry, which covers earnings.")
@@ -377,12 +391,15 @@ def _rsi(c, n=14):
         return []
     g = [max(c[i] - c[i - 1], 0) for i in range(1, len(c))]
     lo = [max(c[i - 1] - c[i], 0) for i in range(1, len(c))]
+    def rsi(ag, al):
+        return 100 if al == 0 else 100 - 100 / (1 + ag / al)
+    # g[i] is the change into close i + 1, so the first RSI (the plain average of 14 changes) belongs to close 14
     ag, al = sum(g[:n]) / n, sum(lo[:n]) / n
-    out = [None] * n
+    out = [None] * n + [rsi(ag, al)]
     for i in range(n, len(g)):
         ag, al = (ag * (n - 1) + g[i]) / n, (al * (n - 1) + lo[i]) / n
-        out.append(100 if al == 0 else 100 - 100 / (1 + ag / al))
-    return [None] + out
+        out.append(rsi(ag, al))
+    return out
 
 
 def _levels(h, l, c, d, look=126, w=5, tol=0.015):
@@ -734,6 +751,9 @@ def stock_context(sym, uid=None, only=None, timeout=25):
                 "technicals": lambda: sec_technicals(sym, got.get("ohlc"), info)}[k]()
         missing = [n for n in SECTIONS[k][1] if n not in got]
         L += ["", f"## {SECTIONS[k][0]}"] + (body or [f"(Yahoo didn't return this just now{': ' + ', '.join(missing) if missing else ''}.)"])
+        old = [a for a in (srv.stale_age(_cache_key(n, sym)) for n in SECTIONS[k][1]) if a]
+        if body and old:
+            L.append(f"(Yahoo didn't refresh this just now, so it's the copy from {srv._ago(max(old))}.)")
     return "\n".join(L).strip() + "\n"
 
 
@@ -791,14 +811,28 @@ def portfolio_context(uid):
     return "\n".join(L).strip() + "\n"
 
 
+def contributions(weights, rets):
+    """Each holding's contribution to a fund's return, the same way the Funds page computes it.
+    Issuers publish today's weights; a holding's weight at the start of the period is today's weight divided by
+    (1 + its return), rescaled so the weights still add up. Contribution = start weight × return, so the
+    contributions add up to the basket's return. Holdings without a return keep their weight and contribute 0.
+    weights are fractions (0.07 for 7%); returns are fractions; returns (start weight, contribution) pairs."""
+    raw = [w if r is None else w / (1 + r) for w, r in zip(weights, rets)]
+    scale = sum(weights) / sum(raw) if sum(raw) else 0
+    out = []
+    for w0, r in zip(raw, rets):
+        w0 *= scale
+        out.append((w0, 0.0 if r is None else w0 * r))
+    return out
+
+
 def _contrib(fund, n):
     hs = (srv.S.holdings.get(fund) or {}).get("holdings", [])
+    rets = [_ret(_series(h["t"])[1], n) for h in hs]
     out = []
-    for h in hs:
-        _, arr = _series(h["t"])
-        r = _ret(arr, n)
+    for h, r, (w0, c) in zip(hs, rets, contributions([h["w"] / 100 for h in hs], rets)):
         if r is not None:
-            out.append((h["t"], h["n"], h["w"] / 100, r, h["w"] / 100 * r))
+            out.append((h["t"], h["n"], w0, r, c))
     return out
 
 
@@ -815,7 +849,7 @@ def fund_context(fund, n=1):
         eq = sum(x[3] for x in c) / len(c)
         L.append(f"{up} of {len(c)} holdings up; the average holding returned {_pct(eq)} (equal weight).")
         top = sorted(c, key=lambda x: -x[4])
-        fmt = lambda xs: _table(["Ticker", "Name", "Weight", "Return", "Contribution"], [[x[0], x[1], _pct(x[2], 2, False), _pct(x[3]), f"{x[4] * 1e4:+.0f} bp"] for x in xs])
+        fmt = lambda xs: _table(["Ticker", "Name", "Start weight", "Return", "Contribution"], [[x[0], x[1], _pct(x[2], 2, False), _pct(x[3]), f"{x[4] * 1e4:+.0f} bp"] for x in xs])
         L += ["", "Biggest lifts:", fmt(top[:8]), "", "Biggest drags:", fmt(top[::-1][:8])]
     return "\n".join(L) + "\n"
 

@@ -4,7 +4,11 @@ Object.assign(IC,{
   gear:'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
 });
 let APP=null;
-const SET_SECTIONS=[["look","Appearance"],["tick","Tick"],["notify","Notifications"],["phone","Your phone"],["about","About"]];
+const SET_SECTIONS=[["look","Appearance"],["tick","Tick"],["notify","Notifications"],["phone","Your phone"],["data","Data"],["about","About"]];
+let HEALTH=null;
+async function loadHealth(){ try{ HEALTH=await (await fetch("/api/health")).json(); }catch(e){ HEALTH=null; } markGear(); return HEALTH; }
+function markGear(){ const g=$("#gear"); if(!g) return; const bad=!!HEALTH&&!HEALTH.ok; g.classList.toggle("warn",bad);
+  g.title=bad?"Some data is out of date. Open Settings to see what":"Settings (⌘,)"; }
 
 function setRow(label,help,control,cls=""){ return `<div class="srow ${cls}"><div class="sl"><b>${label}</b>${help?`<small>${help}</small>`:""}</div><div class="sc">${control}</div></div>`; }
 function setSeg(name,opts,cur){ return `<div class="seg sm" role="radiogroup" aria-label="${esc(name)}">${opts.map(([v,l])=>`<button type="button" role="radio" aria-pressed="${v===cur}" aria-checked="${v===cur}" data-set-${name}="${esc(v)}">${l}</button>`).join("")}</div>`; }
@@ -17,7 +21,9 @@ async function openSettings(section){
   d.addEventListener("close",()=>d.remove());
   d.addEventListener("click",e=>{ if(e.target===d) d.close(); });   // a click on the dimmed backdrop closes it
   if(section) d.querySelector(`#set-${section}`)?.scrollIntoView({block:"start"});
+  const h=loadHealth();
   try{ APP=await (await fetch("/api/app")).json(); }catch(e){ APP=APP||{}; }
+  await h;
   if(!ASK.info) await askInfo().catch(()=>{});
   if(document.contains(d)) renderSettings();
 }
@@ -62,6 +68,11 @@ function renderSettings(){
      setRow("Open OpenTicker on your phone",a.phone?`On. Your phone can reach it on the same Wi-Fi.`:`Off. Only this Mac can open it.`+(a.mac?` Changing this restarts OpenTicker in a Terminal window.`:""),
        a.mac?setTgl("setPhone",!!a.phone,"Let your phone open OpenTicker"):`<span class="sv">${a.phone?"On":"Off"}</span>`)
      +(a.phone&&ASK.info?.pair?`<div class="srow col"><div class="sl"><b>Pair your phone</b><small>Open this link on your phone. It also lets you ask Tick from there. Keep it to yourself.</small></div><div class="pairl"><code>${esc(ASK.info.pair)}</code><button type="button" class="btn ghost" id="setPair">${ic("copy",13)}Copy</button></div></div>`:""))}
+  ${sec("data","Data",
+     !HEALTH?setRow("Checking…","",""):
+     (HEALTH.problems.length?`<div class="srow col dprob"><div class="sl"><b>${HEALTH.problems.length===1?"One thing is off":`${HEALTH.problems.length} things are off`}</b>${HEALTH.problems.map(p=>`<small>${esc(p)}</small>`).join("")}</div></div>`
+       :setRow("Everything is up to date","Prices, holdings, the earnings calendar and Yahoo's research are all coming through.",`<span class="on-pill">OK</span>`))
+     +HEALTH.rows.map(r=>`<div class="srow drow"><div class="sl"><b><i class="hdot ${r.ok?"ok":"bad"}"></i>${esc(r.name)}</b></div><div class="sc"><span class="sv">${esc(r.detail)}</span></div></div>`).join(""))}
   ${sec("about","About",
      setRow("OpenTicker",`Version ${esc(a.version||"…")}. Free and open source.`,`<a class="btn ghost" href="https://github.com/bin01/openticker" target="_blank" rel="noopener">GitHub</a>${local&&a.mac?`<button type="button" class="btn" id="setUpd">Update</button>`:""}`)
      +(local&&a.mac?setRow("Change OpenTicker","Ask your AI agent for anything: another fund, a new page, a different look, how Tick talks. This opens Claude Code or Codex in OpenTicker's code, which explains itself to the agent.",`<button type="button" class="btn ghost" id="setEdit">Open in Terminal</button>`):"")
@@ -105,6 +116,7 @@ applyFloatPref();
 (function(){
   const b=document.createElement("button"); b.className="theme iconbtn"; b.id="gear"; b.title="Settings (⌘,)"; b.setAttribute("aria-label","Settings"); b.innerHTML=ic("gear",17);
   b.onclick=()=>openSettings(); $("#theme")?.after(b);
+  loadHealth(); setInterval(loadHealth,5*60e3);
   document.addEventListener("keydown",e=>{ if((e.metaKey||e.ctrlKey)&&e.key===","){ e.preventDefault(); $("#sets")?closeSettings():openSettings(); } });
   if(typeof COMMANDS!=="undefined") COMMANDS.push({cmd:"settings",label:"Settings",hint:"OpenTicker",icon:"gear",keys:"settings preferences options theme dark light tick model phone notifications update",run:()=>openSettings()});
 })();

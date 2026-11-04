@@ -190,8 +190,10 @@ def load_holdings(force=False):
                 raise ValueError("no rows")
             out[fund] = {"name": FUNDS[fund], "asOf": as_of, "complete": complete, "holdings": rows}
             log(f"holdings {fund}: {len(rows)} names, {sum(r['w'] for r in rows):.1f}% of fund, as of {as_of}")
+            health(f"holdings {fund}")
         except Exception as e:  # keep yesterday's file rather than nothing
             log(f"holdings {fund} failed: {e!r}")
+            health(f"holdings {fund}", False, e)
             if fund in old:
                 out[fund] = old[fund]
     path.write_text(json.dumps(out))
@@ -440,6 +442,29 @@ INFO_KEYS = [
 ]
 
 
+# ---------------------------------------------------------------- data health: when each source last worked, and what failed
+HEALTH: dict = {}               # source -> {"ok": time, "fail": time, "err": text}
+_stale_keys: set = set()        # cache keys currently served from an old copy because the refresh failed
+
+
+def health(name, ok=True, err=None):
+    h = HEALTH.setdefault(name, {})
+    h["ok" if ok else "fail"] = time.time()
+    if not ok:
+        h["err"] = str(err)[:200]
+
+
+def _source(key):
+    return f"{key[1]}" if key and key[0] == "x" else str(key[0])
+
+
+def stale_age(key):
+    """Seconds since the copy we're serving was fetched, if a refresh failed and we fell back to it; else None."""
+    with _detail_lock:
+        hit = _detail_cache.get(key)
+        return time.time() - hit[0] if hit and key in _stale_keys else None
+
+
 def cached(key, ttl, fn):
     """Small TTL cache; if a refresh fails, serve the stale copy when there is one."""
     now = time.time()
@@ -451,11 +476,15 @@ def cached(key, ttl, fn):
         val = fn()
     except Exception as e:
         log(f"{key} failed: {e!r}")
+        health(_source(key), False, e)
         if hit:
+            _stale_keys.add(key)
             return hit[1]
         raise
     with _detail_lock:
         _detail_cache[key] = (now, val)
+        _stale_keys.discard(key)
+    health(_source(key))
     return val
 
 
@@ -664,6 +693,42 @@ def fetch_earnings_calendar():
     return out
 
 
+def ticker_earnings(sym):
+    """One company's next (or just-passed) report from its own Yahoo page. Yahoo's calendar listing misses some
+    companies (AMD on its report day, for one), so this fills the gaps for stocks people actually look at."""
+    def run():
+        c = yf.Ticker(sym).calendar or {}
+        days = c.get("Earnings Date") or []
+        if not days:
+            raise ValueError("no earnings date")
+        d = days[0].isoformat() if hasattr(days[0], "isoformat") else str(days[0])
+        return {"date": d[:10], "timing": None, "epsEst": jsonable(c.get("Earnings Average")),
+                "revEst": jsonable(c.get("Revenue Average")), "reported": None, "surprise": None, "event": None, "src": "company"}
+    return cached(("ecal", sym), 12 * 3600, run)
+
+
+def earnings_info(sym, fetch=True):
+    """The calendar entry for a stock, falling back to the company's own page when the calendar has no row."""
+    e = EARN.get(sym)
+    if e or not fetch:
+        return e or {}
+    try:
+        return ticker_earnings(sym)
+    except Exception:
+        return {}
+
+
+def _earnings_watch_list():
+    syms = set()
+    for uid in personal.users():
+        snap = personal.snapshot(uid)
+        syms |= set(snap["watch"]) | {p["t"] for p in snap["positions"]}
+    for f in FUNDS:        # the biggest names in each fund, since they drive the Market and Funds pages
+        hs = sorted((S.holdings.get(f) or {}).get("holdings", []), key=lambda h: -h["w"])[:15]
+        syms |= {h["t"] for h in hs}
+    return sorted(syms)
+
+
 def earnings_loop():
     global EARN
     time.sleep(20)
@@ -671,11 +736,25 @@ def earnings_loop():
         try:
             got = fetch_earnings_calendar()
             if got:
+                filled = 0
+                for t in _earnings_watch_list():
+                    if t in got:
+                        continue
+                    try:
+                        got[t] = ticker_earnings(t)
+                        filled += 1
+                    except Exception:
+                        pass
+                    time.sleep(0.3)
                 EARN = got
                 EARN_PATH.write_text(json.dumps(EARN))
-                log(f"earnings calendar: {len(EARN)} companies")
+                log(f"earnings calendar: {len(EARN)} companies ({filled} filled from company pages)")
+                health("earnings calendar")
+            else:
+                health("earnings calendar", False, "empty")
         except Exception as e:
             log(f"earnings calendar failed: {e!r}")
+            health("earnings calendar", False, e)
         time.sleep(4 * 3600)
 
 
@@ -742,9 +821,76 @@ def me_payload(uid):
 
 # ---------------------------------------------------------------- research endpoints (analysts, options, market, ...)
 def _upcoming_earnings(sym):
-    e = EARN.get(sym) or {}
+    e = earnings_info(sym)
     d = e.get("date")
     return d if d and d >= dt.date.today().isoformat() and e.get("reported") is None else None
+
+
+def _ago(sec):
+    if sec is None:
+        return "never"
+    sec = max(0, sec)
+    if sec < 90:
+        return f"{sec:.0f} seconds ago"
+    if sec < 5400:
+        return f"{sec / 60:.0f} minutes ago"
+    if sec < 2 * 86400:
+        return f"{sec / 3600:.0f} hours ago"
+    return f"{sec / 86400:.0f} days ago"
+
+
+def _business_days_since(day):
+    try:
+        d = pd.Timestamp(day).date()
+    except Exception:
+        return None
+    return max(0, len(pd.bdate_range(d, dt.date.today())) - 1)
+
+
+def health_report():
+    """Plain-English data health: what's fresh, what's old, and what failed. Shown in Settings and `openticker doctor`."""
+    now = time.time()
+    rows, problems = [], []
+    with S.lock:
+        last_px = max(S.last_tick, S.last_poll)
+        hist_at, last_day = S.history_fetched, (S.dates[-1] if S.dates else None)
+        stream = S.stream_status
+    open_ = market_open()
+    rows.append({"name": "Live prices", "detail": (f"updated {_ago(now - last_px)}" if last_px else "waiting for the first update" if open_ else "market closed"),
+                 "ok": not open_ or (last_px and now - last_px < 300)})
+    if open_ and (not last_px or now - last_px >= 300):
+        problems.append(f"Live prices haven't updated since {_ago(now - last_px) if last_px else 'the app started'}. The feed status is “{stream}”.")
+    hist_ok = bool(hist_at) and now - hist_at < 30 * 3600
+    rows.append({"name": "Daily price history", "detail": f"through {last_day}, fetched {_ago(now - hist_at) if hist_at else 'never'}", "ok": hist_ok})
+    if not hist_ok:
+        problems.append("Daily price history hasn't refreshed in over a day, so returns and charts may be behind.")
+    for f in FUNDS:
+        h = S.holdings.get(f) or {}
+        age = _business_days_since(h.get("asOf")) if h.get("asOf") else None
+        ok = bool(h.get("holdings")) and (age is None or age <= 3)
+        rows.append({"name": f"{f} holdings", "detail": (f"as of {h.get('asOf')}" if age is not None else "the top 10 from Yahoo; the issuer doesn't publish a full list we can read"
+                     if not h.get("complete", True) else h.get("asOf") or "no date from the issuer"), "ok": ok})
+        if not h.get("holdings"):
+            problems.append(f"{f} holdings didn't load, so the Funds page can't show it.")
+        elif age is not None and age > 3:
+            problems.append(f"{f} holdings are from {h.get('asOf')}, {age} business days old.")
+    e = HEALTH.get("earnings calendar") or {}
+    ok = bool(e.get("ok")) and now - e["ok"] < 12 * 3600
+    rows.append({"name": "Earnings calendar", "detail": f"{len(EARN)} companies, refreshed {_ago(now - e['ok'])}" if e.get("ok") else f"{len(EARN)} companies from the last run, refreshing shortly", "ok": ok or not e})
+    if e.get("fail") and (not e.get("ok") or e["fail"] > e["ok"]):
+        problems.append("The earnings calendar didn't refresh last time. Dates may be missing for the last few hours.")
+    research = {k: v for k, v in HEALTH.items() if not k.startswith("holdings") and k != "earnings calendar"}
+    plain = {"earnhist": "earnings history", "econ": "the economic calendar", "info": "company profiles", "chart": "charts",
+             "ecal": "earnings dates", "ohlc": "daily price bars", "analysts": "analysts", "financials": "financials",
+             "ownership": "ownership and insiders", "options": "options", "events": "dividends and filings", "etf": "fund details",
+             "sector": "sectors", "industry": "industries", "screen": "screens", "screens": "screens", "custom": "screens",
+             "ipo": "IPOs", "splits": "splits", "mstatus": "market hours", "macro-daily": "macro prices", "macro-intra": "macro prices"}
+    bad = sorted({plain.get(k, k) for k, v in research.items() if v.get("fail") and v["fail"] > v.get("ok", 0) and now - v["fail"] < 3600})
+    rows.append({"name": "Research from Yahoo", "detail": "working" if research and not bad else "no requests yet" if not research
+                 else "failing just now: " + ", ".join(bad), "ok": not bad})
+    if bad:
+        problems.append("Yahoo didn't answer for " + ", ".join(bad) + " just now. OpenTicker shows the last good copy where it has one.")
+    return {"ok": not problems, "rows": rows, "problems": problems, "checked": now}
 
 
 def _live_ttl(open_ttl, closed_ttl):
@@ -1189,6 +1335,8 @@ class Handler(BaseHTTPRequestHandler):
                 "local": local, "phone": HOST == "0.0.0.0", "port": PORT,
                 "data": str(paths.HOME) if local else None, "mac": sys.platform == "darwin",
             }).encode(), "application/json")
+        elif path == "/api/health":
+            self.send(200, json.dumps(jsonable(health_report())).encode(), "application/json")
         elif path == "/api/ask/info":
             ok = agent.may_ask(self)
             self.send(200, json.dumps({

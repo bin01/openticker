@@ -34,7 +34,8 @@ Data, as Markdown (for you or any agent)
 
 Change it (with Claude Code, Codex or any coding agent; see AGENTS.md)
   openticker edit ["what you want"]  open your coding agent in OpenTicker's code
-  openticker check                   fast checks after a change
+  openticker check                   fast checks after a change, including the tests
+  openticker test [-v]               the tests: the math behind every number
   openticker shot [page|TICKER] [--dark] [--phone] [--no-tick]
                                      screenshot a page with headless Chrome and print the file
 
@@ -555,6 +556,15 @@ def cmd_doctor(args):
                                        "missing": "not installed"}.get(st, st))
         except Exception as e:
             warn(f"Couldn't check agents: {e}")
+        try:
+            hr = json.loads(urllib.request.urlopen(base() + "/api/health", timeout=20).read())
+            print(f"\n  {dim('Data')}")
+            for r in hr.get("rows") or []:
+                (ok if r.get("ok") else warn)(f"{r['name']}: {r['detail']}")
+            for p_ in hr.get("problems") or []:
+                print(f"    {dim('→')} {p_}")
+        except Exception as e:
+            warn(f"Couldn't check data health: {e}")
     print(f"\n  {dim('Data')} {paths.HOME}\n  {dim('Logs')} {LOG}\n")
     return 0
 
@@ -643,6 +653,9 @@ def cmd_check(args):
             sc = re.search(r"^\s+scope:\s*\"?(\w+)", meta, re.M)
             if sc and sc.group(1) not in ("stock", "portfolio", "market"):
                 fails.append(f"skills/{d.name}/SKILL.md: scope must be stock, portfolio or market")
+    t = subprocess.run([py(), "-m", "unittest", "discover", "-s", str(ROOT / "tests"), "-t", str(ROOT)], capture_output=True, text=True, cwd=str(ROOT))
+    if t.returncode != 0:
+        fails.append("tests failed (run openticker test to see which):\n" + "\n".join(t.stderr.strip().splitlines()[-6:]))
     if up():
         for u in ("/api/base", "/api/app", "/api/agent/market", "/static/ask.js"):
             try:
@@ -661,6 +674,11 @@ def cmd_check(args):
         ok("All checks passed" + (" (with the notes above)" if notes else ""))
         print(f"  {dim('Python changes need')} openticker restart{dim('; page changes show after a reload (⌘R in the app).')}")
     return 1 if fails else 0
+
+
+def cmd_test(args):
+    """The test suite: the math behind every number OpenTicker shows."""
+    return subprocess.call([py(), "-m", "unittest", "discover", "-s", str(ROOT / "tests"), "-t", str(ROOT)] + (["-v"] if "-v" in args else []), cwd=str(ROOT))
 
 
 def _chrome():
@@ -874,7 +892,7 @@ def cmd_mcp(args):
 # --------------------------------------------------------------------------- main
 COMMANDS = {"start": cmd_start, "stop": lambda a: stop(), "restart": cmd_restart, "status": cmd_status,
             "open": cmd_open, "logs": cmd_logs, "pair": cmd_pair, "setup": cmd_setup, "update": cmd_update,
-            "doctor": cmd_doctor, "skills": cmd_skills, "mcp": cmd_mcp, "edit": cmd_edit, "check": cmd_check, "shot": cmd_shot}
+            "doctor": cmd_doctor, "skills": cmd_skills, "mcp": cmd_mcp, "edit": cmd_edit, "check": cmd_check, "test": cmd_test, "shot": cmd_shot}
 
 
 def main(argv):
