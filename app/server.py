@@ -603,6 +603,11 @@ INFO_KEYS = [
     "earningsTimestamp", "earningsTimestampStart", "earningsTimestampEnd", "isEarningsDateEstimate",
     "averageVolume", "averageVolume10days", "fiftyTwoWeekHigh", "fiftyTwoWeekLow", "currentPrice", "previousClose",
     "fullTimeEmployees", "city", "state", "country", "website", "longBusinessSummary",
+    # key stats and the balance sheet
+    "sharesOutstanding", "floatShares", "totalCash", "totalDebt", "ebitda", "netIncomeToCommon", "payoutRatio",
+    "exDividendDate", "bookValue", "heldPercentInsiders", "returnOnAssets", "currentRatio",
+    # funds
+    "totalAssets", "netAssets", "netExpenseRatio", "yield", "ytdReturn", "beta3Year", "fundFamily", "category",
 ]
 
 
@@ -879,8 +884,13 @@ def fetch_chart(sym, rng):
         if pts:
             d = h.index[-1].tz_convert(NY)
             at = lambda hh, mm: int(d.replace(hour=hh, minute=mm, second=0, microsecond=0).timestamp())
+            reg = h[(h.index >= pd.Timestamp(at(9, 30), unit="s", tz="UTC")) & (h.index < pd.Timestamp(at(16, 0), unit="s", tz="UTC"))]
             day = {"pre": at(4, 0), "open": at(9, 30), "close": at(16, 0), "post": at(20, 0),
-                   "last": jsonable(md.get("regularMarketPrice"))}   # the official regular-session price
+                   "last": jsonable(md.get("regularMarketPrice")),   # the official regular-session price
+                   # the day's basics for the stock page's key stats (regular session only, like Yahoo's quote page)
+                   "o": jsonable(round(float(reg["Open"].iloc[0]), 4)) if len(reg) else None,
+                   "hi": jsonable(md.get("regularMarketDayHigh")), "lo": jsonable(md.get("regularMarketDayLow")),
+                   "vol": jsonable(md.get("regularMarketVolume"))}
     if not pts:
         raise ValueError("no bars")
     return {"pts": pts, "intraday": interval.endswith("m"), "interval": interval, "prevClose": jsonable(prev), "ma": ma, "day": day}

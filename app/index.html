@@ -1069,6 +1069,16 @@ main.wrap{padding-bottom:104px}                       /* room for the floating A
 body.tick-docked .live #dot{display:none}
 @container (min-width:1121px){body.tick-docked .live #dot{display:inline-block}}
 body[data-page="mine"] section.keys{display:none}
+#drKf{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 16px;margin-top:4px;padding:14px 0 16px;border-top:0}
+#drKf .kf-h{grid-column:1/-1;margin:0 0 -4px}
+#drKf .v{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#drKf .ks{margin-top:3px;line-height:1.35;text-wrap:balance}
+#drKf .lbl{font:500 12px/1.2 var(--f-body);letter-spacing:0;text-transform:none;color:var(--ink-3)}   /* sentence case, so the section header stands above them */
+#drKf .rng{background:color-mix(in srgb,var(--ink-3) 28%,transparent)}
+#drKf .rng{margin-right:8px;vertical-align:1px}#drKf .kfw{grid-column:span 2}
+#drKf .kf-h{font:600 10.5px/1 var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.drawer.full #drKf{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media (max-width:520px){#drKf{grid-template-columns:1fr 1fr}#drKf .v{font-size:14px}}
 .stats>.stat:last-child:nth-child(odd){grid-column:1/-1}   /* an odd card spans the row instead of leaving a hole */
 .mx-wrap.more-right,.subnav.more-right,.dtabs.more-right,.snav.more-right,.scr-list.more-right{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 36px),transparent)}
 @media (max-width:600px){
@@ -1647,6 +1657,7 @@ async function loadChart(t,rng){
   try{ const r=await fetch(`/api/chart?t=${encodeURIComponent(t)}&r=${rng}&vs=${fund}`); const d=await r.json(); chartCache[k]=r.ok?{...d,at:Date.now()}:{error:d.error||"No chart data.",at:Date.now()-ttl+15e3}; }
   catch(e){ chartCache[k]={error:"Couldn't reach the local server.",at:Date.now()-ttl+15e3}; }
   if(drawerOpen&&sel===t&&curRange()===rng) drawPriceChart();
+  if(drawerOpen&&sel===t&&rng==="1D") renderKeyStats();
 }
 const curRange=()=>chartRange||HZ_TO_CR[hz]||"1M";
 
@@ -1666,8 +1677,8 @@ function drawerShell(r){
    <div class="acts" id="drAct"></div>
    <div class="dtabs" id="drTabs" role="tablist" aria-label="Stock sections"></div>
    <div id="drOverview">
-   <div class="dr-sec ins-sec"><h4>What stands out</h4><div id="drIns"><div class="sk" style="height:90px"></div></div>${typeof askRow==="function"?askRow(r.t,"stock"):""}</div>
    <div class="kf" id="drKf"></div>
+   <div class="dr-sec ins-sec"><h4>What stands out</h4><div id="drIns"><div class="sk" style="height:90px"></div></div>${typeof askRow==="function"?askRow(r.t,"stock"):""}</div>
    <div class="dr-body"><div class="dr-main">
      <div class="dr-sec" style="order:1"><div class="ch-head"><div class="seg sm" id="drRng" role="group" aria-label="Chart range"></div>
        <span class="vsg"><label class="vs"><input type="checkbox" id="drMa" ${showMa?"checked":""}> Averages</label><label class="vs"><input type="checkbox" id="drEv" ${showEv?"checked":""}> Events</label>${isPseudo(fund)?"":`<label class="vs"><input type="checkbox" id="drVs" ${showVs?"checked":""}> vs ${fund}</label>`}</span></div>
@@ -1749,10 +1760,7 @@ function renderDetail(){
   if(i.industry) $("#drNm").innerHTML=`${esc(r.n&&r.n!==r.t?r.n:niceName(i.longName||r.t))} · ${esc(SECTOR_NAME[i.sector]||i.sector||r.sector)} · ${esc(i.industry)}`;   // the same name the rest of the app uses
   // key facts
   const et=earnTs(i), days=et?Math.round((new Date(new Date(et*1000).toLocaleDateString("en-CA",{timeZone:"America/New_York"})+"T12:00:00Z")-new Date(nyToday()+"T12:00:00Z"))/864e5):null;
-  $("#drKf").innerHTML=i.marketCap||et||i.recommendationKey?`
-    <div><div class="lbl">Market cap</div><div class="v">${big(i.marketCap)}</div></div>
-    <div><div class="lbl">${days!=null&&days<0?"Last earnings":"Next earnings"}</div><div class="v">${et?new Date(et*1000).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"–"}</div>${days!=null?`<div class="ks">${days<0?"just reported":days===0?"today":days===1?"tomorrow":`in ${days} days`}</div>`:""}</div>
-    <div><div class="lbl">Analysts</div><div class="v ${recCls(i.recommendationMean)}">${recLabel(i)}</div>${i.targetMeanPrice&&r.last?`<div class="ks">Target ${money(i.targetMeanPrice)} (${pct(i.targetMeanPrice/r.last-1,0)})</div>`:""}</div>`:"";
+  renderKeyStats();
   renderAnalyst(r,d);
   // earnings
   const cal=i.calendar||{};
@@ -1767,11 +1775,13 @@ function renderDetail(){
   $("#drVal").innerHTML=Object.keys(i).length?[
     cell("P/E (trailing)",mult(i.trailingPE)), cell("P/E (forward)",mult(i.forwardPE)), cell("PEG",i.trailingPegRatio??i.pegRatio?(i.trailingPegRatio??i.pegRatio).toFixed(2):"–"),
     cell("Price / sales",mult(i.priceToSalesTrailing12Months)), cell("EV / EBITDA",mult(i.enterpriseToEbitda)), cell("Price / book",mult(i.priceToBook)),
-    cell("Dividend yield",i.dividendRate&&r.last?(i.dividendRate/r.last*100).toFixed(2)+"%":i.dividendYield!=null?i.dividendYield.toFixed(2)+"%":"–",i.dividendRate?"$"+i.dividendRate.toFixed(2)+" a year":""), cell("Beta",i.beta!=null?i.beta.toFixed(2):"–"), cell("Short interest",pc(i.shortPercentOfFloat),"of float")].join(""):err;
+    cell("Dividend yield",i.dividendRate&&r.last?(i.dividendRate/r.last*100).toFixed(2)+"%":i.dividendYield!=null?i.dividendYield.toFixed(2)+"%":"–",i.dividendRate?"$"+i.dividendRate.toFixed(2)+" a year":""), cell("Beta",i.beta!=null?i.beta.toFixed(2):"–"), cell("Short interest",pc(i.shortPercentOfFloat),"of shares that trade"),
+    cell("Enterprise value",big(i.enterpriseValue),"market cap plus debt, minus cash"), cell("Payout ratio",i.payoutRatio!=null?pc(i.payoutRatio,0):"–","of earnings paid as dividends"), cell("Insiders own",pc(i.heldPercentInsiders),"of the shares")].join(""):err;
   $("#drGrow").innerHTML=Object.keys(i).length?[
     cell("Revenue growth",pct(i.revenueGrowth,1),"year over year, last quarter",cls(i.revenueGrowth)), cell("Earnings growth",pct(i.earningsGrowth??i.earningsQuarterlyGrowth,1),"year over year, last quarter",cls(i.earningsGrowth??i.earningsQuarterlyGrowth)), cell("Revenue (TTM)",big(i.totalRevenue)),
     cell("Gross margin",pc(i.grossMargins)), cell("Operating margin",pc(i.operatingMargins)), cell("Net margin",pc(i.profitMargins)),
-    cell("Return on equity",pc(i.returnOnEquity)), cell("Free cash flow",big(i.freeCashflow),"trailing 12 months"), cell("Debt / equity",i.debtToEquity!=null?(i.debtToEquity/100).toFixed(2):"–")].join(""):"";
+    cell("Return on equity",pc(i.returnOnEquity)), cell("Free cash flow",big(i.freeCashflow),"trailing 12 months"), cell("Debt / equity",i.debtToEquity!=null?(i.debtToEquity/100).toFixed(2):"–"),
+    cell("Cash",big(i.totalCash),"cash and short-term investments"), cell("Total debt",big(i.totalDebt)), cell("Net income (TTM)",big(i.netIncomeToCommon),"profit over the last 12 months",cls(i.netIncomeToCommon))].join(""):"";
   // news
   const news=d.news||[];
   $("#drNews").innerHTML=news.length?`<ul class="news">${news.map(n=>{const u=safeUrl(n.link), th=safeUrl(n.thumb);return `<li>${th?`<img src="${esc(th)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:""}<div><a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a><div class="ks">${esc(n.publisher||"")}${n.time?" · "+ago(n.time):""}</div></div></li>`;}).join("")}</ul>`
@@ -1783,6 +1793,49 @@ function renderDetail(){
     <div class="facts">${hq?`<span>HQ ${esc(hq)}</span>`:""}${i.fullTimeEmployees?`<span>${i.fullTimeEmployees.toLocaleString("en-US")} employees</span>`:""}${web?`<a href="${esc(web)}" target="_blank" rel="noopener noreferrer">${esc(web.replace(/^https?:\/\/(www\.)?/,""))}</a>`:""}</div>`:(err||`<p class="hint" style="margin:0">No company profile.</p>`);
   const more=$("#drMore"); if(more) more.onclick=()=>{ aboutOpen=!aboutOpen; $("#drSum").classList.toggle("open",aboutOpen); more.textContent=aboutOpen?"Show less":"Read more"; };
   renderTabs(true); renderInsights();
+}
+/* key stats: the basics every quote page has, each with a plain line saying what it means */
+const cnt=x=>x==null||!isFinite(x)?"–":x>=1e9?(x/1e9).toFixed(2)+"B":x>=1e6?(x/1e6).toFixed(1)+"M":x>=1e3?(x/1e3).toFixed(0)+"K":String(Math.round(x));
+/* Morningstar's fund categories, said plainly */
+const CATEGORY={"Large Blend":"Large US companies","Large Growth":"Large growth companies","Large Value":"Large value companies","Mid-Cap Blend":"Mid-size US companies",
+  "Mid-Cap Growth":"Mid-size growth companies","Mid-Cap Value":"Mid-size value companies","Small Blend":"Small US companies","Small Growth":"Small growth companies",
+  "Small Value":"Small value companies","Foreign Large Blend":"Large non-US companies","Diversified Emerging Mkts":"Emerging markets","Intermediate Core Bond":"Bonds, mid-term",
+  "Short-Term Bond":"Bonds, short-term","Long Government":"Long-term Treasuries","Digital Assets":"Crypto"};
+function renderKeyStats(){
+  const el=$("#drKf"), r=stockRow(sel), d=detailCache[sel]; if(!el||!r) return;
+  const i=d?.info||{}, day=chartCache[sel+"|1D|"+fund]?.day||{}, last=r.last??i.currentPrice;
+  if(!chartCache[sel+"|1D|"+fund]) loadChart(sel,"1D");                 // the day's range and volume come from today's chart
+  if(!Object.keys(i).length&&day.hi==null){ el.innerHTML=""; return; }
+  const isFund=i.quoteType==="ETF"||i.quoteType==="MUTUALFUND", rng=(lo,hi)=>lo!=null&&hi!=null?`${money(lo)} – ${money(hi)}`:"–";
+  const cell=(l,v,k,tip,w)=>`<div${w?` class="kfw"`:""}${tip?` title="${esc(tip)}"`:""}><div class="lbl">${l}</div><div class="v">${v}</div>${k?`<div class="ks">${k}</div>`:""}</div>`;
+  // a range reads best as a bar with the price on it, so the two ranges get a wider cell
+  const bar=(lo,hi,x)=>lo!=null&&hi>lo&&x!=null?`<span class="rng" style="width:110px"><i style="left:calc(${(Math.min(1,Math.max(0,(x-lo)/(hi-lo)))*100).toFixed(0)}% - 1.5px)"></i></span>`:"";
+  const yl=i.fiftyTwoWeekLow, yh=i.fiftyTwoWeekHigh;
+  const yr=cell("52-week range",rng(yl,yh),yl!=null&&last!=null?bar(yl,yh,last)+(last<yh?`${pc(1-last/yh,0)} below the high`:"at the high"):"","Lowest and highest price over the past year",1);
+  const dr=cell("Day range",rng(day.lo,day.hi),day.lo!=null&&last!=null?bar(day.lo,day.hi,day.last??last)+(day.o!=null?`opened at ${money(day.o)}`:""):"","Lowest and highest price in the latest regular session",1);
+  const av=i.averageVolume, vol=cell("Volume",cnt(day.vol),day.vol!=null&&av?`${(day.vol/av).toFixed(1)}× a normal day`:av?`normally ${cnt(av)} a day`:"","Shares traded in the latest session, against the 3-month daily average");
+  const bt=i.beta??i.beta3Year, beta=cell("Beta",bt!=null?bt.toFixed(2):"–",bt!=null?(Math.abs(bt-1)<0.1?"moves with the market":bt>1?"bigger swings than the market":"smaller swings than the market"):"","How much it tends to move when the S&P 500 moves 1%");
+  let cells;
+  if(isFund){
+    const na=i.totalAssets??i.netAssets, er=i.netExpenseRatio, y=i.yield!=null?i.yield:i.dividendYield!=null?i.dividendYield/100:null;
+    cells=[cell("Fund size",big(na),"money invested in it"),
+      cell("Yearly fee",er!=null?er.toFixed(2)+"%":"–",er!=null?`$${Math.round(er*100)} a year per $10,000`:"","The expense ratio, taken out of the fund's returns"),
+      cell("Yield",y!=null?pc(y,2):"–","paid out over the past year","Dividends paid over the past year, as a share of the price"), cell("Category",esc(CATEGORY[i.category]||i.category||"–"),i.fundFamily?`run by ${esc(i.fundFamily)}`:""), dr, yr, vol, beta,
+      cell("This year",pct(r.rets?.YTD,1),"return since Dec 31"), cell("Past year",pct(r.rets?.["1Y"],1),"return over 12 months")];
+  } else {
+    const et=earnTs(i), edays=et?Math.round((new Date(new Date(et*1000).toLocaleDateString("en-CA",{timeZone:"America/New_York"})+"T12:00:00Z")-new Date(nyToday()+"T12:00:00Z"))/864e5):null;
+    const mc=i.marketCap, size=mc==null?"":mc>=2e11?"one of the largest companies":mc>=1e10?"a large company":mc>=2e9?"a mid-size company":mc>=3e8?"a small company":"a very small company";
+    const sh=i.sharesOutstanding??(mc&&last?mc/last:null);
+    const eps=i.trailingEps, pe=i.trailingPE??(eps>0&&last?last/eps:null);
+    const dy=i.dividendRate&&last?i.dividendRate/last:i.dividendYield!=null?i.dividendYield/100:null;
+    cells=[cell("Market cap",big(mc),size,`What the whole company is worth: share price × ${sh?cnt(sh):"all its"} shares`),
+      cell("P/E",mult(pe),eps!=null&&eps<=0?"losing money, so no P/E":i.forwardPE?`${mult(i.forwardPE)} on next year's profit`:"","Price ÷ the last 12 months' earnings per share"),
+      cell("Earnings per share",eps!=null?(eps<0?"−":"")+"$"+Math.abs(eps).toFixed(2):"–",i.forwardEps!=null?`$${i.forwardEps.toFixed(2)} expected next year`:"over the past year","Profit per share over the last 12 months (EPS)"),
+      cell("Dividend yield",dy?pc(dy,2):"None",dy&&i.dividendRate?`$${i.dividendRate.toFixed(2)} per share a year`:dy?"":"pays no dividend"), dr, yr, vol, beta,
+      cell(edays!=null&&edays<0?"Last earnings":"Next earnings",et?new Date(et*1000).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"–",edays!=null?(edays<0?"just reported":edays===0?"today":edays===1?"tomorrow":`in ${edays} days`):""),
+      cell("Analyst target",i.targetMeanPrice?money(i.targetMeanPrice):"–",i.targetMeanPrice&&last?`${pct(i.targetMeanPrice/last-1,0)} from today's price`:"","Where analysts expect the price in 12 months, on average")];
+  }
+  el.innerHTML=`<h4 class="kf-h">Key stats</h4>`+cells.join("");
 }
 function earnTs(i){ const now=Date.now()/1000-86400; const c=[i.earningsTimestampStart,i.earningsTimestamp].filter(x=>x&&x>now); if(c.length) return Math.min(...c);
   const ed=(i.calendar||{})["Earnings Date"]; const s=Array.isArray(ed)?ed[0]:ed; if(s){ const t=Date.parse(s+"T16:00:00Z")/1000; if(t>now) return t; } return null; }
