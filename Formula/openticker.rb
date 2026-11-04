@@ -9,9 +9,9 @@
 class Openticker < Formula
   desc "Stock market dashboard for your Mac, with your own AI agent built in"
   homepage "https://github.com/bin01/openticker"
-  url "https://github.com/bin01/openticker/archive/8c6354120a5213091497598bc38bc177a4242c54.tar.gz"
+  url "https://github.com/bin01/openticker/archive/57cfaf738546ee08978b712c885633471cfbd3b9.tar.gz"
   version "0.1.0"
-  sha256 "f6930e0f1bf40c076a3b8dd4c5f5264c07b4543017e8ec72440f65e5f7cce1db"
+  sha256 "0e345b0ba379e420ea933b5de495ba1726ad189c6e61d3c738a1b818565f6b12"
   license "Apache-2.0"
   head "https://github.com/bin01/openticker.git", branch: "main"
 
