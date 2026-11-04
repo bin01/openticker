@@ -66,7 +66,10 @@ sys.path.insert(0, str(APP))
 import paths  # noqa: E402
 
 VERSION = (ROOT / "VERSION").read_text().strip() if (ROOT / "VERSION").exists() else "0.1.0"
-LABEL = "dev.openticker.server"
+# OPENTICKER_LABEL and OPENTICKER_APPS let a second copy (a test install) run beside the real one without
+# replacing its background service or its app in /Applications.
+LABEL = os.environ.get("OPENTICKER_LABEL") or "dev.openticker.server"
+APPS = [Path(os.environ["OPENTICKER_APPS"])] if os.environ.get("OPENTICKER_APPS") else [Path("/Applications"), Path.home() / "Applications"]
 PLIST = Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
 CONFIG = paths.HOME / "config.json"
 LOG = paths.LOGS / "server.log"
@@ -303,7 +306,7 @@ def cmd_status(args):
 
 
 def app_path():
-    for d in (Path("/Applications"), Path.home() / "Applications"):
+    for d in APPS:
         if (d / "OpenTicker.app").exists():
             return d / "OpenTicker.app"
     return None
@@ -382,15 +385,16 @@ def build_app(quiet=False):
     if icns.exists():
         shutil.copy(icns, out / "Contents" / "Resources" / "AppIcon.icns")
     subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(out)], capture_output=True)
-    for d in (Path("/Applications"), Path.home() / "Applications"):
+    for d in APPS:
         try:
             d.mkdir(exist_ok=True)
             dest = d / "OpenTicker.app"
             if dest.exists():
                 shutil.rmtree(dest)
             shutil.copytree(out, dest, symlinks=True)
-            subprocess.run(["/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/"
-                            "Support/lsregister", "-f", str(dest)], capture_output=True)
+            if not os.environ.get("OPENTICKER_APPS"):     # a test copy stays out of Launch Services
+                subprocess.run(["/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/"
+                                "Support/lsregister", "-f", str(dest)], capture_output=True)
             return dest
         except PermissionError:
             continue
