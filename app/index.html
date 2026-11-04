@@ -291,7 +291,7 @@ table.hz{width:100%;border-collapse:collapse;font-size:13px}
 .drawer.full .dr-in{max-width:1280px;margin:0 auto;padding:6px 12px}
 @media (min-width:900px){.drawer.full .dr-body{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:0 40px;align-items:start}.drawer.full .dr-main,.drawer.full .dr-side{display:block}.drawer.full .kf{grid-template-columns:repeat(3,minmax(0,240px))}.drawer.full .dr-h h3{font-size:34px}}
 @media (max-width:1500px){.brand span{display:none}}
-@media (max-width:760px){#ts{width:140px}}
+@media (max-width:760px){#ts{width:170px}}
 @media (max-width:600px){#fullDr{display:none}.srch{order:5;flex:1 1 100%}#ts{width:100%}#theme{display:none}}
 .btn{border:1px solid var(--ink);background:var(--ink);color:var(--bg);border-radius:8px;height:30px;padding:0 12px;font:600 12.5px var(--f-body);cursor:pointer;white-space:nowrap}
 .btn.ghost{background:var(--panel);color:var(--ink);border-color:var(--rule)}
@@ -371,7 +371,7 @@ table.hz{width:100%;border-collapse:collapse;font-size:13px}
 .srch{display:flex;align-items:center}
 .skbd{position:absolute;right:8px;pointer-events:none}
 #ts:focus+.skbd,#ts:not(:placeholder-shown)+.skbd{display:none}
-#ts{width:220px;padding-right:28px}
+#ts{width:320px;height:34px;border-radius:10px;padding:0 44px 0 12px;font-size:14px}
 .toolbar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding-block:0 10px}
 .toolbar[hidden]{display:none}
 .toolbar #horizons{margin-left:auto}
@@ -523,7 +523,7 @@ details .hz{margin-bottom:14px}
 
 @media (max-width:1100px){.mhero{grid-template-columns:1fr}.mside{border-left:0;padding-left:0;border-top:1px solid var(--rule);padding-top:18px}}
 @media (max-width:980px){.scr{grid-template-columns:1fr}.scr-list{position:static;flex-direction:row;overflow-x:auto;max-height:none;scrollbar-width:none}.scr-list>.lbl{display:none}.scr-it{flex:0 0 210px}}
-@media (max-width:860px){.mainnav{order:10;flex:1 1 100%;overflow-x:auto;scrollbar-width:none;margin:0 -6px}.mainnav::-webkit-scrollbar{display:none}.brand{margin-right:auto}.live #status{display:none}#ts{width:180px}}
+@media (max-width:860px){.mainnav{order:10;flex:1 1 100%;overflow-x:auto;scrollbar-width:none;margin:0 -6px}.mainnav::-webkit-scrollbar{display:none}.brand{margin-right:auto}.live #status{display:none}#ts{width:230px}}
 @media (max-width:760px){.tgrp{flex:1 1 100%}.tiles{grid-template-columns:repeat(auto-fill,minmax(104px,1fr))}.sbar,.sbhead{grid-template-columns:minmax(0,130px) minmax(0,1fr) 58px;gap:10px;padding-left:4px;padding-right:4px}.sbar{padding-top:7px;padding-bottom:7px}.sbar .sn small{display:none}.toolbar #horizons{margin-left:0}.toolbar .seg{max-width:100%;overflow-x:auto;scrollbar-width:none}.sdet{padding:14px}.drawer.full #drPane{display:block}.ins li{font-size:14.5px}}
 @media (max-width:600px){.sbar{grid-template-columns:minmax(0,1fr) 58px;row-gap:6px}.sbar .strk{grid-column:1/-1;grid-row:2}.sbhead{grid-template-columns:1fr}.sbhead>span:not(.strk){display:none}.rchg td:nth-child(3),.fct th:last-child,.fct td:last-child{display:none}#ts{width:100%}.skbd{display:none}.mainnav a{padding:8px 10px}.clist li{grid-template-columns:56px minmax(0,1fr) auto}.clist li>span:nth-child(4){display:none}}
 
@@ -879,12 +879,13 @@ body.tick-docked .bar-in{flex-wrap:nowrap}
 body.tick-docked .live #status{display:none}
 /* with Tick docked the page can be narrow on a wide window, so the header follows the page's width, not the window's */
 header.bar{container-type:inline-size}
-@container (max-width:1010px){
+@container (max-width:1120px){
   body.tick-docked .bar-in{flex-wrap:wrap}
   body.tick-docked .mainnav{order:10;flex:1 1 100%;overflow-x:auto;scrollbar-width:none;margin:0 -6px}
   body.tick-docked .mainnav::-webkit-scrollbar{display:none}
   body.tick-docked .brand{margin-right:auto}
-  body.tick-docked #ts{width:200px}
+  body.tick-docked #ts{width:300px}
+  body.tick-docked .bar-in .live{margin-left:0}
 }
 body.tick-docked .live{margin-left:auto}
 @media (max-width:1500px){body.tick-docked .mainnav a{padding-inline:9px}}
