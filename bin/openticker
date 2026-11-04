@@ -314,7 +314,11 @@ def cmd_open(args):
         subprocess.run(["open", str(a)])
     else:
         url = f"http://127.0.0.1:{port()}"
-        subprocess.run(["open" if MAC else "xdg-open", url], stderr=subprocess.DEVNULL)
+        opener = "open" if MAC else shutil.which("xdg-open")
+        if opener:
+            subprocess.run([opener, url], stderr=subprocess.DEVNULL)
+        else:
+            print(f"  Open {_c('1', url)} in your browser.")
 
 
 def cmd_logs(args):
