@@ -62,6 +62,7 @@ FUNDS = {
 
 HOLDINGS_TTL = 12 * 3600      # refetch issuer files twice a day
 HISTORY_TTL = 30 * 60         # refresh daily bars every 30 minutes
+HISTORY_CACHE = CACHE / "history.json"
 POLL_FALLBACK = 60            # poll prices if the stream is quiet this long
 
 
@@ -252,6 +253,7 @@ class State:
         self.ticks = 0
         self.last_poll = 0.0
         self.history_fetched = 0.0
+        self.boot = "Starting up"   # what the first launch is doing, shown on the loading screen
         self.stream_status = "starting"
         self.sectors = load_sectors()
         self.extras: list[str] = []   # tickers opened from search that aren't in any fund
@@ -348,9 +350,38 @@ class State:
             self.dates, self.px = dates, px
             self.history_fetched = time.time()
             self.version += 1
+        self.save_cache()
         missing = [s for s in syms if s not in px or all(v is None for v in px[s])]
         log(f"history ready: {len(dates)} days through {dates[-1] if dates else '?'}; "
             f"{len(syms) - len(missing)}/{len(syms)} symbols priced")
+
+    # a copy on disk, so the next start shows the dashboard at once and refreshes behind it
+    def save_cache(self):
+        try:
+            with self.lock:
+                blob = json.dumps({"dates": self.dates, "px": self.px, "fetched": self.history_fetched}, separators=(",", ":"))
+            tmp = HISTORY_CACHE.with_suffix(".tmp")
+            tmp.write_text(blob)
+            tmp.replace(HISTORY_CACHE)
+        except Exception as e:
+            log(f"couldn't save the price cache: {e!r}")
+
+    def load_cache(self):
+        """Holdings and daily history from the last run, at any age. True when there's enough to show the dashboard."""
+        try:
+            hold = json.loads((CACHE / "holdings.json").read_text())
+            hist = json.loads(HISTORY_CACHE.read_text())
+        except Exception:
+            return False
+        if not hist.get("dates") or not any(f in hold for f in FUNDS):
+            return False
+        with self.lock:
+            self.holdings = {k: v for k, v in hold.items() if not k.startswith("_")}
+            self.dates, self.px = hist["dates"], hist["px"]
+            self.history_fetched = hist.get("fetched") or 0.0
+            self.version += 1
+        log(f"showing the last run's prices ({len(self.dates)} days through {self.dates[-1]}) while fresh ones download")
+        return True
 
     # live prices ---------------------------------------------------------
     def apply_price(self, sym, price, day):
@@ -1068,6 +1099,15 @@ def _business_days_since(day):
     return max(0, len(pd.bdate_range(d, dt.date.today())) - 1)
 
 
+def _nice_day(day):
+    """Any date an issuer or Yahoo gives us ("02-Nov-2026", "11/02/2026", "2026-11-02") as "Nov 2, 2026"."""
+    try:
+        d = pd.Timestamp(day).date()
+    except Exception:
+        return str(day)
+    return f"{d:%b} {d.day}, {d.year}"
+
+
 def health_report():
     """Plain-English data health: what's fresh, what's old, and what failed. Shown in Settings and `openticker doctor`."""
     now = time.time()
@@ -1087,19 +1127,19 @@ def health_report():
     if behind:
         problems.append(f"Today's closing prices haven't come in yet, so “today” numbers still show {last_day}.")
     hist_ok = bool(hist_at) and now - hist_at < 30 * 3600 and not behind
-    rows.append({"name": "Daily price history", "detail": f"through {last_day}, fetched {_ago(now - hist_at) if hist_at else 'never'}", "ok": hist_ok})
+    rows.append({"name": "Daily price history", "detail": f"through {_nice_day(last_day) if last_day else '?'}, fetched {_ago(now - hist_at) if hist_at else 'never'}", "ok": hist_ok})
     if not hist_ok:
         problems.append("Daily price history hasn't refreshed in over a day, so returns and charts may be behind.")
     for f in FUNDS:
         h = S.holdings.get(f) or {}
         age = _business_days_since(h.get("asOf")) if h.get("asOf") else None
         ok = bool(h.get("holdings")) and (age is None or age <= 3)
-        rows.append({"name": f"{f} holdings", "detail": (f"as of {h.get('asOf')}" if age is not None else "the top 10 from Yahoo; the issuer doesn't publish a full list we can read"
-                     if not h.get("complete", True) else h.get("asOf") or "no date from the issuer"), "ok": ok})
+        rows.append({"name": f"{f} holdings", "detail": (f"as of {_nice_day(h.get('asOf'))}" if age is not None else "the top 10 from Yahoo; the issuer doesn't publish a full list we can read"
+                     if not h.get("complete", True) else _nice_day(h.get("asOf")) if h.get("asOf") else "no date from the issuer"), "ok": ok})
         if not h.get("holdings"):
             problems.append(f"{f} holdings didn't load, so the Funds page can't show it.")
         elif age is not None and age > 3:
-            problems.append(f"{f} holdings are from {h.get('asOf')}, {age} business days old.")
+            problems.append(f"{f} holdings are from {_nice_day(h.get('asOf'))}, {age} business days old.")
     e = HEALTH.get("earnings calendar") or {}
     ok = bool(e.get("ok")) and now - e["ok"] < 12 * 3600
     rows.append({"name": "Earnings calendar", "detail": f"{len(EARN)} companies, refreshed {_ago(now - e['ok'])}" if e.get("ok") else f"{len(EARN)} companies from the last run, refreshing shortly", "ok": ok or not e})
@@ -1402,6 +1442,7 @@ class Handler(BaseHTTPRequestHandler):
                 if body.get("id"):
                     personal.update_position(uid, body["id"], shares, cost, opened)
                 else:
+                    personal.clear_sample(uid)   # a real position replaces the sample portfolio
                     personal.add_position(uid, sym(), shares, cost, opened)
             elif path == "/api/me/positions/import":
                 rows = body.get("rows") or []
@@ -1426,12 +1467,14 @@ class Handler(BaseHTTPRequestHandler):
                 keep = [(t, sh, c if c >= 0 else last[t]) for t, sh, c in clean_rows if t in priced and (c >= 0 or last[t])]
                 if not keep:
                     raise ValueError("None of those rows had a ticker with prices on Yahoo.")
-                personal.import_positions(uid, keep, replace=bool(body.get("replace")))
+                personal.import_positions(uid, keep, replace=bool(body.get("replace")), note="sample" if body.get("sample") else "imported")
                 out = me_payload(uid)
                 out["imported"], out["skipped"] = len(keep), bad
                 with S.lock:
                     S.version += 1
                 return self.send(200, json.dumps(out).encode(), "application/json")
+            elif path == "/api/me/positions/clear-sample":
+                personal.clear_sample(uid)
             elif path == "/api/me/position/delete":
                 personal.delete_position(uid, body.get("id"))
             elif path == "/api/me/alert":
@@ -1558,6 +1601,8 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             self.send(200, (HERE / "index.html").read_bytes(), "text/html; charset=utf-8")
         elif path == "/api/base":
+            if not S.dates:   # first launch, still downloading
+                return self.send(503, json.dumps({"loading": True, "step": S.boot}).encode(), "application/json")
             self.send(200, json.dumps(S.snapshot_base(), separators=(",", ":")).encode(), "application/json")
         elif path == "/api/live":
             self.send(200, json.dumps(S.snapshot_live(), separators=(",", ":")).encode(), "application/json")
@@ -1670,17 +1715,33 @@ def main():
     PORT, HOST = args.port, args.host
     personal.init()
     agent.bind(sys.modules[__name__])
-    S.holdings = {k: v for k, v in load_holdings().items() if not k.startswith("_")}
-    S.load_history()
-    threading.Thread(target=earnings_loop, daemon=True).start()
-    threading.Thread(target=alerts_loop, daemon=True).start()
-    threading.Thread(target=close_note_loop, daemon=True).start()
-    threading.Thread(target=brief_loop, daemon=True).start()
-    if not args.no_stream:
-        threading.Thread(target=stream_loop, daemon=True).start()
-    threading.Thread(target=poll_loop, daemon=True).start()
-    threading.Thread(target=sector_loop, daemon=True).start()
+    # Serve right away: from the last run's prices if there are any, otherwise a loading screen that says what's
+    # happening. Fresh holdings and history download behind it, then the background loops start.
+    S.load_cache()
 
+    def warm():
+        while True:
+            try:
+                S.boot = "Getting what SPY, QQQ, SMH and SOXX hold"
+                S.holdings = {k: v for k, v in load_holdings().items() if not k.startswith("_")}
+                S.boot = f"Getting a year of daily prices for {len(S.tickers())} stocks and funds"
+                S.load_history()
+                break
+            except Exception as e:
+                log(f"startup download failed, trying again in 30 seconds: {e!r}")
+                S.boot = "Yahoo Finance didn't answer. Trying again in a moment"
+                time.sleep(30)
+        S.boot = ""
+        threading.Thread(target=earnings_loop, daemon=True).start()
+        threading.Thread(target=alerts_loop, daemon=True).start()
+        threading.Thread(target=close_note_loop, daemon=True).start()
+        threading.Thread(target=brief_loop, daemon=True).start()
+        if not args.no_stream:
+            threading.Thread(target=stream_loop, daemon=True).start()
+        threading.Thread(target=poll_loop, daemon=True).start()
+        threading.Thread(target=sector_loop, daemon=True).start()
+
+    threading.Thread(target=warm, daemon=True).start()
     srv = ThreadingHTTPServer((args.host, args.port), Handler)
     log(f"OpenTicker running at http://127.0.0.1:{args.port}")
     if args.host == "0.0.0.0":

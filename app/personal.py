@@ -155,14 +155,21 @@ def add_position(uid, t, shares, cost, opened="", note=""):
                  (uid, t, float(shares), float(cost), opened or "", note or "", time.time()))
 
 
-def import_positions(uid, rows, replace=False):
-    """Positions from a broker's file: rows of (ticker, shares, cost per share). replace clears the old ones first."""
+def import_positions(uid, rows, replace=False, note="imported"):
+    """Positions from a broker's file: rows of (ticker, shares, cost per share). replace clears the old ones first.
+    Real positions also clear the sample portfolio, which is marked with note "sample"."""
     with _lock:
         if replace:
             _conn.execute("delete from positions where user_id=?", (uid,))
+        elif note != "sample":
+            _conn.execute("delete from positions where user_id=? and note='sample'", (uid,))
         _conn.executemany("insert into positions(user_id, t, shares, cost, opened, note, created) values(?,?,?,?,?,?,?)",
-                          [(uid, t, shares, cost, "", "imported", time.time()) for t, shares, cost in rows])
+                          [(uid, t, shares, cost, "", note, time.time()) for t, shares, cost in rows])
         _conn.commit()
+
+
+def clear_sample(uid):
+    _exec("delete from positions where user_id=? and note='sample'", (uid,))
 
 
 def update_position(uid, pid, shares, cost, opened=""):

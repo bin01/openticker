@@ -63,5 +63,31 @@ class ImportPositions(unittest.TestCase):
         self.assertEqual(self.held(), ["AAPL"])
 
 
+class SamplePortfolio(unittest.TestCase):
+    def setUp(self):
+        self.old = personal._conn
+        personal._conn = sqlite3.connect(":memory:", check_same_thread=False)
+        personal._conn.row_factory = sqlite3.Row
+        personal.init()
+
+    def tearDown(self):
+        personal._conn.close()
+        personal._conn = self.old
+
+    def held(self):
+        return sorted((p["t"], p["note"]) for p in personal.snapshot("me")["positions"])
+
+    def test_real_positions_replace_the_sample(self):
+        personal.import_positions("me", [("AAPL", 20, 150), ("MSFT", 10, 310)], note="sample")
+        personal.import_positions("me", [("NVDA", 40, 60)])
+        self.assertEqual(self.held(), [("NVDA", "imported")])
+
+    def test_clear_sample_keeps_real_ones(self):
+        personal.add_position("me", "TSLA", 2, 200)
+        personal.import_positions("me", [("AAPL", 20, 150)], note="sample")
+        personal.clear_sample("me")
+        self.assertEqual(self.held(), [("TSLA", "")])
+
+
 if __name__ == "__main__":
     unittest.main()

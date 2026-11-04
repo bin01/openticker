@@ -667,6 +667,9 @@ def cmd_check(args):
                     if r.status != 200:
                         fails.append(f"GET {u}: {r.status}")
             except Exception as e:
+                if getattr(e, "code", None) == 503:   # first start, still downloading prices
+                    notes.append("the server is still downloading prices, so endpoints weren't checked; try again in a minute")
+                    break
                 fails.append(f"GET {u}: {e}")
     else:
         notes.append("the server isn't running, so endpoints weren't checked (openticker start)")
