@@ -43,31 +43,58 @@ function lvPrev(t,d){ const F=!lvIdx(t)&&base?.px?.[t]?facts(t):null; return F?.
 /* the levels sorted high to low, each marked against the latest price (it can have crossed one since Yahoo's bar) */
 function lvLevels(d,last){
   const room=(d.tol||last*.006)/2;
-  return (d.levels||[]).map(x=>({...x,k:x.p>last+room?"resistance":x.p<last-room?"support":"here"})).filter(x=>x.k!=="here"||x.touches>=2).sort((a,b)=>b.p-a.p);
+  const L=(d.levels||[]).map(x=>({...x,k:x.p>last+room?"resistance":x.p<last-room?"support":"here"})).filter(x=>x.k!=="here"||x.touches>=2).sort((a,b)=>b.p-a.p);
+  // R1 and S1 are the nearest on each side, counting outward, the way traders name them
+  L.filter(x=>x.k==="resistance").reverse().forEach((x,i)=>x.tag="R"+(i+1));
+  L.filter(x=>x.k==="support").forEach((x,i)=>x.tag="S"+(i+1));
+  L.filter(x=>x.k==="here").forEach(x=>x.tag="At");
+  return L;
 }
 function lvNearest(L){ return {s:L.filter(x=>x.k==="support")[0],r:L.filter(x=>x.k==="resistance").slice(-1)[0],here:L.find(x=>x.k==="here")}; }
 const lvTimes=n=>n===1?"once":n===2?"twice":n+" times";
 
-/* the written read: where the price sits between its nearest levels, and which one is closer */
+/* the verdict: one or two words a trader can take in at a glance */
+function lvVerdict(t,d,last){
+  const {s,r,here}=lvNearest(lvLevels(d,last));
+  if(here) return {k:"here",txt:`Testing ${lvP(t,here.p)}`};
+  if(!r&&s) return {k:"up",txt:last>=d.hi52.p*.99?"At a new high":"Nothing overhead"};
+  if(!s&&r) return {k:"down",txt:last<=d.lo52.p*1.01?"At a new low":"Nothing below"};
+  if(!s||!r) return {k:"",txt:"No clear levels"};
+  const dS=1-s.p/last, dR=r.p/last-1;
+  return dS<dR*.6?{k:"up",txt:"Near support"}:dR<dS*.6?{k:"down",txt:"Near resistance"}:{k:"",txt:"Between levels"};
+}
+const lvTag=v=>`<span class="lvtag ${v.k}">${esc(v.txt)}</span>`;
+const lvPct=(p,last)=>{ const r=(p/last-1)*100; if(Math.abs(r)<.05) return "0.0%"; return (r>=0?"+":"−")+Math.abs(r).toFixed(Math.abs(r)<10?1:0)+"%"; };
+/* where the price sits between its nearest support (left) and resistance (right) */
+function lvMeter(t,d,last){
+  const n=lvNearest(lvLevels(d,last)), P=x=>lvP(t,x), s=n.s||n.here, r=n.r||(n.s?n.here:null);   // a level it's sitting on stands in for a missing side
+  const pos=s&&r?Math.max(0,Math.min(1,(last-s.p)/(r.p-s.p))):s?1:r?0:.5;
+  const side=(x,k)=>x?`<span class="mx ${k}${x.k==="here"?" at":""}"><span class="mtop"><span class="mt">${x.tag}</span><b class="num">${P(x.p)}</b></span><span class="num md">${lvPct(x.p,last)}</span></span>`
+    :`<span class="mx ${k} none">${k==="sup"?"Nothing below":"Nothing above"}</span>`;
+  const al=s&&r?`${lvP(t,last)}: ${lvAway(s.p,last)} support at ${P(s.p)}, ${lvAway(r.p,last)} resistance at ${P(r.p)}`:"";
+  return `<div class="lvmeter" role="img" aria-label="${esc(al)}">${side(s,"sup")}<span class="mbar"><i style="left:${(pos*100).toFixed(1)}%"></i></span>${side(r,"res")}</div>`;
+}
+/* one plain sentence under the verdict: why that level matters */
 function lvRead(t,d,last){
   const L=lvLevels(d,last), {s,r,here}=lvNearest(L), N=lvIdx(t)?`The ${lvLabel(t)}`:t, P=x=>lvP(t,x);
   const ma=["50","200"].map(k=>[k,d.ma?.[k]?.slice(-1)[0]]).filter(([k,v])=>v&&Math.abs(last/v-1)<.012)[0];
-  const nearMa=ma?` It's also near its ${ma[0]}-day average (${P(ma[1])}), a line many traders watch.`:"";
-  if(here) return `<b>${N} is testing ${P(here.p)}</b>, a price where it has turned ${lvTimes(here.touches)} ${lvSpan(d)}. A close clearly above or below it often sets the next leg.${nearMa}`;
-  if(!r&&s) return `<b>No resistance overhead.</b> ${N} is ${last>=d.hi52.p*.99?"at":"near"} its highest price ${lvSpan(d)}, so there's no price above where sellers took over. Nearest support: ${P(s.p)}, ${lvAway(s.p,last).replace(" below","")} below.${nearMa}`;
-  if(!s&&r) return `<b>No support below.</b> ${N} is ${last<=d.lo52.p*1.01?"at":"near"} its lowest price ${lvSpan(d)}, so there's no price below where buyers stepped in. Nearest resistance: ${P(r.p)}, ${lvAway(r.p,last).replace(" above","")} above.${nearMa}`;
-  if(!s||!r) return `Not enough swings ${lvSpan(d)} to mark clear levels for ${N}.`;
-  const dS=1-s.p/last, dR=r.p/last-1, toR=dR<dS*.8, toS=dS<dR*.8;
-  const side=toR?` It's closer to resistance, where sellers stopped it ${lvTimes(r.touches)}${r.flip?" (that price has worked as support too)":""}.`
-    :toS?` It's closer to support, where buyers stepped in ${lvTimes(s.touches)}${s.flip?" (that price has capped it too)":""}.`:" It's about midway between the two.";
-  return `<b>${N} is ${(dS*100).toFixed(1)}% above support at ${P(s.p)} and ${(dR*100).toFixed(1)}% below resistance at ${P(r.p)}.</b>${side}${nearMa}`;
+  const nearMa=ma?` Also near its ${ma[0]}-day average (${P(ma[1])}).`:"";
+  if(here) return `It has turned at ${P(here.p)} ${lvTimes(here.touches)} ${lvSpan(d)}. A close clearly above or below often sets the next move.${nearMa}`;
+  if(!r&&s) return `${N} is at or near its highest price ${lvSpan(d)}, so no sellers wait above. First support is ${P(s.p)}.${nearMa}`;
+  if(!s&&r) return `${N} is at or near its lowest price ${lvSpan(d)}, so no buyers wait below. First resistance is ${P(r.p)}.${nearMa}`;
+  if(!s||!r) return `Not enough swings ${lvSpan(d)} to mark clear levels.`;
+  const dS=1-s.p/last, dR=r.p/last-1;
+  const why=dR<dS*.6?`Sellers stopped it at ${P(r.p)} ${lvTimes(r.touches)}${r.flip?", and it has been support too":""}.`
+    :dS<dR*.6?`Buyers stepped in at ${P(s.p)} ${lvTimes(s.touches)}${s.flip?", and it has capped the price too":""}.`
+    :`Room to move ${(dS*100).toFixed(1)}% down or ${(dR*100).toFixed(1)}% up before the next level.`;
+  return why+nearMa;
 }
 
 /* ---------- the chart: price, level zones and their labels, the latest price, and on the big chart the averages ---------- */
 function lvChart(t,d,{w,h,last,big}){
   const N=d.c.length, i0=d.c.length-N, O=d.o.slice(i0), Hh=d.h.slice(i0), Lo=d.l.slice(i0), C=d.c.slice(i0), D=d.d.slice(i0);
   const L=lvLevels(d,last), near=lvNearest(L);
-  const ph=innerWidth<=600, left=big?(ph?36:46):8, R=big?(ph?70:78):64, T=big?12:8, B=big?24:8, PW=w-left-R, PH=h-T-B;
+  const ph=innerWidth<=600, left=big?(ph?36:46):8, R=big?(ph?92:104):64, T=big?12:8, B=big?24:8, PW=w-left-R, PH=h-T-B;
   const step=PW/N, X=i=>left+step*(i+.5);
   let lo=Math.min(...Lo,last), hi=Math.max(...Hh,last);
   // the nearest level on each side always shows (if it's not absurdly far); others only when they fit the window
@@ -83,9 +110,11 @@ function lvChart(t,d,{w,h,last,big}){
   if(big) ticks.forEach(v=>{ s+=`<line x1="${left}" x2="${w-R}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="var(--grid)"/><text x="${left-8}" y="${(Y(v)+4).toFixed(1)}" font-size="11" text-anchor="end" class="num" fill="var(--ink-3)">${v>=1000?v.toLocaleString("en-US",{maximumFractionDigits:0}):v<1?String(+v.toFixed(2)):v.toFixed(v<10&&!logY?2:0)}</text>`; });
   // zones under the price, so the bars read on top of them
   const col=x=>x.k==="resistance"?"var(--down)":x.k==="support"?"var(--up)":"var(--accent)";
-  L.filter(inView).forEach(x=>{ const y1=Y(Math.min(hi,x.hi)), y2=Y(Math.max(lo,x.lo)), zh=Math.max(big?4:3,y2-y1), yc=(y1+y2)/2;
-    s+=`<rect x="${left}" y="${(yc-zh/2).toFixed(1)}" width="${PW}" height="${zh.toFixed(1)}" fill="${col(x)}" opacity="${(.07+.03*x.strength).toFixed(2)}"/>`;
-    s+=`<line x1="${left}" x2="${w-R}" y1="${Y(x.p).toFixed(1)}" y2="${Y(x.p).toFixed(1)}" stroke="${col(x)}" stroke-width="${x.strength>=3?1.4:1}" ${x.strength>=2?"":`stroke-dasharray="4 4"`} opacity=".75"/>`; });
+  // the nearest level on each side is drawn strongest; the rest step back so the eye goes to what matters now
+  const isNear=x=>x===near.s||x===near.r||x===near.here;
+  L.filter(inView).forEach(x=>{ const y1=Y(Math.min(hi,x.hi)), y2=Y(Math.max(lo,x.lo)), zh=Math.max(big?4:3,y2-y1), yc=(y1+y2)/2, n=isNear(x);
+    s+=`<rect x="${left}" y="${(yc-zh/2).toFixed(1)}" width="${PW}" height="${zh.toFixed(1)}" fill="${col(x)}" opacity="${(n?.1+.04*x.strength:.04+.02*x.strength).toFixed(2)}"/>`;
+    s+=`<line x1="${left}" x2="${w-R}" y1="${Y(x.p).toFixed(1)}" y2="${Y(x.p).toFixed(1)}" stroke="${col(x)}" stroke-width="${n?1.6:1}" ${n||x.strength>=2?"":`stroke-dasharray="4 4"`} opacity="${n?.95:.45}"/>`; });
   if(MA.length) s+=`<clipPath id="lvClip"><rect x="${left}" y="${T}" width="${PW}" height="${PH}"/></clipPath>`;   // an average far from the price runs off the chart, not over the axis
   MA.forEach(m=>{ let p=""; m.a.forEach((v,i)=>{ if(v==null) return; p+=(p?"L":"M")+X(i).toFixed(1)+","+Y(v).toFixed(1); }); s+=`<path d="${p}" fill="none" stroke="${m.col}" stroke-width="1.3" opacity=".8" stroke-dasharray="5 3" clip-path="url(#lvClip)"/>`; });
   if(big&&step>=1.5){ const bw=Math.max(1,Math.min(9,step*.62));
@@ -97,15 +126,15 @@ function lvChart(t,d,{w,h,last,big}){
   // labels on the right, nudged apart so they never sit on top of each other; the latest price wins its spot
   // a small chart (and the phone's) labels only the nearest level on each side; the list below has the rest
   const fs=big?11.5:10.5, lh=big?21:17, labelled=big&&!ph?L.filter(inView):[near.r,near.s,near.here].filter(x=>x&&inView(x));
-  const items=[{y:yl,txt:lvP(t,last),now:true},...labelled.map(x=>({y:Y(x.p),txt:lvP(t,x.p),x}))].sort((a,b)=>a.y-b.y);
+  const items=[{y:yl,txt:lvP(t,last),now:true},...labelled.map(x=>({y:Y(x.p),txt:lvP(t,x.p),tag:big?x.tag:"",n:isNear(x),x}))].sort((a,b)=>a.y-b.y);
   const placeLabels=a=>{ const top=T+lh/2-2, bot=h-B-lh/2+2;   // push down past any overlap, then back up from the bottom edge
     for(let j=1;j<a.length;j++) a[j].y=Math.max(a[j].y,a[j-1].y+lh);
     for(let j=a.length-1;j>=0;j--) a[j].y=Math.min(a[j].y,j===a.length-1?bot:a[j+1].y-lh);
     a.forEach(o=>o.y=Math.max(top,o.y)); };
   placeLabels(items);
-  items.forEach(o=>{ const tw=o.txt.length*fs*.6+14, x0=w-R+6, c=o.now?"var(--ink)":col(o.x);
+  items.forEach(o=>{ const tl=o.tag?o.tag.length*fs*.62+5:0, tw=o.txt.length*fs*.6+14+tl, x0=w-R+6, c=o.now?"var(--ink)":col(o.x), op=o.now||o.n||!big?1:.6;
     s+=o.now?`<rect x="${x0}" y="${(o.y-lh/2+2).toFixed(1)}" width="${tw.toFixed(1)}" height="${lh-4}" rx="${(lh-4)/2}" fill="var(--ink)"/><text x="${(x0+7).toFixed(1)}" y="${(o.y+fs*.36).toFixed(1)}" font-size="${fs}" font-weight="650" class="num" fill="var(--panel)">${o.txt}</text>`
-      :`<rect x="${x0}" y="${(o.y-lh/2+2).toFixed(1)}" width="${tw.toFixed(1)}" height="${lh-4}" rx="${(lh-4)/2}" fill="var(--panel)" stroke="${c}" stroke-opacity=".6"/><text x="${(x0+7).toFixed(1)}" y="${(o.y+fs*.36).toFixed(1)}" font-size="${fs}" font-weight="600" class="num" fill="${c}">${o.txt}</text>`; });
+      :`<g opacity="${op}"><rect x="${x0}" y="${(o.y-lh/2+2).toFixed(1)}" width="${tw.toFixed(1)}" height="${lh-4}" rx="${(lh-4)/2}" fill="${o.n&&big?`color-mix(in srgb,${c} 14%,var(--panel))`:"var(--panel)"}" stroke="${c}" stroke-opacity="${o.n?.9:.5}"/><text x="${(x0+7).toFixed(1)}" y="${(o.y+fs*.36).toFixed(1)}" font-size="${fs}" font-weight="600" class="num" fill="${c}">${o.tag?`<tspan font-weight="750">${o.tag}</tspan><tspan dx="5" fill="var(--ink)" font-weight="${o.n?650:500}">${o.txt}</tspan>`:o.txt}</text></g>`; });
   if(big){ // time marks along the bottom: days for intraday bars, weeks for hourly, months, years
     const iv=d.iv, key=dd=>iv==="5m"||iv==="15m"?dd.slice(0,10):iv==="1h"?lvWeek(dd):iv==="1d"?dd.slice(0,7):iv==="1wk"?dd.slice(0,4):dd.slice(0,3);
     const lab=dd=>iv==="5m"||iv==="15m"?lvFmt(dd,{weekday:"short"})+" "+(+dd.slice(8,10)):iv==="1h"?lvFmt(dd,{month:"short",day:"numeric"})
@@ -121,32 +150,32 @@ function lvChart(t,d,{w,h,last,big}){
 
 /* ---------- the side list: every level from the top down, with the latest price in its place ---------- */
 function lvLadder(t,d,last,prev){
-  const L=lvLevels(d,last), rows=L.map(x=>({p:x.p,x}));
-  [["50","50-day average"],["200","200-day average"]].forEach(([k,lab])=>{ const v=d.ma?.[k]?.slice(-1)[0]; if(v) rows.push({p:v,ma:k,lab}); });
+  const L=lvLevels(d,last), near=lvNearest(L), rows=L.map(x=>({p:x.p,x}));
+  [["50","50-day"],["200","200-day"]].forEach(([k,lab])=>{ const v=d.ma?.[k]?.slice(-1)[0]; if(v) rows.push({p:v,ma:k,lab}); });
   rows.push({p:last,now:true}); rows.sort((a,b)=>b.p-a.p||(a.now?-1:1));
   const chg=prev?last/prev-1:null;
   return `<ol class="lvlad">${rows.map(r=>{
-    if(r.now) return `<li class="now"><span class="lk">Now</span><span class="lp num">${lvP(t,last)}</span><span class="ld num ${cls(chg)}">${chg==null?"":pct(chg)+" today"}</span></li>`;
-    if(r.ma) return `<li class="ma ma${r.ma}"><span class="lk"><i aria-hidden="true"></i>${r.lab}</span><span class="lp num">${lvP(t,r.p)}</span><span class="ld num">${lvAway(r.p,last)}</span></li>`;
-    const x=r.x, kind=x.k==="here"?"At this level":x.k==="resistance"?"Resistance":"Support";
-    return `<li class="${x.k}"><span class="lk">${kind}<span class="str" title="${LV_STR[x.strength][0].toUpperCase()+LV_STR[x.strength].slice(1)} level${x.flip?". It has worked as both support and resistance":""}" aria-label="${LV_STR[x.strength]} level">${[1,2,3].map(j=>`<i class="${j<=x.strength?"on":""}"></i>`).join("")}</span></span><span class="lp num">${lvP(t,x.p)}</span><span class="ld num">${x.k==="here"?"right here":lvAway(x.p,last)}</span>
-      <span class="lm">${x.touches===1?"Turned here once":`Turned here ${lvTimes(x.touches)}`}, last ${lvDay(x.last,d.iv)}${x.flip?" · both ways":""}</span></li>`; }).join("")}</ol>`;
+    if(r.now) return `<li class="now"><span class="lt">Now</span><span class="lp num">${lvP(t,last)}</span><span class="ld num ${cls(chg)}">${chg==null?"":pct(chg)+" today"}</span></li>`;
+    if(r.ma) return `<li class="ma ma${r.ma}" title="${r.lab} average, a line many traders watch"><span class="lt"><i aria-hidden="true"></i>${r.lab}</span><span class="lp num">${lvP(t,r.p)}</span><span class="ld num">${lvPct(r.p,last)}</span></li>`;
+    const x=r.x, n=x===near.s||x===near.r||x===near.here, kind=x.k==="here"?"At this level":x.k==="resistance"?"Resistance":"Support";
+    const meta=`Turned here ${lvTimes(x.touches)}, last ${lvDay(x.last,d.iv)}${x.flip?". Has been both support and resistance":""}`;
+    return `<li class="${x.k}${n?" near":""}" title="${kind}, ${LV_STR[x.strength]} level. ${esc(meta)}"><span class="lt">${x.tag}</span><span class="lp num">${lvP(t,x.p)}</span><span class="ld num">${x.k==="here"?"right here":lvPct(x.p,last)}</span><span class="str" aria-label="${LV_STR[x.strength]} level">${[1,2,3].map(j=>`<i class="${j<=x.strength?"on":""}"></i>`).join("")}</span>${n?`<span class="lm">${esc(meta)}</span>`:""}</li>`; }).join("")}</ol>`;
 }
 
 /* ---------- the page ---------- */
 function renderLevels(){
   if(!$("#lvl")){
     $("#app").innerHTML=`<div id="lvl" class="page">
-      <div class="phead"><div><h1 class="ptitle">Levels</h1><p class="hint">Support is where buyers have stepped in before; resistance is where sellers have. The more often a price turned the market, the stronger the level. Short bars are for trading within a day; long bars show the big picture.</p></div>
+      <div class="phead"><div><h1 class="ptitle">Levels</h1><p class="hint">Support is where buyers stepped in before, resistance where sellers did. S1 and R1 are the nearest; more dots means a stronger level.</p></div>
         <div class="seg lviv" id="lvRng" role="group" aria-label="Bar size"></div></div>
       <section class="lvtop" id="lvTop" aria-label="Market levels">${LV_TOP.map(([s])=>`<button class="lvcard" data-lv="${esc(s)}" aria-pressed="false">${sk(170)}</button>`).join("")}</section>
       <section class="panel lvmain" id="lvMain">
         <div class="lvhead"><div class="lvwho" id="lvWho"></div>
           <div class="lvfind"><div class="lvsrch">${ic("search",14)}<input id="lvQ" type="search" placeholder="Show another stock…" autocomplete="off" spellcheck="false" aria-label="Show levels for another stock" aria-controls="lvRes"><div class="sres" id="lvRes" role="listbox" hidden></div></div><div class="lvquick" id="lvQuick"></div></div></div>
-        <p class="lvread" id="lvRead"></p>
+        <div class="lvsum" id="lvSum"></div>
         <div class="lvbody"><div><div class="lvchart" id="lvChart">${sk(420)}</div>
-          <div class="lvkey"><span><i class="k res"></i>Resistance</span><span><i class="k sup"></i>Support</span><span class="kma"><i class="k m50"></i>50-day average</span><span class="kma"><i class="k m200"></i>200-day average</span><span>Thicker band, stronger level</span></div></div>
-          <div class="lvside"><div class="lbl">Levels, top to bottom</div><div id="lvLad">${sk(300)}</div></div></div>
+          <div class="lvkey"><span><i class="k res"></i>Resistance (R1 nearest)</span><span><i class="k sup"></i>Support (S1 nearest)</span><span class="kma"><i class="k m50"></i>50-day average</span><span class="kma"><i class="k m200"></i>200-day average</span></div></div>
+          <div class="lvside"><div class="lbl">All levels</div><div id="lvLad">${sk(300)}</div></div></div>
       </section></div>`;
     lvWire();
   }
@@ -159,12 +188,11 @@ function lvCard(s){
   const el=document.querySelector(`.lvcard[data-lv="${CSS.escape(s)}"]`); if(!el) return;
   const c=xpeek("levels",lvQ(s)), t=lvSym(); el.setAttribute("aria-pressed",String(t===s));
   if(!c?.data){ el.innerHTML=c?.error?`<div class="lvch"><b>${esc(lvLabel(s))}</b></div>${errBox(c.error)}`:sk(170); return; }
-  const d=c.data, last=lvLast(s,d), prev=lvPrev(s,d), chg=prev?last/prev-1:null, L=lvLevels(d,last), {s:sp,r:rs,here}=lvNearest(L);
-  const w=Math.max(220,Math.round(el.clientWidth-26)), h=innerWidth<=600?96:92;
-  el.title=`Show ${lvLabel(s)} below`;
-  el.innerHTML=`<div class="lvch"><div><b>${esc(lvLabel(s))}</b><span class="hint">${esc(LV_TOP.find(x=>x[0]===s)[2])}</span></div><div class="lvpx"><span class="num">${lvP(s,last)}</span><span class="num ${cls(chg)}">${pct(chg)}</span></div></div>
-    <div class="lvmini">${lvChart(s,d,{w,h,last})}</div>
-    <div class="lvfoot">${here?`<span><i class="k here"></i>Testing <b class="num">${lvP(s,here.p)}</b></span>`:""}${rs?`<span><i class="k res"></i>Resistance <b class="num">${lvP(s,rs.p)}</b> <span class="num">+${lvAway(rs.p,last).replace(" above","")}</span></span>`:`<span><i class="k res"></i>No resistance overhead</span>`}${sp?`<span><i class="k sup"></i>Support <b class="num">${lvP(s,sp.p)}</b> <span class="num">−${lvAway(sp.p,last).replace(" below","")}</span></span>`:`<span><i class="k sup"></i>No support below</span>`}</div>`;
+  const d=c.data, last=lvLast(s,d), prev=lvPrev(s,d), chg=prev?last/prev-1:null;
+  const w=Math.max(220,Math.round(el.clientWidth-26)), h=innerWidth<=600?96:80;
+  el.title=`${LV_TOP.find(x=>x[0]===s)[2]}. Click to show it below`;
+  el.innerHTML=`<div class="lvch"><div><b>${esc(lvLabel(s))}</b>${lvTag(lvVerdict(s,d,last))}</div><div class="lvpx"><span class="num">${lvP(s,last)}</span><span class="num ${cls(chg)}">${pct(chg)}</span></div></div>
+    <div class="lvmini">${lvChart(s,d,{w,h,last})}</div>${lvMeter(s,d,last)}`;
 }
 function lvMain(){
   const t=lvSym(), c=xpeek("levels",lvQ(t));
@@ -174,12 +202,12 @@ function lvMain(){
   const q=[...new Set([...(typeof recent!=="undefined"?recent:[]),...(me?.positions||[]).map(p=>p.t),...(me?.watch||[])])].filter(x=>x!==t).slice(0,5);
   $("#lvQuick").innerHTML=q.map(x=>`<button class="chip" data-lv="${esc(x)}">${esc(x)}</button>`).join("");
   if(!c?.data){
-    if(c?.error){ $("#lvChart").innerHTML=errBox(c.error,"levels",lvQ(t)); $("#lvLad").innerHTML=""; $("#lvRead").innerHTML=""; return; }
-    $("#lvChart").innerHTML=sk(lvHeight()); $("#lvLad").innerHTML=sk(300); $("#lvRead").innerHTML=`<span class="sk" style="display:block;height:20px;max-width:640px"></span>`;
+    if(c?.error){ $("#lvChart").innerHTML=errBox(c.error,"levels",lvQ(t)); $("#lvLad").innerHTML=""; $("#lvSum").innerHTML=""; return; }
+    $("#lvChart").innerHTML=sk(lvHeight()); $("#lvLad").innerHTML=sk(300); $("#lvSum").innerHTML=`<span class="sk" style="display:block;height:44px;grid-column:1/-1"></span>`;
     const iv=lvIv; xget("levels",lvQ(t)).then(()=>{ if(page==="levels"&&lvSym()===t&&lvIv===iv) lvMain(); }); return;
   }
   const d=c.data, last=lvLast(t,d), prev=lvPrev(t,d), box=$("#lvChart");
-  $("#lvRead").innerHTML=lvRead(t,d,last);
+  $("#lvSum").innerHTML=`<div class="lvv">${lvTag(lvVerdict(t,d,last))}<p class="lvread">${lvRead(t,d,last)}</p></div>${lvMeter(t,d,last)}`;
   const H=lvHeight(); box.innerHTML=lvChart(t,d,{w:Math.max(300,box.clientWidth),h:H,last,big:true});
   $(".lvside").style.maxHeight=innerWidth>1100?H+28+"px":"";     // the list scrolls beside the chart rather than running past it
   const lad=$("#lvLad"); lad.innerHTML=lvLadder(t,d,last,prev);
@@ -187,7 +215,7 @@ function lvMain(){
 }
 /* the big chart takes the rest of the window, so the page reads as one full screen on a Mac */
 function lvHeight(){ if(innerWidth<=600) return 260; const el=$("#lvChart"); const top=el?el.getBoundingClientRect().top+scrollY:520;
-  return Math.round(Math.max(360,Math.min(760,innerHeight-top-84))); }   // room below for the key and Tick's button
+  return Math.round(Math.max(320,Math.min(760,innerHeight-top-84))); }   // room below for the key and Tick's button
 
 /* ---------- the stock picker ---------- */
 let lvItems=[], lvSel=-1, lvTimer=null, lvSeq=0;
