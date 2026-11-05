@@ -569,7 +569,13 @@ def market_status():
     try:
         st = yf.Market("US").status or {}
         if st.get("status") in ("open", "closed"):
-            return {"status": st.get("status"), "message": st.get("message"), "open": clean(st.get("open")), "close": clean(st.get("close"))}
+            out = {"status": st.get("status"), "message": st.get("message"), "open": clean(st.get("open")), "close": clean(st.get("close"))}
+            try:   # after the close Yahoo still gives today's opening time; the page wants the next one ("Opens in 16h 20m")
+                if out["status"] == "closed" and pd.Timestamp(out["open"]) <= pd.Timestamp.now(tz=NY):
+                    out["open"] = clock_status()["open"]
+            except Exception:
+                pass
+            return out
     except Exception:
         pass
     return clock_status()
