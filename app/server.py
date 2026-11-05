@@ -922,7 +922,13 @@ def fetch_chart(sym, rng):
     ma = None
     if interval == "1d":
         # two years of bars so the 200-day average exists from the first day shown, then trim to the range
-        h = tk.history(period="2y", interval="1d", auto_adjust=True, prepost=False).dropna(subset=["Close"])
+        h = tk.history(period="2y", interval="1d", auto_adjust=True, prepost=False)
+        # Yahoo leaves the current session's close empty until well after the close; use the quote's price for it
+        # rather than dropping the day, or every range would end at yesterday (DUOL's +26% on 2026-11-04)
+        px = (tk.history_metadata or {}).get("regularMarketPrice")
+        if len(h.index) and h["Close"].iloc[-1] != h["Close"].iloc[-1] and px:
+            h.loc[h.index[-1], "Close"] = float(px)
+        h = h.dropna(subset=["Close"])
         avgs = {n: h["Close"].rolling(n).mean() for n in MA_DAYS}
         last = h.index[-1] if len(h.index) else pd.Timestamp.now(tz=NY)
         start = (pd.Timestamp(year=last.year, month=1, day=1, tz=last.tz) if rng == "YTD"
