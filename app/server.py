@@ -23,7 +23,9 @@ import datetime as dt
 import io
 import json
 import math
+import mimetypes
 import re
+import secrets
 import os
 import subprocess
 import sys
@@ -44,6 +46,7 @@ import agent  # noqa: E402
 import paths  # noqa: E402
 import personal  # noqa: E402
 import runs  # noqa: E402
+import workbench  # noqa: E402
 import yahoo_extra as X  # noqa: E402
 
 warnings.filterwarnings("ignore")   # yfinance resets filters on import; keep pandas deprecation noise out of the log
@@ -1931,6 +1934,30 @@ class Handler(BaseHTTPRequestHandler):
             if not re.fullmatch(r"[0-9a-f]{16}", rid) or not after.isdigit():
                 return self.send(400, b'{"error":"bad run"}', "application/json")
             self.follow_run(rid, user_for(self), int(after))
+        elif path == "/api/ask/file":
+            # a chart or file Tick's code saved in its workbench (see workbench.py); <img> can't send headers, so the
+            # phone's token may come in the query too
+            qs = parse_qs(urlsplit(self.path).query)
+            k = (qs.get("k") or [""])[0]
+            if not (agent.may_ask(self) or (agent.host_ok(self) and k and secrets.compare_digest(k, agent.pair_token()))):
+                return self.send(403, b'{"error":"not allowed"}', "application/json")
+            cid, name = (qs.get("chat") or [""])[0], (qs.get("name") or [""])[0]
+            f = workbench.file_path(cid, name) if personal.chat(user_for(self), cid) else None
+            if not f:
+                return self.send(404, b'{"error":"not found"}', "application/json")
+            ctype = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
+            inline = ctype in ("image/png", "image/jpeg", "image/gif", "image/webp")
+            body = f.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", ctype if inline or ctype.startswith("text/") and ctype != "text/html" else "application/octet-stream")
+            self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")   # never runs as a page on our origin
+            self.send_header("X-Content-Type-Options", "nosniff")
+            if not inline:
+                self.send_header("Content-Disposition", f'attachment; filename="{f.name}"')
+            self.send_header("Cache-Control", "private, max-age=60")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
         elif path in ("/api/ask/chats", "/api/ask/chat"):
             if not agent.may_ask(self):
                 return self.send(403, b'{"error":"not allowed"}', "application/json")
@@ -2002,6 +2029,7 @@ def main():
     personal.init()
     agent.bind(sys.modules[__name__])
     runs.recover()
+    workbench.ensure()
     # Serve right away: from the last run's prices if there are any, otherwise a loading screen that says what's
     # happening. Fresh holdings and history download behind it, then the background loops start.
     S.load_cache()

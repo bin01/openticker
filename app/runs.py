@@ -19,6 +19,7 @@ import uuid
 
 import agent
 import personal
+import workbench
 
 RESUMABLE = {"claude", "codex"}
 RESUME_ASK = ("OpenTicker restarted while you were answering, so your reply was cut off. "
@@ -39,6 +40,7 @@ class Live:
         self.done = False
         self.run = None
         self.stopped = False
+        self.ws = None                          # the conversation's workbench folder, when the agent has one
 
     @property
     def rid(self):
@@ -83,7 +85,7 @@ def summary(events, label):
             acc["on"] = str(p.get("text", "")).startswith("Asking ")
             continue
         if kind == "reset":
-            acc["text"], acc["tool"] = "", False
+            acc["text"], acc["tool"], acc["error"] = "", False, None
         elif kind == "text":
             acc["text"] += p.get("text", "")
             acc["tool"] = False
@@ -121,7 +123,10 @@ def start(uid, cid, prov, spec, context):
 def _work(lv, context=None, resume=False):
     row, spec, prov = lv.row, lv.row["spec"], lv.row["provider"]
     label = _label(prov)
+    bench = prov in workbench.PROVIDERS and (prov != "claude" or workbench.state["claude_ok"])
     try:
+        if bench:
+            lv.ws = workbench.space(row.get("chat_id") or row["id"], row["user_id"])
         if not resume:
             lv.append("status", {"text": "Gathering the data"})
             try:
@@ -129,8 +134,9 @@ def _work(lv, context=None, resume=False):
             except Exception as e:
                 agent.srv.log(f"ask context failed: {e!r}")
                 ctx = "(Live data wasn't available just now.)"
+            spec["ctx"] = ctx
             spec["prompt"] = agent.build_prompt(spec["q"], ctx, agent.skill(spec["skill"]) if spec.get("skill") else None,
-                                                spec.get("history") or [], tools=prov != "ollama")
+                                                spec.get("history") or [], tools=prov != "ollama", bench=bench)
             personal.run_set(row["id"], spec=json.dumps(spec))
             lv.append("status", {"text": f"Asking {label}"})
         session = None
@@ -138,11 +144,13 @@ def _work(lv, context=None, resume=False):
             session = str(uuid.uuid4())             # choose the save point up front, so even an early crash can resume
             lv.append("session", {"id": session})
         resume_from = row.get("session") if resume and prov in RESUMABLE else None
-        got = {"text": False}
+        got = {"text": False, "error": ""}
 
         def emit(kind, payload):
             if kind == "text" and payload.get("text"):
                 got["text"] = True
+            elif kind == "error":
+                got["error"] = str(payload.get("message") or "")
             elif kind == "meta" and payload.get("model"):
                 try:
                     agent.remember_model(prov, spec.get("model"), payload["model"])
@@ -150,9 +158,9 @@ def _work(lv, context=None, resume=False):
                     pass
             lv.append(kind, payload)
 
-        def go(resume_id):
+        def go(resume_id, ws=lv.ws):
             run = agent.Run(prov, RESUME_ASK if resume_id else spec["prompt"], emit, spec.get("model"), spec.get("effort"),
-                            session=session, resume=resume_id)
+                            session=session, resume=resume_id, workspace=str(ws) if ws else None)
             lv.run = run
             if lv.stopped:
                 run.cancelled = True
@@ -162,7 +170,22 @@ def _work(lv, context=None, resume=False):
         if resume:
             lv.append("reset", {})
             lv.append("status", {"text": "Picking up where I left off"})
+        t_go = time.time()
         go(resume_from)
+        quick_fail = got["error"] and time.time() - t_go < 30          # e.g. an older Claude Code that rejects the settings
+        if lv.ws and prov == "claude" and not got["text"] and not lv.stopped and (workbench.sandbox_failed(got["error"]) or quick_fail):
+            # Claude Code couldn't start its sandbox on this Mac: answer without the workbench, and don't try it again
+            why = " ".join(x.strip() for x in (getattr(lv.run, "_err", None) or [])[-4:]) or got["error"]
+            agent.srv.log(f"Claude Code's sandbox didn't start, so Tick answers without the workbench: {why[:400]}")
+            workbench.state["claude_ok"] = False
+            lv.ws, session = None, (str(uuid.uuid4()) if prov == "claude" else None)
+            if session:
+                lv.append("session", {"id": session})
+            spec["prompt"] = agent.build_prompt(spec["q"], spec.get("ctx") or "", agent.skill(spec["skill"]) if spec.get("skill") else None,
+                                                spec.get("history") or [], tools=True)
+            lv.append("reset", {})
+            lv.append("status", {"text": "Answering without the workbench"})
+            go(None, None)
         if resume and resume_from and not got["text"] and not lv.stopped:
             # the agent couldn't continue its session (it never saved one, or it expired): ask again from the top
             lv.append("reset", {})
@@ -183,12 +206,13 @@ def _finish(lv, label):
     error = acc["error"] or ("Stopped." if stopped and not acc["text"] else None)
     if not acc["text"] and not error:
         error = "No answer came back. Try again, or pick another agent."
-    lv.append("end", {"secs": secs, "by": acc["by"], "error": error if not acc["text"] else acc["error"]})
+    files = workbench.outputs(lv.ws, row["started"]) if lv.ws else []
+    lv.append("end", {"secs": secs, "by": acc["by"], "error": error if not acc["text"] else acc["error"], "files": files})
     lv.flush()
     if row.get("chat_id"):
         try:
             personal.chat_add(row["user_id"], row["chat_id"], {"role": "assistant", "text": acc["text"], "steps": acc["steps"][:24],
-                                                               "by": acc["by"], "secs": secs, "error": error, "ts": time.time()})
+                                                               "by": acc["by"], "secs": secs, "error": error, "files": files, "ts": time.time()})
         except Exception as e:
             agent.srv.log(f"saving the answer failed: {e!r}")
     personal.run_set(row["id"], status="stopped" if stopped else "error" if error and not acc["text"] else "done", ended=time.time())

@@ -4,7 +4,8 @@
    (Claude Code, Codex, OpenCode) or a free local Ollama model.
    Shares globals with index.html: $, esc, ic, IC, load, save, base, sel, drawerOpen, page, openStock, COMMANDS, me, EARN, ret, idx, nameOf. */
 
-Object.assign(IC,{
+Object.assign(IC,{code:'<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>',file:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 12v6"/><path d="m9 15 3 3 3-3"/>',
+  
   spark:'<path d="M12 3l1.8 4.9L18.7 9.7 13.8 11.5 12 16.4 10.2 11.5 5.3 9.7 10.2 7.9z"/><path d="M19 15l.7 1.8 1.8.7-1.8.7L19 20l-.7-1.8-1.8-.7 1.8-.7z"/>',
   send:'<path d="M12 19V5M5 12l7-7 7 7"/>', stop:'<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>',
   copy:'<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>', check:'<path d="M20 6 9 17l-5-5"/>',
@@ -372,7 +373,7 @@ function noticings(c){
 function greeting(){ const h=new Date().getHours(); return h<5?"Up late.":h<12?"Good morning.":h<17?"Good afternoon.":"Good evening."; }
 
 /* rendering ------------------------------------------------------------------------------------------ */
-function stepIcon(t){ return /^Searching/.test(t)?"search":/web page/.test(t)?"globe":/news/.test(t)?"news":/^Checking/.test(t)?"chart":"term"; }
+function stepIcon(t){ return /^(Running|Writing|Editing|Installing|Reading [\w.-]+\.\w+$)/.test(t)&&!/^Running a command/.test(t)?"code":/^Searching/.test(t)?"search":/web page/.test(t)?"globe":/news/.test(t)?"news":/^Checking/.test(t)?"chart":"term"; }
 /* one step of the work log. now: the step under way (a spinning ring, its label shimmering, a running clock);
    fresh: it just arrived and slides in; just: it just finished and its icon pops in; fade: older steps recede */
 const stepRow=(t,now,o={})=>`<div class="stp${now?" now":""}${o.fresh?" fresh":""}${o.just?" just":""}"${o.fade?` style="--f:${o.fade}"`:""}><i class="sb">${now?"":ic(stepIcon(t),12)}</i><span class="sl">${esc(t)}</span>${now&&o.since?`<em class="el" data-since="${o.since}">${stepClock(o.since)}</em>`:""}</div>`;
@@ -429,7 +430,7 @@ function amHTML(m,i){
     return `<div class="am a${live?" busy":""}" data-i="${i}">
       ${live&&!m.text?liveLog(m,steps)
         :steps.length?`<details class="how" data-sig="${steps.length}"><summary>How I got there<span class="hn">${steps.length} step${steps.length>1?"s":""}</span>${ic("chevr",13)}</summary><div class="log">${steps.map(s=>stepRow(s)).join("")}</div></details>`:""}
-      <div class="md">${mdToHtml(m.text,m)}${live&&m.text?`<span class="caret"></span>`:""}</div>
+      <div class="md">${mdToHtml(m.text,m)}${live&&m.text?`<span class="caret"></span>`:""}</div>${askFiles(m)}
       ${m.error?`<div class="aerr">${esc(m.error)}</div>`:""}
       ${m.done?`<div class="af">${m.text?`<button class="ib" data-ask-copy="${i}" title="Copy" aria-label="Copy">${ic("copy",14)}</button>`:""}${i===ASK.conv.length-1?`<button class="ib" data-ask-retry title="Ask again" aria-label="Ask again">${ic("retry",14)}</button>`:""}<span>${m.secs!=null?`Worked for <b>${dur(m.secs)}</b>`:""}${m.by?` · ${esc(m.by.split(" · ").map((x,j)=>j?prettyModel(x):x).join(" · "))}`:""}</span></div>`:""}</div>`;
 }
@@ -552,11 +553,11 @@ function askApply(msg,prov,st,ev,data){
   if(ev==="run"){ msg.run=data.id; msg.t0=data.started*1000; }
   else if(ev==="text"){ if(!msg.text) msg.textAt=Date.now(); msg.text+=data.text; st.toolSince=false; msg.status="Writing"; }
   else if(ev==="status"){ msg.status=data.text; if(st.started){ msg.steps.push(data.text); msg.stepAt.push(Date.now()); } else if(/^Asking /.test(data.text)){ st.started=true; msg.status="Reading the numbers"; } if(msg.text) st.toolSince=true; }
-  else if(ev==="reset"){ msg.text=""; st.toolSince=false; }
+  else if(ev==="reset"){ msg.text=""; msg.error=null; st.toolSince=false; }
   else if(ev==="turn"){ if(st.toolSince){ msg.text=""; st.toolSince=false; } }   // drop "let me check…" narration once the agent has looked something up
   else if(ev==="meta"&&data.model){ msg.by=`${prov?.label||msg.by.split(" · ")[0]} · ${data.model}`; if(prov){ const k=askModelOf(prov); prov.seen={...(prov.seen||{}),[k]:data.model}; } }
   else if(ev==="error") msg.error=data.message;
-  else if(ev==="end"){ st.ended=true; msg.secs=data.secs; if(data.by) msg.by=data.by; if(data.error&&!msg.text) msg.error=data.error; }
+  else if(ev==="end"){ st.ended=true; msg.secs=data.secs; if(data.by) msg.by=data.by; if(data.error&&!msg.text) msg.error=data.error; if(data.files?.length) msg.files=data.files; }
   else if(ev==="gone") st.ended=true;
 }
 async function askRead(r,msg,prov,st,paint){
@@ -640,8 +641,18 @@ document.addEventListener("mouseover",e=>{ askHover=e.target.closest?.(ASK_SPOTS
 
 /* small, safe Markdown: escape first, then format; tickers become links ----------------------------------- */
 const ASK_STOP=new Set("A I AI AM AN AND ARE AS AT BE BUT BY CEO CFO CPI DO EPS ETF EU FED FOR FY GDP GO HAS HE HOLD IF IN IPO IS IT ITS ME MY NO NOT NOW OF OK ON OR OUR PE PEG Q QOQ SO TO TTM UK UP US USA USD VS WE YOY YTD BUY SELL EV EBIT EBITDA ROE ROI SEC SMA RSI ATH API GPU CPU NEW ONE TWO ALL ANY CAN SEE".split(" "));
+/* charts and files Tick's code saved in its workbench (out/ in the conversation's folder) */
+const askFileURL=n=>`/api/ask/file?chat=${encodeURIComponent(ASK.chat||"")}&name=${encodeURIComponent(n)}${askToken?"&k="+encodeURIComponent(askToken):""}`;
+const askIsImg=n=>/\.(png|jpe?g|gif|webp)$/i.test(n);
+const askSize=b=>b>=1e6?(b/1e6).toFixed(1)+" MB":b>=1e3?Math.round(b/1e3)+" KB":b+" bytes";
+function askFiles(m){
+  const f=(m.files||[]).filter(x=>!askIsImg(x.name)||!(m.text||"").includes(x.name)); if(!f.length) return "";
+  return `<div class="tkfiles">${f.map(x=>askIsImg(x.name)?`<figure class="tkimg"><img src="${esc(askFileURL(x.name))}" alt="${esc(x.name)}" loading="lazy" onerror="this.parentNode.classList.add('bad')"></figure>`
+    :`<a class="tkfile" href="${esc(askFileURL(x.name))}" download="${esc(x.name)}">${ic("file",14)}<span>${esc(x.name)}</span><em>${askSize(x.size)}</em></a>`).join("")}</div>`;
+}
 function mdInline(s){
-  return s.replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/(^|[\s(])\*([^*\s][^*]*)\*/g,"$1<i>$2</i>")
+  return s.replace(/!\[([^\]]*)\]\((?:\.\/)?(?:out\/)?([\w][\w .()+-]*\.(?:png|jpe?g|gif|webp))\)/gi,(_,alt,n)=>`<figure class="tkimg"><img src="${esc(askFileURL(n))}" alt="${alt}" loading="lazy" onerror="this.parentNode.classList.add('bad')">${alt?`<figcaption>${alt}</figcaption>`:""}</figure>`)
+     .replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/(^|[\s(])\*([^*\s][^*]*)\*/g,"$1<i>$2</i>")
      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
 }
 function linkTickers(html,skip){
@@ -653,7 +664,7 @@ function linkTickers(html,skip){
 function mdToHtml(src,msg){
   if(!src) return "";
   const L=esc(src).split("\n"), out=[]; let list=null, para=[];
-  const flushP=()=>{ if(para.length){ out.push(`<p>${mdInline(para.join(" "))}</p>`); para=[]; } };
+  const flushP=()=>{ if(para.length){ const h=mdInline(para.join(" ")); out.push(/^<figure[^]*<\/figure>$/.test(h)&&!/<\/figure>.*<figure/.test(h)?h:`<p>${h}</p>`); para=[]; } };
   const flushL=()=>{ if(list){ out.push(`<${list.t}>${list.items.map(x=>`<li>${mdInline(x)}</li>`).join("")}</${list.t}>`); list=null; } };
   for(let i=0;i<L.length;i++){
     const ln=L[i], tr=ln.trim();

@@ -37,6 +37,8 @@ The person can start you here with `openticker edit "what they want"`, or from *
 | `app/yahoo_extra.py` | Research data from Yahoo behind `/api/x/<name>`: analysts, financials, ownership, options, events, macro, sectors, screens |
 | `app/personal.py` | SQLite: watchlist, positions, alert rules and history, settings, Tick's saved conversations |
 | `app/agent.py` | Tick: the data as Markdown (`/api/agent/<cmd>`, same as the CLI), skills, the agent providers, the streamed answers, Tick's persona (`SYSTEM`) |
+| `app/runs.py` | Tick's answers as durable logs: reattach after a reload, resume the agent's session after a restart |
+| `app/workbench.py` | Tick's workbench: a folder per conversation where the agent writes and runs code, its Python toolbox, the sandbox settings and the public-internet-only proxy. `app/sdk/ot.py` is `import ot` for that code |
 | `app/paths.py` | Where data lives: `OPENTICKER_HOME`, default `~/Library/Application Support/OpenTicker` (`data/`, `cache/`, `logs/`, `config.json`) |
 | `app/index.html` | The page: all CSS (theme tokens at the top), the header, and the main script (funds, the stock drawer, alerts, theme) |
 | `app/static/pages.js` | The router (`PAGES`) and the Market, Calendar and Screener pages |
@@ -81,9 +83,9 @@ The scripts are classic `<script>` tags sharing globals, loaded in this order: t
 
 ## House rules
 
-- **No new dependencies.** The server is the standard library plus yfinance and pandas. No frameworks, no npm, no build step.
+- **No new dependencies.** The server is the standard library plus yfinance and pandas. No frameworks, no npm, no build step. Tick's workbench has its own Python toolbox (`PACKAGES` in `app/workbench.py`), made on first start; that's the agent's, not the server's.
 - **`bin/openticker` runs on macOS's Python 3.9** as well as the venv: no `match`, no `X | Y` types there. `openticker check` catches this.
-- **Security.** `/api/ask` answers only this Mac or a paired phone (`X-Ask-Token`), and `agent.host_ok` rejects foreign Host and Origin headers. Anything that runs an agent or a command must keep both checks (see `/api/app/terminal`). Commands come from fixed lists, never from the request.
+- **Security.** `/api/ask` answers only this Mac or a paired phone (`X-Ask-Token`), and `agent.host_ok` rejects foreign Host and Origin headers. Anything that runs an agent or a command must keep both checks (see `/api/app/terminal`). Commands come from fixed lists, never from the request. Tick's agents may run only the read-only `openticker` data commands (`AGENT_CMDS` in `agent.py`); code they write runs in Claude Code's macOS sandbox, confined to the conversation's workbench, and reaches the internet only through the workbench proxy, which refuses this Mac and the local network.
 - **Billing.** Tick never uses an API key by default (`agent.PLAN_ONLY`), so people aren't charged twice. Keep it that way.
 - **Words.** UI copy is plain English for people who aren't traders: say what a number means, avoid jargon, no exclamation marks. Numbers use tabular figures; prose doesn't.
 - **Look before you ship.** Every visible change gets a look in light and dark, and on a phone width if layout changed. The bar is high: clean, calm, obvious to use.

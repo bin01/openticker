@@ -25,6 +25,7 @@ from concurrent.futures import ThreadPoolExecutor, wait
 from pathlib import Path
 
 import paths  # noqa: E402
+import workbench  # noqa: E402
 
 HERE = paths.APP
 SKILLS_DIR = paths.SKILLS
@@ -955,9 +956,11 @@ def history_context(syms, n, label):
     syms = [srv.yahoo_symbol(s) for s in syms if s][:5]
     if not syms:
         raise ValueError("usage: openticker history TICKER [TICKER ...] --h 3M")
-    for s in syms:
-        if s not in srv.S.px:
-            srv.S.track(s)
+    new = [s for s in syms if s not in srv.S.px]
+    for s in new:
+        srv.S.track(s)
+    if new:
+        threading.Thread(target=srv.S.save_cache, daemon=True).start()   # so `import ot` in Tick's workbench has them too
     with srv.S.lock:
         dates = list(srv.S.dates)
         px = {s: list(srv.S.px.get(s) or []) for s in syms}
@@ -1285,13 +1288,16 @@ How to answer:
 TOOLS_NOTE = """If you can run shell commands, the `openticker` command returns more live data from the app as Markdown:
   openticker stock T | analysts T | earnings T | ownership T | options T | news T | financials T | events T
   openticker portfolio | brief | market | fund SPY --h 1M | compare NVDA AMD AVGO | calendar | search "name"
+  openticker insiders T | technicals T | history T T2 --h 3M
 Use it when the provided data isn't enough (for example, to compare with a peer). Use web search only for news newer than the data."""
 
 
-def build_prompt(q, ctx, skill_obj=None, history=None, tools=True):
+def build_prompt(q, ctx, skill_obj=None, history=None, tools=True, bench=False):
     parts = [SYSTEM]
     if tools:
         parts.append(TOOLS_NOTE)
+    if bench:
+        parts.append(workbench.NOTE)
     if skill_obj:
         parts.append(f"Follow this playbook ({skill_obj['name']}):\n{skill_obj['body']}")
     parts.append("<data>\n" + ctx.strip() + "\n</data>")
@@ -1334,6 +1340,10 @@ def _env(provider=None):
     return e
 
 
+AGENT_CMDS = ("stock", "analysts", "earnings", "ownership", "options", "news", "financials", "events", "insiders", "technicals",
+              "portfolio", "brief", "market", "fund", "compare", "history", "calendar", "search", "skills")
+
+
 def _describe_tool(name, inp):
     if name in ("Bash", "bash", "shell", "execute", "exec_command", "local_shell"):
         cmd = (inp or {}).get("command") or (inp or {}).get("cmd") or ""
@@ -1346,7 +1356,21 @@ def _describe_tool(name, inp):
                     "compare": "a comparison", "calendar": "the calendar", "search": "a ticker",
                     "insiders": "insider trades", "technicals": "the chart", "history": "price history"}.get(m.group(1), m.group(1))
             return f"Checking {what}" + (f" for {m.group(2).strip().upper()}" if m.group(2).strip() and m.group(1) not in ("search", "fund") else "")
+        m = re.search(r"\b(?:pip3?|uv pip)\s+install\s+(?:-\S+\s+)*([\w.\-\[\], ]+)", cmd)
+        if m:
+            return "Installing " + ", ".join(x for x in re.split(r"[\s,]+", m.group(1)) if x and not x.startswith("-"))[:60]
+        m = re.search(r"\bpython3?\s+(?:-\S+\s+)*([\w./-]+\.py)\b", cmd)
+        if m:
+            return f"Running {m.group(1).rsplit('/', 1)[-1]}"
+        if re.search(r"\bpython3?\b", cmd):
+            return "Running Python"
         return "Running a command"
+    if name in ("Write", "Edit", "MultiEdit", "NotebookEdit", "Read") or (name or "").lower() in ("write", "edit", "read"):
+        f = str((inp or {}).get("file_path") or (inp or {}).get("filePath") or (inp or {}).get("path") or "").rsplit("/", 1)[-1]
+        verb = {"read": "Reading"}.get((name or "").lower(), "Writing" if (name or "").lower() == "write" else "Editing")
+        return f"{verb} {f}" if f else f"{verb} a file"
+    if name in ("Glob", "Grep", "LS", "glob", "grep", "list"):
+        return "Looking through the workbench"
     if name in ("WebSearch", "web_search"):
         return "Searching the web" + (f": {inp.get('query')}" if isinstance(inp, dict) and inp.get("query") else "")
     if name in ("WebFetch", "webfetch", "fetch"):
@@ -1380,14 +1404,26 @@ def _claude_partial():
     return _partial["v"]
 
 
+def _codex_add_dir():
+    """Codex can be given more writable folders (the workbench's Python, for pip) only in newer builds."""
+    if "codex" not in _partial:
+        try:
+            r = subprocess.run([_which("codex"), "exec", "--help"], capture_output=True, text=True, timeout=8, env=_env("codex"))
+            _partial["codex"] = "--add-dir" in r.stdout
+        except Exception:
+            _partial["codex"] = False
+    return _partial["codex"]
+
+
 class Run:
     """One streaming agent run. emit(kind, payload) is called from this thread; cancel() stops it."""
-    def __init__(self, provider, prompt, emit, model=None, effort=None, session=None, resume=None):
+    def __init__(self, provider, prompt, emit, model=None, effort=None, session=None, resume=None, workspace=None):
         model = model if isinstance(model, str) and re.match(r"^[A-Za-z0-9][\w.:/@+-]{0,100}$", model) else None   # never a flag
         self.provider, self.prompt, self.emit, self.model = provider, prompt, emit, model
         ok = lambda x: x if isinstance(x, str) and re.fullmatch(r"[\w-]{8,80}", x) else None   # never a flag either
         self.session, self.resume = ok(session), ok(resume)   # the agent's own session: start it with this ID, or continue it
         self.effort = effort if effort in EFFORTS else None
+        self.workspace = workspace if provider in workbench.PROVIDERS else None   # the conversation's workbench folder
         self.proc = None
         self.cancelled = False
 
@@ -1400,12 +1436,14 @@ class Run:
                 pass
 
     def _spawn(self, args):
+        env = _env(self.provider)
         self.proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                     cwd=WORK_DIR, env=_env(self.provider), text=True, bufsize=1)
+                                     cwd=self.workspace or WORK_DIR, env=workbench.env(self.workspace, env) if self.workspace else env,
+                                     text=True, bufsize=1)
         threading.Thread(target=self._feed, daemon=True).start()
         self._err = []
         threading.Thread(target=lambda: self._err.extend(self.proc.stderr.readlines()[-20:]), daemon=True).start()
-        killer = threading.Timer(300, self.cancel)
+        killer = threading.Timer(600 if self.workspace else 300, self.cancel)   # code takes longer
         killer.daemon = True
         killer.start()
         return self.proc
@@ -1443,13 +1481,17 @@ class Run:
                 self.emit("error", {"message": f"Something went wrong: {e}"})
         self.emit("done", {})
 
-    # Claude Code: headless print mode, streaming JSON, read-only tools limited to the openticker command and web search
+    # Claude Code: headless print mode, streaming JSON. In the workbench it gets a shell and file tools inside its macOS
+    # sandbox (workbench.py); without one, only the read-only openticker data commands and web search.
     def _run_claude(self):
         # the session is kept (in Claude Code's folder for OpenTicker's work dir) so an answer cut off by a restart can resume
         args = [_which("claude"), "-p", "--output-format", "stream-json", "--verbose"] + (["--include-partial-messages"] if _claude_partial() else []) + [
-                "--strict-mcp-config", "--permission-mode", "dontAsk",
-                "--tools", "Bash", "WebSearch", "WebFetch",
-                "--allowedTools", "Bash(openticker:*)", "Bash(openticker *)", "WebSearch", "WebFetch"]
+                "--strict-mcp-config", "--permission-mode", "dontAsk"]
+        if self.workspace:
+            tools, allowed = workbench.claude_tools(self.workspace, AGENT_CMDS)
+            args += ["--settings", json.dumps(workbench.claude_settings(self.workspace)), "--tools"] + tools + ["--allowedTools"] + allowed
+        else:
+            args += ["--tools", "Bash", "WebSearch", "WebFetch", "--allowedTools"] + [f"Bash(openticker {c}:*)" for c in AGENT_CMDS] + ["WebSearch", "WebFetch"]
         if self.model:
             args += ["--model", self.model]
         if self.effort:
@@ -1496,6 +1538,8 @@ class Run:
             args += ["-m", self.model]
         if self.effort:
             args += ["-c", f'model_reasoning_effort="{self.effort}"']
+        if self.workspace and _codex_add_dir():
+            args += workbench.codex_args(self.workspace)
         if self.resume:
             args += ["resume", self.resume, self.prompt]   # flags don't carry over a resume, so they come first again
             self.prompt = ""
