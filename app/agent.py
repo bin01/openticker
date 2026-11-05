@@ -21,6 +21,7 @@ import subprocess
 import threading
 import time
 import urllib.request
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, wait
 from pathlib import Path
 
@@ -1425,7 +1426,8 @@ def _describe_tool(name, inp):
     if name in ("WebSearch", "web_search"):
         return "Searching the web" + (f": {inp.get('query')}" if isinstance(inp, dict) and inp.get("query") else "")
     if name in ("WebFetch", "webfetch", "fetch"):
-        return "Reading a web page"
+        host = re.sub(r"^www\.", "", urllib.parse.urlsplit(str((inp or {}).get("url") or "")).hostname or "")
+        return f"Reading {host}" if host else "Reading a web page"
     return f"Using {name}"
 
 
@@ -1553,7 +1555,8 @@ class Run:
             tools, allowed = workbench.claude_tools(self.workspace, AGENT_CMDS)
             args += ["--settings", json.dumps(workbench.claude_settings(self.workspace)), "--tools"] + tools + ["--allowedTools"] + allowed
         else:
-            args += ["--tools", "Bash", "WebSearch", "WebFetch", "--allowedTools"] + [f"Bash(openticker {c}:*)" for c in AGENT_CMDS] + ["WebSearch", "WebFetch"]
+            args += ["--settings", json.dumps({"disableAllHooks": True}),       # the person's own hooks aren't Tick's
+                     "--tools", "Bash", "WebSearch", "WebFetch", "--allowedTools"] + [f"Bash(openticker {c}:*)" for c in AGENT_CMDS] + ["WebSearch", "WebFetch"]
         if self.model:
             args += ["--model", self.model]
         if self.effort:

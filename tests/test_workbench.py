@@ -105,6 +105,7 @@ class Settings(unittest.TestCase):
         workbench.start_proxy()
         st = workbench.claude_settings(ws)["sandbox"]
         self.assertTrue(st["enabled"] and st["failIfUnavailable"] and not st["allowUnsandboxedCommands"])
+        self.assertTrue(workbench.claude_settings(ws)["disableAllHooks"])
         self.assertEqual(st["filesystem"]["denyRead"], ["~/"])
         self.assertIn("/" + str(ws.resolve()).lstrip("/"), st["filesystem"]["allowWrite"])
         self.assertEqual(st["network"]["httpProxyPort"], workbench.state["proxy"])

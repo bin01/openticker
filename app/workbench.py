@@ -322,6 +322,7 @@ def claude_settings(ws):
             else {"allowedDomains": DOMAINS, "allowLocalBinding": False},
         },
         "permissions": {"blockWritesOutsideWorkingDirectories": True},
+        "disableAllHooks": True,      # the person's own hooks and plugins (say one that redirects WebFetch) aren't Tick's
     }
 
 
@@ -346,11 +347,12 @@ NOTE = """You have a workbench: your current folder belongs to this conversation
 Use it whenever an answer needs real math (returns, volatility, drawdowns, correlation, beta, a backtest, a what-if on the person's positions): write a short Python script, run it, and read what it prints. Don't do multi-step arithmetic in your head.
 - `python3` has pandas, numpy, scipy, matplotlib and yfinance; `pip install` more if you need it. Code can download from any public website (filings, economic data, CSVs), but nothing on this Mac or its local network.
 - `import ot` gives OpenTicker's data without a network call:
-  ot.prices(["NVDA", "SPY"])  daily closes, a DataFrame (dates down, tickers across), about two years, for ~1,100 stocks and ETFs
+  ot.prices(["NVDA", "SPY"])  daily closes, a DataFrame (dates down, tickers across), about two years, for ~1,100 stocks and ETFs; others come from Yahoo
   ot.returns(["NVDA", "SPY"])  daily returns of the same
   ot.positions()  the person's positions (t, shares, cost); ot.watchlist()  their watchlist
   ot.style()  call before plotting so charts match the app
   For anything else, use the `openticker` commands or yfinance.
 - Some sites refuse scripts that don't say who they are. SEC EDGAR (sec.gov, data.sec.gov) does, so fetch from it with ot.get(url) or ot.get_json(url), which send a declared user agent and keep under SEC's 10 requests a second; set the same User-Agent header if you use another library. A 403 that says "OpenTicker's workbench refused" means the address is local, not that the site blocked you.
 - To show a chart from code, save it as a PNG in out/ (plt.savefig("out/nvda-drawdown.png")) and put ![short title](out/nvda-drawdown.png) where it belongs in your answer. For a simple line or bar chart, the ```chart block is still better. Anything else you save in out/ (a CSV, say) is offered to the person as a download; mention it.
+- Every command runs inside the sandbox, and a request to run one outside it is refused. Write longer code to a .py file and run `python3 file.py`.
 - Keep scripts small and print only what you need. Never print the code itself in the answer unless asked."""
