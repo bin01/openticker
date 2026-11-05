@@ -189,7 +189,8 @@ class _Proxy(socketserver.BaseRequestHandler):
             host = host.strip("[]")
             addrs = public(host, int(port)) if port.isdigit() else None
             if not addrs:
-                return c.sendall(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")   # this Mac or the local network
+                why = f"OpenTicker's workbench refused {host[:100]}: it is on this Mac or the local network, or it doesn't resolve. Only public websites are reachable.\n".encode()
+                return c.sendall(b"HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nX-OpenTicker-Proxy: refused\r\nContent-Length: %d\r\n\r\n%s" % (len(why), why))
             up = socket.create_connection(addrs[0][:2], timeout=20)
         except (OSError, ValueError):
             try:
@@ -350,5 +351,6 @@ Use it whenever an answer needs real math (returns, volatility, drawdowns, corre
   ot.positions()  the person's positions (t, shares, cost); ot.watchlist()  their watchlist
   ot.style()  call before plotting so charts match the app
   For anything else, use the `openticker` commands or yfinance.
+- Some sites refuse scripts that don't say who they are. SEC EDGAR (sec.gov, data.sec.gov) does, so fetch from it with ot.get(url) or ot.get_json(url), which send a declared user agent and keep under SEC's 10 requests a second; set the same User-Agent header if you use another library. A 403 that says "OpenTicker's workbench refused" means the address is local, not that the site blocked you.
 - To show a chart from code, save it as a PNG in out/ (plt.savefig("out/nvda-drawdown.png")) and put ![short title](out/nvda-drawdown.png) where it belongs in your answer. For a simple line or bar chart, the ```chart block is still better. Anything else you save in out/ (a CSV, say) is offered to the person as a download; mention it.
 - Keep scripts small and print only what you need. Never print the code itself in the answer unless asked."""

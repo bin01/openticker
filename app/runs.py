@@ -77,9 +77,10 @@ def _flusher():
 
 
 def summary(events, label):
-    """What the conversation keeps of an answer: the text the person saw, the steps, which model, any error.
-    Same rules the page uses: statuses before "Asking ..." are setup, and narration before a tool call is dropped."""
-    acc = {"text": "", "steps": [], "tool": False, "by": None, "error": None, "on": False}
+    """What the conversation keeps of an answer: the text the person saw, the work log, which model, any error.
+    Same rules the page uses: statuses before "Asking ..." are setup. What the agent wrote before a tool call is a
+    note in the work log ({"n": text}); each tool call is a step ({"t", "k", "d"}); the text after the last is the answer."""
+    acc = {"text": "", "steps": [], "tool": False, "thk": False, "by": None, "error": None, "on": False}
     for _, kind, p in events:
         if kind == "status" and not acc["on"]:
             acc["on"] = str(p.get("text", "")).startswith("Asking ")
@@ -88,16 +89,37 @@ def summary(events, label):
             acc["text"], acc["tool"], acc["error"] = "", False, None
         elif kind == "text":
             acc["text"] += p.get("text", "")
-            acc["tool"] = False
-        elif kind == "status":
-            acc["steps"].append(p.get("text", ""))
-            acc["tool"] = bool(acc["text"])
+            acc["tool"] = acc["thk"] = False
+        elif kind in ("status", "think"):
+            if acc["text"].strip():          # what it wrote before this step becomes a note in the log
+                acc["steps"].append({"n": acc["text"].strip()[:1500]})
+                acc["text"] = ""
+            if kind == "think":              # a summary of its thinking: one note per thinking block
+                if p.get("new") or not acc["thk"] or not acc["steps"] or not acc["steps"][-1].get("th"):
+                    acc["steps"].append({"n": "", "th": 1})
+                acc["steps"][-1]["n"] = (acc["steps"][-1]["n"] + p.get("text", ""))[:1500]
+                acc["thk"] = True
+                continue
+            acc["thk"] = False
+            step = {"t": p.get("text", "")}
+            for k, f in (("kind", "k"), ("id", "id")):
+                if p.get(k):
+                    step[f] = p[k]
+            if p.get("detail"):
+                step["d"] = str(p["detail"])[:3000]
+            acc["steps"].append(step)
+        elif kind == "fail":                 # a step that failed keeps the end of its output, to show why
+            for st in reversed(acc["steps"]):
+                if p.get("id") and st.get("id") == p["id"]:
+                    st["x"] = str(p.get("text", ""))[-1200:]
+                    break
         elif kind == "turn" and acc["tool"]:
             acc["text"], acc["tool"] = "", False
         elif kind == "meta" and p.get("model"):
             acc["by"] = p["model"]
         elif kind == "error":
             acc["error"] = p.get("message")
+    acc["steps"] = [s for s in acc["steps"] if not (s.get("th") and not s["n"].strip())]
     acc["by"] = label + (f" · {acc['by']}" if acc["by"] else "")
     return acc
 
@@ -211,7 +233,7 @@ def _finish(lv, label):
     lv.flush()
     if row.get("chat_id"):
         try:
-            personal.chat_add(row["user_id"], row["chat_id"], {"role": "assistant", "text": acc["text"], "steps": acc["steps"][:24],
+            personal.chat_add(row["user_id"], row["chat_id"], {"role": "assistant", "text": acc["text"], "steps": acc["steps"][:160],
                                                                "by": acc["by"], "secs": secs, "error": error, "files": files, "ts": time.time()})
         except Exception as e:
             agent.srv.log(f"saving the answer failed: {e!r}")

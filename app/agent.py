@@ -1358,6 +1358,43 @@ AGENT_CMDS = ("stock", "analysts", "earnings", "ownership", "options", "news", "
               "portfolio", "brief", "market", "fund", "compare", "history", "calendar", "search", "skills")
 
 
+def _tool_step(name, inp):
+    """A step for the work log: what it was in words, its kind (for the icon and the group label), and the detail
+    behind it (the command, the code, the query or the page) for when the person opens it."""
+    inp = inp if isinstance(inp, dict) else {}
+    n = (name or "").lower()
+    text = _describe_tool(name, inp)
+    if n in ("bash", "shell", "execute", "exec_command", "local_shell"):
+        cmd = inp.get("command") or inp.get("cmd") or ""
+        cmd = " ".join(cmd) if isinstance(cmd, list) else str(cmd)
+        kind = "data" if re.search(r"\bopenticker\s+\w", cmd) else "run"
+        detail = cmd
+        why = str(inp.get("description") or "").strip().rstrip(".")
+        if kind == "run" and why and len(why) <= 90:      # Claude Code says what each command is for: that reads better than "Running a command"
+            text = why[0].upper() + why[1:]
+    elif n in ("websearch", "web_search"):
+        kind, detail = "search", str(inp.get("query") or "")
+    elif n in ("webfetch", "fetch"):
+        kind, detail = "page", str(inp.get("url") or "")
+    elif n in ("write", "edit", "multiedit", "notebookedit"):
+        kind = "write"
+        f = str(inp.get("file_path") or inp.get("filePath") or inp.get("path") or "")
+        body = inp.get("content") if n == "write" else inp.get("new_string") or inp.get("newString") or ""
+        detail = (f.rsplit("/", 1)[-1] + "\n\n" if f else "") + str(body or "")
+    elif n in ("read", "glob", "grep", "ls", "list"):
+        kind, detail = "read", str(inp.get("file_path") or inp.get("pattern") or inp.get("path") or "")
+    else:
+        kind, detail = "tool", ""
+    return {"text": text, "kind": kind, "detail": detail[:3000]}
+
+
+def _result_text(c):
+    """A tool result's text: Claude Code sends a string or a list of text blocks."""
+    if isinstance(c, list):
+        return "\n".join(str(x.get("text") or "") for x in c if isinstance(x, dict))
+    return str(c or "")
+
+
 def _describe_tool(name, inp):
     if name in ("Bash", "bash", "shell", "execute", "exec_command", "local_shell"):
         cmd = (inp or {}).get("command") or (inp or {}).get("cmd") or ""
@@ -1407,15 +1444,25 @@ def _opencode_model():
     return None
 
 
-def _claude_partial():
-    """Older Claude Code builds lack --include-partial-messages; then the answer arrives whole instead of streaming."""
-    if "v" not in _partial:
+def _claude_help():
+    if "help" not in _partial:
         try:
             r = subprocess.run([_which("claude"), "-p", "--help"], capture_output=True, text=True, timeout=8, env=_env("claude"))
-            _partial["v"] = "--include-partial-messages" in r.stdout
+            _partial["help"] = r.stdout
         except Exception:
-            _partial["v"] = True
-    return _partial["v"]
+            _partial["help"] = None
+    return _partial["help"]
+
+
+def _claude_partial():
+    """Older Claude Code builds lack --include-partial-messages; then the answer arrives whole instead of streaming."""
+    h = _claude_help()
+    return h is None or "--include-partial-messages" in h
+
+
+def _claude_thinking():
+    """Newer builds can stream a summary of the model's thinking, which the work log shows between steps."""
+    return "--thinking-display" in (_claude_help() or "")
 
 
 def _codex_add_dir():
@@ -1499,7 +1546,8 @@ class Run:
     # sandbox (workbench.py); without one, only the read-only openticker data commands and web search.
     def _run_claude(self):
         # the session is kept (in Claude Code's folder for OpenTicker's work dir) so an answer cut off by a restart can resume
-        args = [_which("claude"), "-p", "--output-format", "stream-json", "--verbose"] + (["--include-partial-messages"] if _claude_partial() else []) + [
+        args = [_which("claude"), "-p", "--output-format", "stream-json", "--verbose"] + (["--include-partial-messages"] if _claude_partial() else []) + (
+                ["--thinking-display", "summarized"] if _claude_thinking() else []) + [
                 "--strict-mcp-config", "--permission-mode", "dontAsk"]
         if self.workspace:
             tools, allowed = workbench.claude_tools(self.workspace, AGENT_CMDS)
@@ -1525,17 +1573,28 @@ class Run:
             ty = ev.get("type")
             if ty == "stream_event":
                 e = ev.get("event") or {}
-                if e.get("type") == "content_block_delta" and (e.get("delta") or {}).get("type") == "text_delta":
-                    self.emit("text", {"text": e["delta"]["text"]})
+                d = e.get("delta") or {}
+                if ev.get("parent_tool_use_id"):
+                    pass
+                elif e.get("type") == "content_block_delta" and d.get("type") == "text_delta":
+                    self.emit("text", {"text": d["text"]})
+                elif e.get("type") == "content_block_delta" and d.get("type") == "thinking_delta" and d.get("thinking"):
+                    self.emit("think", {"text": d["thinking"]})
+                elif e.get("type") == "content_block_start" and (e.get("content_block") or {}).get("type") == "thinking":
+                    self.emit("think", {"text": "", "new": True})
                 elif e.get("type") == "message_start" and not ev.get("parent_tool_use_id"):
                     self.emit("turn", {})
             elif ty == "assistant":
                 for b in (ev.get("message") or {}).get("content") or []:
-                    if b.get("type") == "tool_use":
-                        self.emit("status", {"text": _describe_tool(b.get("name"), b.get("input"))})
-                    elif b.get("type") == "text" and not _partial.get("v", True) and not ev.get("parent_tool_use_id"):
+                    if b.get("type") == "tool_use" and not ev.get("parent_tool_use_id"):
+                        self.emit("status", dict(_tool_step(b.get("name"), b.get("input")), id=b.get("id")))
+                    elif b.get("type") == "text" and not _claude_partial() and not ev.get("parent_tool_use_id"):
                         self.emit("turn", {})
                         self.emit("text", {"text": b.get("text") or ""})
+            elif ty == "user":
+                for b in (ev.get("message") or {}).get("content") or []:
+                    if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("is_error"):
+                        self.emit("fail", {"id": b.get("tool_use_id"), "text": _result_text(b.get("content"))[-1200:]})
             elif ty == "system" and ev.get("subtype") == "init" and ev.get("model"):
                 self.emit("meta", {"model": ev.get("model")})
             elif ty == "result":
@@ -1571,9 +1630,9 @@ class Run:
             if ty == "thread.started" and ev.get("thread_id"):
                 self.emit("session", {"id": ev["thread_id"]})
             elif ty == "item.started" and item.get("type") == "command_execution":
-                self.emit("status", {"text": _describe_tool("Bash", {"command": item.get("command")})})
+                self.emit("status", _tool_step("Bash", {"command": item.get("command")}))
             elif ty == "item.started" and item.get("type") == "web_search":
-                self.emit("status", {"text": "Searching the web"})
+                self.emit("status", _tool_step("web_search", {"query": item.get("query") or ""}))
             elif ty == "item.completed" and item.get("type") == "agent_message":
                 self.emit("turn", {})
                 self.emit("text", {"text": item.get("text") or ""})
@@ -1610,7 +1669,7 @@ class Run:
                 self.emit("text", {"text": part.get("text") or ev.get("text")})
             elif ty in ("tool", "tool_use"):
                 st = part.get("state") or {}
-                self.emit("status", {"text": _describe_tool(part.get("tool") or "tool", st.get("input") or {})})
+                self.emit("status", _tool_step(part.get("tool") or "tool", st.get("input") or {}))
         self._finish()
 
     # Ollama: local HTTP API, streamed; no tools, so the prompt carries all the data

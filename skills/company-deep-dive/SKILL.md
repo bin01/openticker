@@ -15,7 +15,7 @@ metadata:
 **Data**:
 - `openticker stock TICKER`, `openticker financials TICKER`, `openticker analysts TICKER` and `openticker earnings TICKER`.
 - `openticker compare TICKER PEER1 PEER2 PEER3`, with three close competitors.
-- The latest 10-K or 20-F and the last two earnings calls or releases, from the SEC or the company's investor site. Use them for revenue by segment and end market, the largest customers and the outlook.
+- The latest 10-K or 20-F and the last two earnings calls or releases, from the SEC or the company's investor site. Use them for revenue by segment and end market, the largest customers and the outlook. SEC EDGAR refuses fetchers that don't say who they are: in the workbench use `ot.get` or `ot.get_json`; otherwise go to the company's investor site.
 - For the biggest customers or end markets, their own latest capex plans or forecasts.
 
 If the person asks only one part (for example only what's priced in), do that part in full and touch the rest in a line or two. The company is the one in view, or the one the conversation is about. If the question is about the market as a whole, not a company, set this playbook aside.

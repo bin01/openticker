@@ -946,7 +946,8 @@ body.tick-docked .live{margin-left:auto}
 /* the conversation */
 .ctxsep{display:flex;align-items:center;gap:10px;margin:4px 0 16px;font:600 11px var(--f-body);color:var(--ink-3)}
 .ctxsep::before,.ctxsep::after{content:"";flex:1;height:1px;background:var(--grid)}
-.am{margin:0 0 22px;animation:rise .25s cubic-bezier(.2,.8,.2,1) both}
+.am{margin:0 0 22px}
+.am.new{animation:rise .25s cubic-bezier(.2,.8,.2,1) both}
 .am.u{display:flex;justify-content:flex-end}
 .am.u p{margin:0;background:var(--tk-fill);border:1px solid var(--tk-line);border-radius:16px 16px 5px 16px;padding:9px 13px;max-width:86%;font-size:14px;line-height:1.5;text-wrap:pretty}
 /* charts and files from Tick's workbench */
@@ -962,37 +963,61 @@ body.tick-docked .live{margin-left:auto}
 .tkfile span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tkfile em{font-style:normal;color:var(--ink-3);font-size:12px;font-variant-numeric:tabular-nums}
 .tkfile .ic{color:var(--ink-3);flex:none}
-/* the work log: a little timeline of what the agent is doing */
-.log{display:grid;gap:8px;margin:0 0 12px}
-.stp{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--ink-2);min-width:0;opacity:var(--f,1);transition:opacity .4s}
-.stp .sl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.stp .sb{position:relative;width:24px;height:22px;flex:none;border:1px solid var(--tk-line);border-radius:7px;display:grid;place-items:center;color:var(--ink-3);background:var(--panel)}
-.log .stp:not(:last-child) .sb::after{content:"";position:absolute;left:50%;top:calc(100% + 1px);width:1px;height:8px;background:var(--tk-line)}
-.stp.now{color:var(--ink)}
-.stp.now .sb{border-color:color-mix(in srgb,#2fb877 45%,var(--tk-line))}
-.stp.now .sb::before{content:"";width:12px;height:12px;border-radius:50%;background:conic-gradient(from 0deg,transparent 0 30%,#2fb877);
+/* the work log, HyperFrames-style: the agent's notes in order, tool calls grouped into chips that open */
+.tr{margin:0 0 14px}
+.tr>summary,.trg>summary,.trs>summary{list-style:none}
+.tr>summary::-webkit-details-marker,.trg>summary::-webkit-details-marker,.trs>summary::-webkit-details-marker{display:none}
+.tr>summary,.trh{display:inline-flex;align-items:center;gap:6px;padding:2px 0;font-size:13px;color:var(--ink-2)}
+.tr>summary{cursor:pointer}
+.tr>summary:hover{color:var(--ink)}
+.tr>summary b{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+.tr>summary .hn{color:var(--ink-3)}
+.tr>summary .hn::before{content:"· "}
+.tr>summary>.ic,.trg>summary>.ic:last-child,.trs>summary>.ic:last-child{color:var(--ink-3);flex:none;transition:transform .2s}
+.tr[open]>summary>.ic,.trg[open]>summary>.ic:last-child,.trs[open]>summary>.ic:last-child{transform:rotate(90deg)}
+.trh{color:var(--ink)}
+.trh .spin,.trs.now .sb::before{content:"";width:12px;height:12px;flex:none;border-radius:50%;background:conic-gradient(from 0deg,transparent 0 30%,#2fb877);
   -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2px),#000 calc(100% - 1.5px));mask:radial-gradient(farthest-side,transparent calc(100% - 2px),#000 calc(100% - 1.5px));animation:spin .9s linear infinite}
-.stp.now .sl{background:linear-gradient(90deg,var(--ink) 0 38%,var(--ink-3) 50%,var(--ink) 62% 100%);background-size:260% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:tkshine 2.2s linear infinite}
-.stp .el{margin-left:auto;padding-left:8px;font:500 11.5px var(--f-body);font-style:normal;color:var(--ink-3);font-variant-numeric:tabular-nums}
-.stp.fresh{animation:stpin .38s cubic-bezier(.2,.8,.2,1) both}
-.stp.just .sb{animation:stpdone .6s ease-out}
-.stp.just .sb .ic{animation:stppop .38s cubic-bezier(.3,1.6,.5,1) both}
-.log .more{font-size:12px;color:var(--ink-3);padding-left:34px;margin-bottom:-2px}
+.trh .sl,.trs.now .sl{background:linear-gradient(90deg,var(--ink) 0 38%,var(--ink-3) 50%,var(--ink) 62% 100%);background-size:260% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:tkshine 2.2s linear infinite}
+.trh .el,.trs .el{font:500 12px var(--f-body);font-style:normal;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.trb{display:grid;gap:9px;margin:9px 0 0 6px;padding:2px 0 2px 16px;border-left:1px solid var(--tk-line)}
+.trn{font-size:13.5px;line-height:1.55;color:var(--ink-2);text-wrap:pretty}
+.trn p{margin:0}
+.trn p+p,.trn ul,.trn ol{margin-top:6px}
+.trn ul,.trn ol{margin-bottom:0;padding-left:18px}
+.trg{justify-self:start;max-width:100%}
+.trg>summary{display:inline-flex;align-items:center;gap:7px;max-width:100%;padding:4px 10px 4px 9px;border:1px solid var(--tk-line);border-radius:999px;
+  background:var(--panel);font-size:12.5px;color:var(--ink-2);cursor:pointer;transition:border-color .15s,color .15s}
+.trg>summary:hover{color:var(--ink);border-color:var(--ink-3)}
+.trg>summary .ic:first-child{color:var(--ink-3);flex:none}
+.trg>summary span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trgl{display:grid;gap:7px;margin:9px 0 2px 2px}
+.trs{font-size:13px;color:var(--ink-2);min-width:0}
+.trs>summary,div.trs{display:flex;align-items:center;gap:9px;min-width:0}
+.trs>summary{cursor:pointer}
+.trs>summary:hover{color:var(--ink)}
+.trs .sb{width:24px;height:22px;flex:none;border:1px solid var(--tk-line);border-radius:7px;display:grid;place-items:center;color:var(--ink-3);background:var(--panel)}
+.trs .sl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.trs .el{margin-left:auto;padding-left:8px}
+.trs>summary .el+.ic{margin-left:6px}
+.trs>summary .sl+.ic{margin-left:auto}
+.trs.now{color:var(--ink)}
+.trs.now .sb{border-color:color-mix(in srgb,#2fb877 45%,var(--tk-line))}
+.trd{margin:7px 0 3px 33px;min-width:0}
+.trd pre{margin:0;padding:9px 11px;max-height:280px;overflow:auto;border-radius:9px;background:var(--grid);font:500 11.5px/1.55 var(--f-code);
+  color:var(--ink);white-space:pre-wrap;word-break:break-word}
+.trd a{font-size:12.5px;word-break:break-all}
+.trd pre+pre{margin-top:6px}
+.trd pre.trx{background:color-mix(in srgb,var(--down) 9%,transparent);color:var(--ink-2)}
+.trs.bad .sb{color:var(--down);border-color:color-mix(in srgb,var(--down) 40%,var(--tk-line))}
+.trn.th{font-size:13px;font-style:italic;color:var(--ink-3)}
+.trhide{justify-self:start;margin-top:2px;padding:3px 0;border:0;background:none;font:inherit;font-size:12.5px;color:var(--ink-3);cursor:pointer}
+.trhide:hover{color:var(--ink)}
+.trn.fresh,.trg.fresh,.trs.fresh{animation:stpin .38s cubic-bezier(.2,.8,.2,1) both}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes tkshine{from{background-position:100% 0}to{background-position:-60% 0}}
-@keyframes stpin{from{opacity:0;transform:translateY(7px)}to{opacity:var(--f,1);transform:none}}
-@keyframes stppop{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}
-@keyframes stpdone{0%{border-color:#2fb877;box-shadow:0 0 0 3px color-mix(in srgb,#2fb877 22%,transparent)}100%{box-shadow:0 0 0 0 transparent}}
-@media (prefers-reduced-motion:reduce){.stp.fresh,.stp.just .sb,.stp.just .sb .ic,.how{animation:none}.stp.now .sl{animation:none;color:var(--ink);background:none}}
-.how{margin:0 0 10px;animation:rise .3s cubic-bezier(.2,.8,.2,1) both}
-.how .hn{color:var(--ink-3);margin-left:4px}
-.how .hn::before{content:"· ";}
-.how summary{list-style:none;display:inline-flex;align-items:center;gap:4px;cursor:pointer;padding:2px 0;font-size:13px;color:var(--ink-2)}
-.how summary::-webkit-details-marker{display:none}
-.how summary .ic{color:var(--ink-3);transition:transform .2s}
-.how summary:hover{color:var(--ink)}
-.how[open] summary .ic{transform:rotate(90deg)}
-.how .log{margin:10px 0 4px}
+@keyframes stpin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.trn.fresh,.trg.fresh,.trs.fresh{animation:none}.trh .sl,.trs.now .sl{animation:none;color:var(--ink);background:none}}
 
 /* conversations */
 .hist-h{display:flex;align-items:center;justify-content:space-between;margin:0 0 10px}

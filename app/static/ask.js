@@ -373,18 +373,52 @@ function noticings(c){
 function greeting(){ const h=new Date().getHours(); return h<5?"Up late.":h<12?"Good morning.":h<17?"Good afternoon.":"Good evening."; }
 
 /* rendering ------------------------------------------------------------------------------------------ */
-function stepIcon(t){ return /^(Running|Writing|Editing|Installing|Reading [\w.-]+\.\w+$)/.test(t)&&!/^Running a command/.test(t)?"code":/^Searching/.test(t)?"search":/web page/.test(t)?"globe":/news/.test(t)?"news":/^Checking/.test(t)?"chart":"term"; }
-/* one step of the work log. now: the step under way (a spinning ring, its label shimmering, a running clock);
-   fresh: it just arrived and slides in; just: it just finished and its icon pops in; fade: older steps recede */
-const stepRow=(t,now,o={})=>`<div class="stp${now?" now":""}${o.fresh?" fresh":""}${o.just?" just":""}"${o.fade?` style="--f:${o.fade}"`:""}><i class="sb">${now?"":ic(stepIcon(t),12)}</i><span class="sl">${esc(t)}</span>${now&&o.since?`<em class="el" data-since="${o.since}">${stepClock(o.since)}</em>`:""}</div>`;
+let AM_SEEN=0;   // messages already on screen: only newer ones play their entrance
+/* the work log, the way HyperFrames shows it: the agent's notes in order, its tool calls grouped into chips that open
+   to the command, code, query or page behind each. Live, it stays open and the current step spins; when the answer is
+   done it folds into "Worked for 1m 3s". What the person opens or closes stays that way (ASK.trOpen). */
+const STEP_IC={data:"chart",search:"search",page:"globe",run:"term",write:"code",read:"file",tool:"term"};
+const stepKind=s=>s.k||(/^Searching/.test(s.t)?"search":/web page/.test(s.t)?"page":/^Checking/.test(s.t)?"data":/^(Writing|Editing)/.test(s.t)?"write":/^(Running|Installing)/.test(s.t)&&!/^Running a command/.test(s.t)?"run":"tool");
+const trItems=m=>(m.steps||[]).filter(s=>s&&!(s.th&&!s.n.trim())).map(s=>typeof s==="string"?{t:s}:s);
 const stepClock=since=>{ const s=Math.round((Date.now()-since)/1000); return s<3?"":dur(s); };
-setInterval(()=>document.querySelectorAll("#askB .stp.now .el").forEach(e=>{ e.textContent=stepClock(+e.dataset.since); }),1000);
-function liveLog(m,steps){
-  const at=m.stepAt||[], n=steps.length, rows=n?steps.slice(-5):[m.status||"Thinking"], off=n-rows.length, t=Date.now();
-  return `<div class="log going" data-sig="${n}|${n?"":esc(m.status||"")}">${n>5?`<div class="more">${n-5} earlier step${n-5>1?"s":""}</div>`:""}${rows.map((x,k)=>{
-    const last=k===rows.length-1, j=off+k, back=rows.length-1-k;
-    return stepRow(x,last,{fresh:last&&(!n||t-(at[j]||0)<900),just:!last&&j===n-2&&t-(at[n-1]||0)<900,since:last?(n?at[j]:m.t0):0,fade:back?Math.max(.42,1-back*.16).toFixed(2):0});
-  }).join("")}</div>`;
+setInterval(()=>document.querySelectorAll("#askB .el[data-since]").forEach(e=>{ e.textContent=stepClock(+e.dataset.since); }),1000);
+ASK.trOpen=ASK.trOpen||{};
+const trIsOpen=(k,dflt)=>k in ASK.trOpen?ASK.trOpen[k]:dflt;
+document.addEventListener("click",e=>{ const h=e.target.closest("#askB [data-trhide]"); if(!h) return; const d=h.closest("details.tr"); if(d){ d.open=false; ASK.trOpen[h.dataset.trhide]=false; d.querySelector("summary")?.scrollIntoView({block:"nearest"}); } });
+document.addEventListener("click",e=>{ const s=e.target.closest("#askB details[data-k]>summary"); if(!s) return; const d=s.parentNode; setTimeout(()=>{ ASK.trOpen[d.dataset.k]=d.open; },0); });
+function trGroupLabel(g){
+  const c={}; g.forEach(s=>{ const k=stepKind(s); c[k]=(c[k]||0)+1; });
+  const W={data:n=>`pulled ${n} data set${n>1?"s":""}`,search:n=>n>1?`searched the web ${n} times`:"searched the web",page:n=>`read ${n} web page${n>1?"s":""}`,
+    run:n=>`ran ${n} command${n>1?"s":""}`,write:n=>`wrote ${n} file${n>1?"s":""}`,read:n=>`looked at ${n} file${n>1?"s":""}`,tool:n=>`used ${n} tool${n>1?"s":""}`};
+  const p=Object.entries(c).sort((a,b)=>b[1]-a[1]).map(([k,n])=>W[k](n)), t=p.slice(0,2).join(", ")+(p.length>2?` and ${p.length-2} more`:"");
+  return t[0].toUpperCase()+t.slice(1);
+}
+function trStep(s,o){
+  const k=stepKind(s), d=s.d||"";
+  const det=(!d?"":k==="page"&&/^https?:\/\/\S+$/.test(d)?`<a href="${esc(d)}" target="_blank" rel="noopener noreferrer">${esc(d)}</a>`:`<pre>${esc(d)}</pre>`)
+    +(s.x!=null?`<pre class="trx">${esc(s.x.trim()||"It failed without saying why.")}</pre>`:"");
+  const row=`<i class="sb">${o.now?"":ic(STEP_IC[k]||"term",12)}</i><span class="sl">${esc(s.t)}</span>${o.now&&o.since?`<em class="el" data-since="${o.since}">${stepClock(o.since)}</em>`:""}${det?ic("chevr",12):""}`;
+  const cls=`trs${o.now?" now":""}${o.fresh?" fresh":""}${s.x!=null?" bad":""}`;
+  return det?`<details class="${cls}" data-k="${o.key}"${trIsOpen(o.key,false)?" open":""}><summary>${row}</summary><div class="trd">${det}</div></details>`:`<div class="${cls}">${row}</div>`;
+}
+function trace(m,i){
+  const items=trItems(m), live=!m.done, seen=m._seen??(live?0:items.length); m._seen=items.length;
+  if(!live&&!items.length) return "";
+  const blocks=[];
+  items.forEach((s,j)=>{ if(s.n!=null) blocks.push({n:s.n,th:s.th,j}); else { const b=blocks[blocks.length-1]; if(b?.g) b.g.push([s,j]); else blocks.push({g:[[s,j]],j}); } });
+  const last=blocks.length-1, nSteps=items.filter(s=>s.n==null).length;
+  let body=blocks.map((b,bi)=>{
+    const fresh=b.j>=seen?" fresh":"";
+    if(b.n!=null) return `<div class="trn${b.th?" th":""}${fresh}">${mdToHtml(b.n.trim())}</div>`;
+    const going=live&&bi===last, key=`${i}-g${b.j}`;
+    const rows=b.g.map(([s,j],x)=>trStep(s,{key:`${i}-s${j}`,now:going&&x===b.g.length-1&&!m.text&&s.x==null,since:s.at,fresh:j>=seen})).join("");
+    return `<details class="trg${fresh}" data-k="${key}"${trIsOpen(key,going)?" open":""}><summary>${ic(STEP_IC[stepKind(b.g[b.g.length-1][0])]||"term",13)}<span>${esc(trGroupLabel(b.g.map(x=>x[0])))}</span>${ic("chevr",12)}</summary><div class="trgl">${rows}</div></details>`;
+  }).join("");
+  if(live&&!items.length) body=`<div class="trs now${seen?"":" fresh"}"><i class="sb"></i><span class="sl">${esc(m.status||"Thinking")}</span></div>`;
+  const sig=`${items.length}|${live?1:0}|${m.text?1:0}|${items.length?"":esc(m.status||"")}`;
+  if(live) return `<div class="tr going" data-sig="${sig}"><div class="trh"><i class="spin"></i><span class="sl">${m.text?"Writing":"Working"}</span><em class="el" data-since="${m.t0}">${stepClock(m.t0)}</em></div><div class="trb">${body}</div></div>`;
+  const key=`${i}-tr`;
+  return `<details class="tr" data-k="${key}" data-sig="${sig}"${trIsOpen(key,false)?" open":""}><summary>Worked for <b>${dur(m.secs||0)}</b><span class="hn">${nSteps} step${nSteps===1?"":"s"}</span>${ic("chevr",13)}</summary><div class="trb">${body}<button class="trhide" data-trhide="${key}">Hide steps</button></div></details>`;
 }
 const dur=s=>s<60?s+"s":Math.floor(s/60)+"m "+(s%60)+"s";
 function askRender(){
@@ -416,34 +450,45 @@ function askRender(){
     const AP=$("#askAllPb"); if(AP) AP.onclick=()=>{ const Q=$("#askQ"); Q.value="/"; Q.focus(); Q.setSelectionRange(1,1); askPopUpdate(); };
     ASK.notes=N; return;
   }
-  let lastCtx=null;
+  let lastCtx=null; AM_SEEN=Math.min(AM_SEEN,ASK.conv.length);
   B.innerHTML=ASK.conv.map((m,i)=>{
     if(m.role==="user"){ const k=m.ctx?ctxLabel(m.ctx):null, show=k&&k!==lastCtx; lastCtx=k||lastCtx;
-      return `${show?`<div class="ctxsep"><span>${esc(k)}</span></div>`:""}<div class="am u"><p>${esc(m.text)}</p></div>`; }
+      return `${show?`<div class="ctxsep"><span>${esc(k)}</span></div>`:""}<div class="am u${i>=AM_SEEN?" new":""}"><p>${esc(m.text)}</p></div>`; }
     return amHTML(m,i);
   }).join("");
-  drawCharts(B,true);
+  drawCharts(B,true); AM_SEEN=ASK.conv.length;
   if(ASK.stick!==false) B.scrollTop=B.scrollHeight;
 }
 function amHTML(m,i){
-    const live=!m.done, steps=(m.steps||[]).filter(Boolean);
-    return `<div class="am a${live?" busy":""}" data-i="${i}">
-      ${live&&!m.text?liveLog(m,steps)
-        :steps.length?`<details class="how" data-sig="${steps.length}"><summary>How I got there<span class="hn">${steps.length} step${steps.length>1?"s":""}</span>${ic("chevr",13)}</summary><div class="log">${steps.map(s=>stepRow(s)).join("")}</div></details>`:""}
+    const live=!m.done, tr=trace(m,i);
+    return `<div class="am a${live?" busy":""}${i>=AM_SEEN?" new":""}" data-i="${i}">
+      ${tr}
       <div class="md">${mdToHtml(m.text,m)}${live&&m.text?`<span class="caret"></span>`:""}</div>${askFiles(m)}
       ${m.error?`<div class="aerr">${esc(m.error)}</div>`:""}
-      ${m.done?`<div class="af">${m.text?`<button class="ib" data-ask-copy="${i}" title="Copy" aria-label="Copy">${ic("copy",14)}</button>`:""}${i===ASK.conv.length-1?`<button class="ib" data-ask-retry title="Ask again" aria-label="Ask again">${ic("retry",14)}</button>`:""}<span>${m.secs!=null?`Worked for <b>${dur(m.secs)}</b>`:""}${m.by?` · ${esc(m.by.split(" · ").map((x,j)=>j?prettyModel(x):x).join(" · "))}`:""}</span></div>`:""}</div>`;
+      ${m.done?`<div class="af">${m.text?`<button class="ib" data-ask-copy="${i}" title="Copy" aria-label="Copy">${ic("copy",14)}</button>`:""}${i===ASK.conv.length-1?`<button class="ib" data-ask-retry title="Ask again" aria-label="Ask again">${ic("retry",14)}</button>`:""}<span>${m.secs!=null&&!tr?`Worked for <b>${dur(m.secs)}</b>`:""}${m.by?`${m.secs!=null&&!tr?" · ":""}${esc(m.by.split(" · ").map((x,j)=>j?prettyModel(x):x).join(" · "))}`:""}</span></div>`:""}</div>`;
 }
 /* While Tick streams, only the answer being written changes: patch that one message in place instead of rebuilding
    the conversation every frame, keep charts that are already drawn, and keep "How I got there" open if it was. */
+/* Turn the live answer's DOM into the new markup in place: nodes that didn't change are kept as they are (animations keep running),
+   text is updated in its node, drawn charts are kept, and a work-log section the person opened or closed stays that way. */
+function morph(o,n){
+  const keep=a=>a==="open"&&o.tagName==="DETAILS"&&o.dataset.k in ASK.trOpen;
+  for(const a of [...o.attributes]) if(!n.hasAttribute(a.name)&&!keep(a.name)) o.removeAttribute(a.name);
+  for(const a of [...n.attributes]) if(o.getAttribute(a.name)!==a.value&&!keep(a.name)) o.setAttribute(a.name,a.value);
+  const ok=[...o.childNodes], nk=[...n.childNodes];
+  nk.forEach((c,j)=>{ const p=ok[j];
+    if(!p) o.appendChild(c);
+    else if(p.nodeType!==c.nodeType||(c.nodeType===1&&p.tagName!==c.tagName)) o.replaceChild(c,p);
+    else if(c.nodeType!==1){ if(p.nodeValue!==c.nodeValue) p.nodeValue=c.nodeValue; }
+    else if(p.matches("figure.tkc[data-drawn]")&&p.dataset.c===c.dataset.c) return;
+    else if(!p.isEqualNode(c)) morph(p,c); });
+  for(let j=ok.length-1;j>=nk.length;j--) ok[j].remove();
+}
 function askPatchLive(){
   const B=$("#askB"), i=ASK.conv.length-1, m=ASK.conv[i]; if(!B||ASK.view||!m||m.role==="user") return false;
   const el=B.querySelector(`.am.a[data-i="${i}"]`); if(!el) return false;
   const tmp=document.createElement("div"); tmp.innerHTML=amHTML(m,i); const nu=tmp.firstElementChild; if(!nu) return false;
-  const drawn=new Map([...el.querySelectorAll("figure.tkc[data-drawn]")].map(f=>[f.dataset.c,f]));
-  nu.querySelectorAll("figure.tkc[data-c]").forEach(f=>{ const o=drawn.get(f.dataset.c); if(o) f.replaceWith(o); });
-  for(const q of [".log.going","details.how"]){ const o=el.querySelector(q), n=nu.querySelector(q); if(o&&n&&o.dataset.sig===n.dataset.sig) n.replaceWith(o); }
-  el.replaceWith(nu); drawCharts(nu);
+  morph(el,nu); drawCharts(el);   // change only what changed, so nothing replays its entrance or restarts a spinner
   if(ASK.stick!==false) B.scrollTop=B.scrollHeight;
   return true;
 }
@@ -551,8 +596,15 @@ async function askSend({q,skill,retry}){
 const askLiveMsg=by=>({role:"assistant",text:"",status:"Gathering the data",steps:[],stepAt:[],done:false,by,t0:Date.now()});
 function askApply(msg,prov,st,ev,data){
   if(ev==="run"){ msg.run=data.id; msg.t0=data.started*1000; }
-  else if(ev==="text"){ if(!msg.text) msg.textAt=Date.now(); msg.text+=data.text; st.toolSince=false; msg.status="Writing"; }
-  else if(ev==="status"){ msg.status=data.text; if(st.started){ msg.steps.push(data.text); msg.stepAt.push(Date.now()); } else if(/^Asking /.test(data.text)){ st.started=true; msg.status="Reading the numbers"; } if(msg.text) st.toolSince=true; }
+  else if(ev==="text"){ if(!msg.text) msg.textAt=Date.now(); msg.text+=data.text; st.toolSince=st.thk=false; msg.status="Writing"; }
+  else if(ev==="think"){ if(msg.text.trim()){ msg.steps.push({n:msg.text.trim()}); msg.text=""; }   // a summary of its thinking, one note per block
+    const l=msg.steps[msg.steps.length-1]; if(data.new||!st.thk||!l?.th) msg.steps.push({n:"",th:1});
+    msg.steps[msg.steps.length-1].n+=data.text||""; st.thk=true; msg.status="Thinking"; }
+  else if(ev==="fail"){ const s=[...msg.steps].reverse().find(x=>data.id&&x.id===data.id); if(s) s.x=data.text; }
+  else if(ev==="status"){ msg.status=data.text; st.thk=false;
+    if(st.started){ if(msg.text.trim()){ msg.steps.push({n:msg.text.trim()}); msg.text=""; }   // what it wrote before this step is a note in the log
+      msg.steps.push({t:data.text,k:data.kind,d:data.detail,id:data.id,at:Date.now()}); }
+    else if(/^Asking /.test(data.text)){ st.started=true; msg.status="Reading the numbers"; } }
   else if(ev==="reset"){ msg.text=""; msg.error=null; st.toolSince=false; }
   else if(ev==="turn"){ if(st.toolSince){ msg.text=""; st.toolSince=false; } }   // drop "let me check…" narration once the agent has looked something up
   else if(ev==="meta"&&data.model){ msg.by=`${prov?.label||msg.by.split(" · ")[0]} · ${data.model}`; if(prov){ const k=askModelOf(prov); prov.seen={...(prov.seen||{}),[k]:data.model}; } }

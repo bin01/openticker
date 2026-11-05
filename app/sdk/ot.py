@@ -6,9 +6,17 @@ the sandbox with no network. See app/workbench.py.
     r = ot.returns(["NVDA", "SPY"])      # daily returns
     ot.positions(), ot.watchlist()       # the person's own
     ot.style()                           # charts that match the app, in light and dark
+    ot.get_json("https://data.sec.gov/submissions/CIK0001045810.json")   # web data, with a declared user agent
 """
 import json
 import os
+import time
+import urllib.parse
+import urllib.request
+
+# Sites like SEC EDGAR refuse the default user agents of Python libraries and ask automated tools to say who they are.
+USER_AGENT = os.environ.get("OT_USER_AGENT") or "OpenTicker/0.1 (personal research tool; github.com/bin01/openticker; openticker@users.noreply.github.com)"
+_last = {}
 
 _cache = {}
 
@@ -65,6 +73,29 @@ def positions():
 
 def watchlist():
     return list(_you().get("watchlist") or [])
+
+
+def get(url, headers=None, timeout=30):
+    """A web page or file as text, fetched with OpenTicker's declared user agent. Paced to under 10 requests a second per
+    site, which SEC asks for. Raises urllib.error.HTTPError (with .code) when the site says no."""
+    return _fetch(url, headers, timeout).decode("utf-8", "replace")
+
+
+def get_json(url, headers=None, timeout=30):
+    """The same as get(), parsed as JSON."""
+    return json.loads(_fetch(url, headers, timeout))
+
+
+def _fetch(url, headers, timeout):
+    host = urllib.parse.urlsplit(url).hostname or ""
+    wait = _last.get(host, 0) + 0.12 - time.time()
+    if wait > 0:
+        time.sleep(wait)
+    _last[host] = time.time()
+    h = {"User-Agent": USER_AGENT, "Accept-Encoding": "identity"}
+    h.update(headers or {})
+    with urllib.request.urlopen(urllib.request.Request(url, headers=h), timeout=timeout) as r:
+        return r.read()
 
 
 def style():
