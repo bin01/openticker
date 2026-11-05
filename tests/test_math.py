@@ -12,6 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
 import agent  # noqa: E402
+import levels  # noqa: E402
 
 
 def bars(closes, spread=0.01, vol=1_000_000, start=dt.date(2025, 1, 2)):
@@ -112,14 +113,38 @@ class Levels(unittest.TestCase):
         # a wave between 90 and 110, so the highs cluster near 110 and the lows near 90
         closes = [100 + 10 * math.sin(i / 6) for i in range(160)]
         b = bars(closes, spread=0.002)
-        lv = agent._levels(b["h"], b["l"], b["c"], b["d"])
-        tops = [x for x in lv if x[0] > 105]
-        bottoms = [x for x in lv if x[0] < 95]
+        lv, tol = levels.key_levels(b["h"], b["l"], b["c"], b["d"])
+        tops = [x for x in lv if x["p"] > 105]
+        bottoms = [x for x in lv if x["p"] < 95]
         self.assertEqual(len(tops), 1)
         self.assertEqual(len(bottoms), 1)
-        self.assertAlmostEqual(tops[0][0], 110, delta=0.6)
-        self.assertAlmostEqual(bottoms[0][0], 90, delta=0.6)
-        self.assertGreaterEqual(tops[0][1], 3)            # the wave peaks several times in 6 months
+        self.assertAlmostEqual(tops[0]["p"], 110, delta=0.6)
+        self.assertAlmostEqual(bottoms[0]["p"], 90, delta=0.6)
+        self.assertGreaterEqual(tops[0]["touches"], 3)     # the wave peaks several times
+        self.assertLessEqual(tops[0]["lo"], tops[0]["p"])
+        self.assertGreaterEqual(tops[0]["hi"], tops[0]["p"])
+        self.assertEqual(tops[0]["strength"], 3)
+        self.assertFalse(tops[0]["flip"])
+
+    def test_a_broken_ceiling_becomes_a_floor(self):
+        # three peaks at 110, a break to 120, then two pullbacks that hold at 110: one level, hit from both sides
+        closes = ([100 + 10 * math.sin(i / 4) for i in range(75)] + [110 + i for i in range(10)]
+                  + [120 - 10 * abs(math.sin(i / 4)) for i in range(40)] + [121] * 3)
+        b = bars(closes, spread=0.002)
+        lv, tol = levels.key_levels(b["h"], b["l"], b["c"], b["d"])
+        at110 = min(lv, key=lambda x: abs(x["p"] - 110))
+        self.assertAlmostEqual(at110["p"], 110, delta=1)
+        self.assertTrue(at110["flip"])
+        near = levels.nearest(lv, 121, tol)
+        self.assertEqual(near["resistance"], [])            # above the old highs: nothing overhead
+        self.assertTrue(any(x is at110 for x in near["support"]))
+
+    def test_nearest_skips_one_touch_noise(self):
+        lv = [{"p": p, "touches": t} for p, t in ((105, 1), (108, 1), (112, 3), (95, 2), (97, 1), (90, 1))]
+        near = levels.nearest(lv, 100, tol=1)
+        self.assertEqual([x["p"] for x in near["resistance"]], [105, 112])   # the nearest stays even with one touch
+        self.assertEqual([x["p"] for x in near["support"]], [97, 95])
+        self.assertEqual(levels.nearest(lv, 100.4, tol=1)["here"], [])     # nothing with two touches at the price
 
 
 class TechnicalsSection(unittest.TestCase):

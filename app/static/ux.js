@@ -16,6 +16,7 @@ const COMMANDS=[
   {cmd:"cal:ipo",label:"IPO calendar",hint:"Calendar",icon:"calendar",keys:"ipo listings",run:()=>{ calTab="ipo"; save("calTab","ipo"); goPage("calendar"); renderCalendar(); }},
   {cmd:"scr:custom",label:"Build a stock screen",hint:"Screener",icon:"screener",keys:"screen filter find custom build",run:()=>{ scrSel="custom"; save("scr","custom"); goPage("screener"); renderScreener(); }},
   ...[["day_gainers","Today's biggest gainers"],["day_losers","Today's biggest losers"],["most_actives","Most active stocks"]].map(([k,l])=>({cmd:"scr:"+k,label:l,hint:"Screener",icon:"screener",keys:l+" movers",run:()=>{ scrSel=k; save("scr",k); goPage("screener"); renderScreener(); }})),
+  {cmd:"levels",label:"Support and resistance",hint:"Levels",icon:"levels",keys:"levels support resistance chart technical pivot",run:()=>openLevels(drawerOpen?sel:null)},
   {cmd:"alerts",label:"Alerts",hint:"Open",icon:"bell",keys:"alerts notifications bell push",run:()=>openAlerts()},
   {cmd:"theme:light",label:"Light theme",hint:"Theme",icon:"sun",keys:"light theme appearance",run:()=>setTheme("light")},
   {cmd:"theme:dark",label:"Dark theme",hint:"Theme",icon:"moon",keys:"dark theme appearance night",run:()=>setTheme("dark")},

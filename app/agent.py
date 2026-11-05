@@ -27,6 +27,7 @@ from pathlib import Path
 
 import paths  # noqa: E402
 import workbench  # noqa: E402
+from levels import key_levels, nearest  # noqa: E402
 
 HERE = paths.APP
 SKILLS_DIR = paths.SKILLS
@@ -419,29 +420,6 @@ def _rsi(c, n=14):
     return out
 
 
-def _levels(h, l, c, d, look=126, w=5, tol=0.015):
-    """Support and resistance from swing points: a bar whose high (low) is the highest (lowest) of the w bars on
-    each side. Swings within 1.5% of each other are one level; more touches make a level stronger."""
-    n = len(c)
-    pts = []
-    for i in range(max(w, n - look), n - w):
-        if h[i] == max(h[i - w:i + w + 1]):
-            pts.append((h[i], d[i]))
-        if l[i] == min(l[i - w:i + w + 1]):
-            pts.append((l[i], d[i]))
-    pts.sort()
-    groups = []
-    for p, day in pts:
-        if groups and p <= groups[-1]["avg"] * (1 + tol):
-            g = groups[-1]
-            g["px"].append(p)
-            g["avg"] = sum(g["px"]) / len(g["px"])
-            g["last"] = max(g["last"], day)
-        else:
-            groups.append({"px": [p], "avg": p, "last": day})
-    return [(g["avg"], len(g["px"]), g["last"]) for g in groups]
-
-
 def _sector_etf(info):
     key = str(info.get("sector") or "").lower().replace(" ", "-")
     return next((e for e, _, k in srv.X.SECTOR_ETFS if k == key), None)
@@ -535,14 +513,18 @@ def sec_technicals(sym, b, info):
     hi_i, lo_i = max(yr, key=lambda i: h[i]), min(yr, key=lambda i: l[i])
     L.append(f"52-week high ${h[hi_i]:,.2f} on {d[hi_i]} ({_pct(last / h[hi_i] - 1)} from it, {n - 1 - hi_i} sessions ago); "
              f"low ${l[lo_i]:,.2f} on {d[lo_i]} ({_pct(last / l[lo_i] - 1)} above it).")
-    lv = _levels(h, l, c, d)
-    below = sorted([x for x in lv if x[0] < last * 0.995], key=lambda x: -x[0])[:3]
-    above = sorted([x for x in lv if x[0] > last * 1.005], key=lambda x: x[0])[:3]
-    rows = [["Resistance", f"${p:,.2f}", _pct(p / last - 1), k, day] for p, k, day in reversed(above)] + \
-           [["Support", f"${p:,.2f}", _pct(p / last - 1), k, day] for p, k, day in below]
+    # the same levels the Levels page draws (levels.py)
+    lv, tol = key_levels(h, l, c, d)
+    near = nearest(lv, last, tol)
+    above, below = near["resistance"], near["support"]
+    strength = {1: "light", 2: "moderate", 3: "strong"}
+    row = lambda kind, x: [kind, f"${x['p']:,.2f}", f"${x['lo']:,.2f} to ${x['hi']:,.2f}", _pct(x["p"] / last - 1), x["touches"],
+                           strength[x["strength"]] + (", both ways" if x["flip"] else ""), x["last"]]
+    rows = [row("Resistance", x) for x in reversed(above)] + [row("Support", x) for x in below]
     if rows:
-        L += ["", "Levels from swing highs and lows over 6 months (more touches, stronger level):",
-              _table(["Kind", "Price", "From here", "Touches", "Last touch"], rows)]
+        L += ["", "Support and resistance from swing highs and lows over the past year (the Levels page shows the same). Swings within "
+              f"${tol:,.2f} are one zone; more touches and recent ones make a level stronger; \"both ways\" means it has acted as support and resistance:",
+              _table(["Kind", "Level", "Zone", "From here", "Touches", "Strength", "Last touch"], rows)]
 
     # relative strength against the market and the sector
     def ret(cs, k):

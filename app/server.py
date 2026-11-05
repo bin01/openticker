@@ -1507,6 +1507,8 @@ def _live_ttl(open_ttl, closed_ttl):
     return open_ttl if market_open() else closed_ttl
 
 
+LEVEL_INDEXES = {"^GSPC", "^NDX", "^IXIC", "^DJI", "^RUT", "^VIX"}   # indexes the Levels page can chart besides tickers
+
 EXTRA = {
     # name: (needs ticker, ttl seconds, function(sym, query))
     "analysts":   (True,  6 * 3600,  lambda s, q: X.analysts(s)),
@@ -1515,6 +1517,7 @@ EXTRA = {
     "options":    (True,  None,      lambda s, q: X.options(s, _upcoming_earnings(s), (q.get("exp") or [None])[0])),
     "events":     (True,  24 * 3600, lambda s, q: X.events(s)),
     "ohlc":       (True,  None,      lambda s, q: X.ohlc(s)),
+    "levels":     (True,  None,      lambda s, q: X.levels(s)),
     "etf":        (True,  24 * 3600, lambda s, q: X.etf(s)),
     "macro":      (False, None,      lambda s, q: {"daily": cached(("macro-daily",), 1800, X.macro_daily),
                                                    "intraday": cached(("macro-intra",), _live_ttl(60, 1800), X.macro_intraday),
@@ -1539,11 +1542,11 @@ def extra(name, q):
     sym = None
     if needs:
         sym = yahoo_symbol((q.get("t") or [""])[0])
-        if not VALID.fullmatch(sym):
+        if not (VALID.fullmatch(sym) or name == "levels" and sym in LEVEL_INDEXES):
             raise ValueError("bad symbol")
     if name == "options":
         ttl = _live_ttl(600, 3 * 3600)
-    if name == "ohlc":
+    if name in ("ohlc", "levels"):
         ttl = _live_ttl(300, 6 * 3600)
     if name == "macro":
         return jsonable(fn(sym, q))
