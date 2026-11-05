@@ -699,7 +699,7 @@ def _chrome():
 
 def cmd_shot(args):
     """Screenshot a page with headless Chrome, so an agent can look at what it changed.
-    openticker shot [market|funds|mine|calendar|screener|TICKER] [--dark|--light] [--phone] [--no-tick] [--out FILE]"""
+    openticker shot [market|levels|funds|mine|calendar|screener|TICKER] [--dark|--light] [--phone] [--no-tick] [--out FILE]"""
     chrome = _chrome()
     if not chrome:
         die("needs Google Chrome, Chromium, Edge or Brave for screenshots. Or open the app and look.")
@@ -711,7 +711,7 @@ def cmd_shot(args):
         out = args[i + 1] if i + 1 < len(args) else None
         args = args[:i] + args[i + 2:]
     target = next((a for a in args if not a.startswith("--")), "market")
-    page = target.lower() if target.lower() in ("market", "funds", "mine", "calendar", "screener") else "market/" + target.upper()
+    page = target.lower() if target.lower() in ("market", "levels", "funds", "mine", "calendar", "screener") else "market/" + target.upper()
     theme = "dark" if "--dark" in args else "light" if "--light" in args else "auto"
     phone = "--phone" in args
     q = urllib.parse.urlencode({k: v for k, v in (("theme", theme if theme != "auto" else ""), ("tick", "0" if "--no-tick" in args else "")) if v})

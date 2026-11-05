@@ -2,7 +2,7 @@
    Shares globals with the main script in index.html: base, me, model, fund, hz, $, esc, pct, cls, money, big, etc. */
 
 /* ======================= router ======================= */
-const PAGES=[["market","Market"],["funds","Funds"],["mine","My stocks"],["calendar","Calendar"],["screener","Screener"]];
+const PAGES=[["market","Market"],["levels","Levels"],["funds","Funds"],["mine","My stocks"],["calendar","Calendar"],["screener","Screener"]];
 const PAGE_FUNDS={funds:FUND_LIST,mine:["Watchlist","Portfolio"]};
 let page=load("page","market"); if(!PAGES.some(p=>p[0]===page)) page="market";
 const fundFor={funds:PAGE_FUNDS.funds.includes(load("fund","SPY"))?load("fund","SPY"):"SPY",mine:["Watchlist","Portfolio"].includes(load("fundMine",""))?load("fundMine",""):"Portfolio"};
@@ -17,6 +17,7 @@ function setHash(push){
 function readHash(){
   const h=decodeURIComponent(location.hash.slice(1)); if(!h) return null;
   const [p,t]=h.split("/");
+  if(p==="levels"&&t){ page=p; save("page",p); save("lvT",t); return null; }   // #levels/NVDA opens Levels on NVDA
   if(PAGES.some(x=>x[0]===p)){ page=p; save("page",p); return t||null; }
   if(/^[A-Z][A-Z0-9^=.-]{0,11}$/.test(p)) return p;          // old links like #NVDA
   return null;
@@ -68,6 +69,7 @@ function renderPage(){
   if(page==="market") return renderMarket();
   if(page==="calendar") return renderCalendar();
   if(page==="screener") return renderScreener();
+  if(page==="levels") return renderLevels();
 }
 
 /* ======================= shared bits ======================= */

@@ -467,6 +467,70 @@ tr:hover .lotb{color:var(--ink-2)}
 .ptitle{font:700 clamp(26px,3.2vw,38px)/1.1 var(--f-display);letter-spacing:-.025em;margin:12px 0 0;text-wrap:balance}
 .phead .ptitle{margin:0}
 #cal .phead{flex-direction:column;align-items:flex-start;gap:14px}
+/* Levels page */
+#lvl .phead .hint{max-width:none}#lvl.page{gap:14px}
+.lvtop{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.lvcard{display:flex;flex-direction:column;gap:6px;text-align:left;background:var(--panel);border:1px solid var(--rule);border-radius:16px;padding:13px 13px 12px;min-width:0;cursor:pointer;color:var(--ink);font:inherit;transition:border-color .15s,box-shadow .15s}
+.lvcard:hover{border-color:color-mix(in srgb,var(--ink) 25%,var(--rule))}
+.lvcard[aria-pressed="true"]{border-color:var(--ink);box-shadow:var(--shadow)}
+.lvch{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:0 1px}
+.lvch b{font:700 15px/1.2 var(--f-display);letter-spacing:-.01em;display:block}
+.lvch .hint{margin-top:2px;font-size:11.5px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.lvch>div:first-child{min-width:0}
+.lvpx{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex:none}
+.lvpx span:first-child{font:650 15px/1.2 var(--f-mono)}.lvpx span:last-child{font:500 12px/1.2 var(--f-mono)}
+.lvmini svg{display:block;width:100%;height:auto}
+.lvfoot{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;color:var(--ink-2);padding:0 1px}
+.lvfoot>span{display:flex;align-items:center;gap:7px;white-space:nowrap}
+.lvfoot b{font-weight:600;color:var(--ink)}.lvfoot b+.num{color:var(--ink-3)}
+#lvl i.k{display:inline-block;width:12px;height:3px;border-radius:2px;flex:none}
+#lvl i.k.res{background:var(--down)}#lvl i.k.sup{background:var(--up)}#lvl i.k.here{background:var(--accent)}
+#lvl i.k.m50{background:repeating-linear-gradient(90deg,var(--accent) 0 5px,transparent 5px 8px)}#lvl i.k.m200{background:repeating-linear-gradient(90deg,var(--warn) 0 5px,transparent 5px 8px)}
+.lvmain{padding:18px 20px 16px;scroll-margin-top:84px}
+.lvhead{display:flex;justify-content:space-between;align-items:center;gap:12px 20px;flex-wrap:wrap}
+.lvwho{display:flex;align-items:baseline;gap:10px;min-width:0;flex-wrap:wrap}
+.lvwho h2{font:700 24px/1.15 var(--f-display);letter-spacing:-.02em;margin:0}
+.lvwho .nm{color:var(--ink-3);font-size:13px}
+.lvfind{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lvsrch{position:relative;display:flex;align-items:center}
+.lvsrch>.ic{position:absolute;left:10px;color:var(--ink-3);pointer-events:none}
+#lvQ{width:210px;height:30px;border:1px solid var(--rule);border-radius:9px;background:var(--raise);color:var(--ink);padding:0 10px 0 30px;font:500 13px var(--f-body)}
+#lvQ:focus{outline:2px solid var(--accent);outline-offset:-1px;background:var(--panel)}
+#lvRes{right:0;left:auto;width:380px}
+.lvquick{display:flex;gap:6px;flex-wrap:wrap}
+.lvquick .chip{border:0;cursor:pointer;font-family:var(--f-mono);padding:6px 9px}.lvquick .chip:hover{background:var(--rule);color:var(--ink)}
+.lvread{font:500 15px/1.55 var(--f-body);color:var(--ink-2);margin:8px 0 10px;max-width:96ch;min-height:23px}
+.lvread b{color:var(--ink);font-weight:650}
+.lvbody{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:20px;align-items:start}
+.lvchart{min-width:0;touch-action:pan-y}.lvchart svg{display:block;width:100%;height:auto}
+.lvside{border-left:1px solid var(--rule);padding-left:18px;display:flex;flex-direction:column;gap:10px;min-height:0}
+#lvLad.scr{-webkit-mask-image:linear-gradient(transparent,#000 14px,#000 calc(100% - 14px),transparent);mask-image:linear-gradient(transparent,#000 14px,#000 calc(100% - 14px),transparent)}
+#lvLad{position:relative;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;margin-right:-8px;padding-right:8px;scrollbar-width:thin}
+.lvlad{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.lvlad li{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:10px;padding:8px 0;border-bottom:1px solid var(--grid)}
+.lvlad li:last-child{border-bottom:0}
+.lvlad .lk{display:flex;align-items:center;gap:7px;font:600 12.5px/1.3 var(--f-body);color:var(--ink-2)}
+.lvlad .lp{font:600 14px/1.3 var(--f-mono);text-align:right}
+.lvlad .ld{grid-column:2;font:500 11.5px/1.3 var(--f-mono);color:var(--ink-3);text-align:right}.lvlad .ld.up{color:var(--up)}.lvlad .ld.down{color:var(--down)}
+.lvlad .lm{grid-column:1;grid-row:2;font-size:11.5px;color:var(--ink-3);line-height:1.35}
+.lvlad .resistance .lk{color:var(--down)}.lvlad .support .lk{color:var(--up)}.lvlad .here .lk{color:var(--accent)}
+.lvlad .str{display:inline-flex;gap:2px}.lvlad .str i{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.22}.lvlad .str i.on{opacity:1}
+.lvlad li.now{background:var(--grid);border-radius:10px;border-bottom:0;padding:8px 10px;margin:4px -10px}
+.lvlad li.now .lk{color:var(--ink);font-weight:700}
+.lvlad li.ma .lk{font-weight:500;color:var(--ink-3)}.lvlad li.ma .lk i{display:inline-block;width:12px;height:2px;background:repeating-linear-gradient(90deg,var(--accent) 0 4px,transparent 4px 6px)}
+.lvlad li.ma200 .lk i{background:repeating-linear-gradient(90deg,var(--warn) 0 4px,transparent 4px 6px)}
+.lvlad li.ma .lp{font-weight:500;color:var(--ink-2)}
+@media (max-width:600px){.lvkey{margin-left:36px}}
+.lvkey{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:11.5px;color:var(--ink-3);margin:6px 0 0 46px}
+.lvkey span{display:flex;align-items:center;gap:6px}
+@media (max-width:1100px){.lvbody{grid-template-columns:1fr}.lvside{border-left:0;padding-left:0;border-top:1px solid var(--rule);padding-top:14px}.lvlad{display:block;columns:2;column-gap:28px}.lvlad li{break-inside:avoid}.lvlad li.now{margin:4px 0}}
+@media (max-width:600px){
+  .lvtop{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 -16px;padding:2px 16px 6px;gap:10px;scrollbar-width:none}.lvtop::-webkit-scrollbar{display:none}
+  .lvcard{flex:0 0 82%;scroll-snap-align:center}
+  .lvmain{padding:16px 14px 12px}.lvwho h2{font-size:21px}
+  .lvfind{width:100%}.lvsrch{flex:1}#lvQ{width:100%;font-size:16px;height:36px}#lvRes{width:100%}
+  .lvread{font-size:14px}.lvlad{display:flex;columns:auto}.lvlad li.now{margin:4px -10px}
+}
 input[type=date]:not(.has)::-webkit-datetime-edit{color:var(--ink-3)}
 input[type=date]::-webkit-calendar-picker-indicator{opacity:.5}
 .h4{margin:0 0 8px;font:600 10.5px/1 var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
@@ -691,7 +755,7 @@ html{overflow-y:scroll}
 @media (hover:none) and (pointer:coarse){input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea{font-size:16px!important}}
 .tabbar{display:none}
 @media (max-width:760px){
-  .tabbar{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:0;right:0;bottom:0;z-index:20;background:color-mix(in srgb,var(--panel) 90%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--rule);padding:6px 4px max(8px,env(safe-area-inset-bottom,0px))}
+  .tabbar{display:grid;grid-template-columns:repeat(6,1fr);position:fixed;left:0;right:0;bottom:0;z-index:20;background:color-mix(in srgb,var(--panel) 90%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--rule);padding:6px 4px max(8px,env(safe-area-inset-bottom,0px))}
   .tabbar a{display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px 0;color:var(--ink-3);text-decoration:none;font:600 10.5px/1.1 var(--f-body)}
   .tabbar a.on{color:var(--ink)}.tabbar a.on .ic{color:var(--accent)}
   body{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px))}
@@ -1249,7 +1313,7 @@ body[data-page="mine"] section.keys{display:none}
 
 <script>
 /* ======================= icons ======================= */
-const IC={chev:'<path d="m6 9 6 6 6-6"/>',upload:'<path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M20 15v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4"/>',bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+const IC={search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',levels:'<path d="M3 5h18M3 19h18"/><path d="m4 15 4-6 4 4 4-6 4 4"/>',chev:'<path d="m6 9 6 6 6-6"/>',upload:'<path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M20 15v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4"/>',bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
   sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
   moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
   auto:'<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor"/>',
@@ -1425,7 +1489,7 @@ function render0(){
   renderNav(); buildPseudo(); document.body.dataset.page=page;
   if(!isDash()){
     model=compute();
-    const built={market:"#mkt",calendar:"#cal",screener:"#scr"}[page];
+    const built={market:"#mkt",calendar:"#cal",screener:"#scr",levels:"#lvl"}[page];
     if(page==="market"||!$(built)) renderPage();
     if(drawerOpen) renderDrawer(); lastRender=Date.now(); return;
   }
@@ -1816,7 +1880,7 @@ function drawerShell(r){
    <div class="dr-sec ins-sec"><h4>What stands out</h4><div id="drIns"><div class="sk" style="height:90px"></div></div>${typeof askRow==="function"?askRow(r.t,"stock"):""}</div>
    <div class="dr-body"><div class="dr-main">
      <div class="dr-sec" style="order:1"><div class="ch-head"><div class="seg sm" id="drRng" role="group" aria-label="Chart range"></div>
-       <span class="vsg"><label class="vs"><input type="checkbox" id="drMa" ${showMa?"checked":""}> Averages</label><label class="vs"><input type="checkbox" id="drEv" ${showEv?"checked":""}> Events</label>${isPseudo(fund)?"":`<label class="vs"><input type="checkbox" id="drVs" ${showVs?"checked":""}> vs ${fund}</label>`}</span></div>
+       <span class="vsg"><label class="vs"><input type="checkbox" id="drMa" ${showMa?"checked":""}> Averages</label><label class="vs"><input type="checkbox" id="drEv" ${showEv?"checked":""}> Events</label>${isPseudo(fund)?"":`<label class="vs"><input type="checkbox" id="drVs" ${showVs?"checked":""}> vs ${fund}</label>`}<button class="lnk" data-levels="${esc(r.t)}" title="Support and resistance for ${esc(r.t)}">Levels ›</button></span></div>
        <div class="ch-sum" id="drChSum"></div><div id="drChart"><div class="sk" style="height:250px"></div></div></div>
      ${sec(3,"Analyst view","",`<div id="drAnalyst"><div class="sk" style="height:110px"></div></div>`)}
      ${sec(4,"Next earnings","",`<div id="drEarn"><div class="sk" style="height:60px"></div></div>`)}
@@ -2101,7 +2165,7 @@ new ResizeObserver(()=>document.documentElement.style.setProperty("--hdr",docume
 const tip=$("#tip");
 function showTip(ev,html){ tip.innerHTML=html; tip.style.opacity=1; const x=Math.min(ev.clientX+14,innerWidth-tip.offsetWidth-8),y=ev.clientY+14+tip.offsetHeight>innerHeight?ev.clientY-tip.offsetHeight-10:ev.clientY+14; tip.style.left=x+"px"; tip.style.top=y+"px"; }
 function hideTip(){ tip.style.opacity=0; }
-document.addEventListener("mousemove",e=>{ if(e.target.closest?.("#drChart")) return; const t=e.target.closest?.("[data-tip]"); if(t) showTip(e,t.dataset.tip); else hideTip(); });
+document.addEventListener("mousemove",e=>{ if(e.target.closest?.("#drChart,#lvChart")) return; const t=e.target.closest?.("[data-tip]"); if(t) showTip(e,t.dataset.tip); else hideTip(); });
 document.addEventListener("click",e=>{
   if(!e.target.closest(".srch")) $("#sres").hidden=true;
   const b=e.target.closest("[data-f],[data-h],[data-sort],[data-sel],[data-filter],[data-cr],[data-retry],[data-go],[data-al-open],[data-al-del],#bell,#more,#scrim"); if(!b) return;
@@ -2585,6 +2649,7 @@ poll(); setInterval(poll,3000); setInterval(loadMe,30000);
 <script src="/static/stock-tabs.js"></script>
 <script src="/static/insights.js"></script>
 <script src="/static/pages.js"></script>
+<script src="/static/levels.js"></script>
 <script src="/static/ux.js"></script>
 <script src="/static/ask.js"></script>
 <script src="/static/settings.js"></script>

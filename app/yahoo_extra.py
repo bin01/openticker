@@ -14,6 +14,8 @@ import time
 import pandas as pd
 import yfinance as yf
 
+from levels import key_levels, nearest
+
 NY = "America/New_York"
 
 
@@ -213,6 +215,44 @@ def ohlc(sym):
     h = h.dropna(subset=["Close"])
     return {"d": [i.strftime("%Y-%m-%d") for i in h.index], "o": [clean(x) for x in h["Open"]], "h": [clean(x) for x in h["High"]],
             "l": [clean(x) for x in h["Low"]], "c": [clean(x) for x in h["Close"]], "v": [clean(x) for x in h["Volume"]]}
+
+
+# ---------------------------------------------------------------- support and resistance
+def levels(sym, keep=3):
+    """A year of daily bars with the nearest support and resistance levels around the last price."""
+    tk = yf.Ticker(sym)
+    hist = tk.history(period="2y", interval="1d", auto_adjust=True)
+    if hist is None or hist.empty:
+        raise RuntimeError("Yahoo didn't send price history just now. Try again in a minute.")
+    md = tk.history_metadata or {}
+    px = md.get("regularMarketPrice")
+    # Yahoo leaves the current session's close empty for a while: use the quote's price rather than drop the day
+    if hist["Close"].iloc[-1] != hist["Close"].iloc[-1] and px:
+        hist.loc[hist.index[-1], ["Close", "High", "Low", "Open"]] = [float(px)] * 4
+    hist = hist.dropna(subset=["Close"])
+    if len(hist) < 60:
+        raise RuntimeError("Not enough price history to find levels.")
+    d = [i.strftime("%Y-%m-%d") for i in hist.index]
+    o, h, l, c = ([float(x) for x in hist[k]] for k in ("Open", "High", "Low", "Close"))
+    n, last = len(c), c[-1]
+    lv, tol = key_levels(h, l, c, d)
+    for kind, side in nearest(lv, last, tol, keep).items():
+        for x in side:
+            x["kind"] = kind
+    chosen = sorted([x for x in lv if "kind" in x], key=lambda x: -x["p"])
+    ma = {}
+    for k in (50, 200):
+        if n >= k:
+            ma[str(k)] = [None if i < k - 1 else round(sum(c[i - k + 1:i + 1]) / k, 4) for i in range(n)][-252:]
+    yr = range(max(0, n - 252), n)
+    hi_i, lo_i = max(yr, key=lambda i: h[i]), min(yr, key=lambda i: l[i])
+    prev = c[-2] if n > 1 else None
+    cut = max(0, n - 252)
+    r4 = lambda a: [round(x, 4) for x in a[cut:]]
+    return {"t": sym, "name": md.get("shortName") or md.get("longName"), "last": round(last, 4), "prev": prev and round(prev, 4),
+            "d": d[cut:], "o": r4(o), "h": r4(h), "l": r4(l), "c": r4(c), "ma": ma, "levels": chosen, "tol": round(tol, 4),
+            "hi52": {"p": round(h[hi_i], 4), "d": d[hi_i]}, "lo52": {"p": round(l[lo_i], 4), "d": d[lo_i]},
+            "currency": md.get("currency"), "instrument": md.get("instrumentType")}
 
 
 # ---------------------------------------------------------------- options
