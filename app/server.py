@@ -1849,7 +1849,8 @@ class Handler(BaseHTTPRequestHandler):
                                              "skill": sk["name"] if sk else None, "ts": time.time()})
             except PermissionError:
                 cid = ""
-        spec = {"q": q, "skill": sk["name"] if sk else None, "history": hist, "model": body.get("model"), "effort": body.get("effort"),
+        fit = None if sk else agent.match_skill(q, scope)   # a typed question a playbook says it covers
+        spec = {"q": q, "skill": sk["name"] if sk else fit["name"] if fit else None, "history": hist, "model": body.get("model"), "effort": body.get("effort"),
                 "scope": scope, "t": t or None}
         rid = runs.start(uid, cid, prov, spec, lambda: agent.context_for(scope, t, uid))
         self.follow_run(rid, uid, 0)   # the answer runs on its own: leaving this stream doesn't stop it

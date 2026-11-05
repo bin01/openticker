@@ -3,7 +3,7 @@ name: earnings-preview
 description: Walks through a company's earnings - before a report, the date, the bar to beat, how the stock usually reacts and the move options price in; after a report, the result against expectations, guidance and the reaction. Use when the user asks about earnings, an upcoming report, what to expect, whether a company beat, or how the stock reacted.
 metadata:
   blurb: "Before a report: the bar and the implied move. After: what happened"
-  order: 3
+  order: 4
   label: "Earnings"
   scope: stock
   prompt: "Walk me through {t}'s earnings."

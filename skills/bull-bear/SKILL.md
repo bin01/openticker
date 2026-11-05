@@ -3,7 +3,7 @@ name: bull-bear
 description: Lays out a balanced bull case and bear case for a stock, each point tied to a number, plus what would settle the debate and where the market already leans. Use when the user asks for the bull and bear case, what could go wrong, whether to worry about a stock, or the risks and upside.
 metadata:
   blurb: "Both sides, each tied to a number, and what settles it"
-  order: 6
+  order: 7
   label: "Bull vs bear"
   scope: stock
   prompt: "Lay out the bull and bear case for {t}."

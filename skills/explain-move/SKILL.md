@@ -3,7 +3,7 @@ name: explain-move
 description: Explains why a stock moved, today or over a period, by separating the market, its sector and peers, and stock-specific news, and by sizing the move against a normal day. Use when the user asks why a stock is up or down, what happened to it, or whether a move is unusual.
 metadata:
   blurb: "Market, sector or company news? Sized against a normal day"
-  order: 2
+  order: 3
   label: "Why is it moving?"
   scope: stock
   prompt: "Why is {t} moving?"

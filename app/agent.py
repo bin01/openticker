@@ -1062,7 +1062,8 @@ def _parse_skill(path: Path):
     md = meta.get("metadata") if isinstance(meta.get("metadata"), dict) else {}
     return {"name": meta.get("name") or path.parent.name, "description": meta.get("description", ""),
             "label": md.get("label") or meta.get("name"), "scope": md.get("scope", "any"),
-            "prompt": md.get("prompt", ""), "blurb": md.get("blurb", ""), "order": int(md.get("order") or 9), "hidden": md.get("hidden") == "true", "body": body}
+            "prompt": md.get("prompt", ""), "blurb": md.get("blurb", ""), "order": int(md.get("order") or 9), "hidden": md.get("hidden") == "true", "body": body,
+            "match": md.get("match", "")}
 
 
 def skills():
@@ -1080,6 +1081,19 @@ def skills():
 
 def skill(name):
     return next((s for s in skills() if s["name"] == name), None)
+
+
+def match_skill(q, scope):
+    """A playbook for a typed question, when one says it fits (metadata.match, a regex): "what's priced in at this
+    price?" gets the deep dive's method without the person picking it."""
+    for s in skills():
+        try:
+            # any scope: "what's priced in?" right after talking about TXN is about TXN, whatever page is open
+            if s["match"] and re.search(s["match"], q or "", re.I):
+                return s
+        except re.error:
+            pass
+    return None
 
 
 # ---------------------------------------------------------------- providers (the user's own agents)

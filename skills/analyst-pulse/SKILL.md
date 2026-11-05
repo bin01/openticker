@@ -3,7 +3,7 @@ name: analyst-pulse
 description: Summarizes what Wall Street analysts think of a stock - the rating mix, price targets, recent upgrades and downgrades, and whether earnings estimates are rising or falling. Use when the user asks what analysts say, about price targets, upgrades or downgrades, or estimate revisions.
 metadata:
   blurb: "Ratings, targets and estimate revisions, and their direction"
-  order: 7
+  order: 8
   label: "What analysts say"
   scope: stock
   prompt: "What are analysts saying about {t}?"

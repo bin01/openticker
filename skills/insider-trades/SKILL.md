@@ -3,7 +3,7 @@ name: insider-trades
 description: Explains what a company's insiders (executives and directors) are doing with their own shares - open-market buying, selling, cluster buys, and how much of their stake they've sold - and whether it means anything. Use when the user asks about insider buying or selling, Form 4 filings, whether executives are dumping the stock, or what insiders know.
 metadata:
   blurb: "Who's buying or selling, how much, and whether it means anything"
-  order: 5
+  order: 6
   label: "Insider trades"
   scope: stock
   prompt: "What are insiders doing in {t}?"

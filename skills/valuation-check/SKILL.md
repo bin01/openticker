@@ -3,7 +3,7 @@ name: valuation-check
 description: Answers whether a stock is cheap or expensive by comparing its multiples (P/E, price/sales, PEG) with its growth, its own history and close peers, in plain words. Use when the user asks if a stock is expensive, overvalued or cheap, or about its valuation or P/E.
 metadata:
   blurb: "Multiples against growth and peers, in plain words"
-  order: 8
+  order: 9
   label: "Is it expensive?"
   scope: stock
   prompt: "Is {t} expensive right now?"

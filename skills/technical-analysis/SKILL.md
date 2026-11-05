@@ -3,7 +3,7 @@ name: technical-analysis
 description: Reads a stock's chart in plain English - trend, moving averages, momentum (RSI, MACD), volume, volatility, support and resistance, and strength against the market and its sector. Use when the user asks about the chart, technicals, the trend, support or resistance, whether a stock is overbought or oversold, or where it might find a floor.
 metadata:
   blurb: "Trend, momentum, volume, and the price levels that matter"
-  order: 4
+  order: 5
   label: "Read the chart"
   scope: stock
   prompt: "Read {t}'s chart for me."
