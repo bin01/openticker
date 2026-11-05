@@ -426,6 +426,14 @@ tr:hover .lotb{color:var(--ink-2)}
 .edh span{color:var(--ink-3);font-weight:500}
 .eit{display:grid;grid-template-columns:50px 12px minmax(0,1fr) 36px 50px;column-gap:6px;align-items:baseline;width:100%;border:0;background:none;padding:5px 4px;border-radius:6px;cursor:pointer;color:var(--ink);font-size:12px;text-align:left}
 .eit:hover{background:var(--grid)}
+.eday.open{border-color:var(--ink-3)}.eday.today.open{border-color:var(--accent)}
+.emore{display:flex;align-items:center;gap:4px;margin-top:2px;padding:5px 4px;border:0;border-radius:6px;background:none;color:var(--ink-2);font:500 12px var(--f-body);cursor:pointer}
+.emore:hover{background:var(--grid);color:var(--ink)}
+.emore .ic{transition:transform .15s}.emore[aria-expanded="true"]{color:var(--ink)}.emore[aria-expanded="true"] .ic{transform:rotate(180deg)}
+.eall{grid-column:1/-1;scroll-margin-top:120px;border:1px solid var(--grid);border-radius:12px;padding:8px 8px 6px;background:var(--raise)}
+.eah{display:flex;align-items:center;gap:8px;padding:2px 4px 8px;font:500 12px var(--f-body);color:var(--ink-3)}.eah b{font-weight:600;color:var(--ink)}
+.eax{margin-left:auto;display:grid;place-items:center;width:26px;height:26px;border:0;border-radius:7px;background:none;color:var(--ink-3);cursor:pointer}.eax:hover{background:var(--grid);color:var(--ink)}
+.eall .eits{columns:240px;column-gap:18px}.eall .eit{break-inside:avoid}
 .eit b{font-size:12.5px;overflow:hidden;text-overflow:ellipsis}.eit .et{color:var(--ink-3)}.eit .ew{color:var(--ink-3)}
 .eit .ks{margin:0;grid-column:4/6;text-align:right;white-space:nowrap}.eit>span.up,.eit>span.down,.eit>span.flat,.eit>span.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .tip{position:fixed;pointer-events:none;z-index:40;background:var(--ink);color:var(--bg);font-size:12px;padding:8px 10px;border-radius:8px;max-width:280px;line-height:1.45;opacity:0;transition:opacity .08s;box-shadow:var(--shadow)}
@@ -1237,7 +1245,7 @@ body[data-page="mine"] section.keys{display:none}
 
 <script>
 /* ======================= icons ======================= */
-const IC={upload:'<path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M20 15v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4"/>',bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+const IC={chev:'<path d="m6 9 6 6 6-6"/>',upload:'<path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M20 15v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4"/>',bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
   sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
   moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
   auto:'<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor"/>',
