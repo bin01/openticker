@@ -399,9 +399,18 @@ def _series(syms, period="1y", interval="1d", retry=True):
     return close
 
 
+def _enough(close, syms):
+    """Yahoo sometimes answers a big request with most symbols missing. Treat that as a failure, so the last good copy
+    is served (server.cached) instead of a Market page with no S&P 500 and three sectors."""
+    have = sum(1 for s in syms if s in close.columns and close[s].notna().any())
+    if have < len(syms) * 0.85 or "^GSPC" in syms and not ("^GSPC" in close.columns and close["^GSPC"].notna().any()):
+        raise ValueError(f"Yahoo returned only {have} of {len(syms)} symbols")
+
+
 def macro_daily():
     syms = [m[0] for m in MACRO] + [s[0] for s in SECTOR_ETFS]
     raw = _series(syms, "13mo", "1d")
+    _enough(raw, syms)
     # fill holes inside a series only: Yahoo often leaves today's daily bar empty for a while after the close,
     # and a trailing fill would copy yesterday into today and make every daily change read 0.00%
     close = raw.ffill().where(raw.bfill().notna())
@@ -413,6 +422,7 @@ def macro_daily():
 def macro_intraday():
     syms = [m[0] for m in MACRO] + [s[0] for s in SECTOR_ETFS]
     close = _series(syms, "1d", "5m")
+    _enough(close, syms)
     last, spark, day = {}, {}, {}
     for c in close.columns:
         s = close[c].dropna()

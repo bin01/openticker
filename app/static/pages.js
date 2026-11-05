@@ -218,7 +218,7 @@ function renderMarket(){
   if(!v) return;
   const st=v.status||{}, sp=v.q["^GSPC"];
   $("#mEyebrow").innerHTML=`<span>Market today</span><span>·</span><span class="chip ${st.status==="open"?"up":""}">${st.status==="open"?"● Open":"Closed"}</span>${statusNote(st)?`<span class="hint" style="margin:0">${esc(statusNote(st))}</span>`:""}`;
-  if(sp){ const r=sp.rets["1D"]; $("#mTitle").innerHTML=`S&amp;P 500 <span class="${cls(r)}">${pct(r)}</span>`; }
+  $("#mTitle").innerHTML=sp?.rets?.["1D"]!=null?`S&amp;P 500 <span class="${cls(sp.rets["1D"])}">${pct(sp.rets["1D"])}</span>`:st.status==="open"?"The market is open":"The market is closed";   // no S&P quote from Yahoo: don't leave the loading line up
   $("#mIns").innerHTML=insightList(marketInsights(v));
   // your stocks
   const my=myToday();
