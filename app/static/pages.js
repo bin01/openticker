@@ -332,7 +332,7 @@ function econList(rows,compact){
 }
 
 /* ======================= CALENDAR ======================= */
-let calTab=load("calTab","earn"), calScope=load("calScope","mine");
+let calTab=load("calTab","earn"), calScope=load("calScope","mine"), calDay=null;
 const CAL_TABS=[["earn","Earnings"],["econ","Economy"],["ipo","IPOs"],["splits","Splits"]];
 function renderCalendar(){
   if(!$("#cal")){
@@ -350,7 +350,7 @@ function renderCalendar(){
     $("#calSub").textContent="Who reports, when, and how it went. Weights show how much each company matters to the group.";
     body.innerHTML=`<div class="seg sm" style="margin-bottom:14px">${scopes.map(([k,l])=>`<button data-cs="${k}" aria-pressed="${k===calScope}">${l}</button>`).join("")}</div>
       <section class="panel">${calScope==="mine"&&!W.size?`<p class="hint">Your watchlist and portfolio are empty, so there's nothing to show yet. Pick a fund above, or add stocks from any stock page.</p>`:earnGrid(W,calScope==="mine"?"your stocks":calScope,calScope==="mine")}</section>`;
-    return;
+    placeEall(); return;
   }
   const name=calTab, c=xpeek(name);
   if(!c||c.loading&&!c.data){ body.innerHTML=`<section class="panel">${sk(400)}</section>`; xget(name).then(()=>page==="calendar"&&calTab===name&&renderCalendar()); return; }
@@ -361,6 +361,7 @@ function renderCalendar(){
   if(name==="splits"){ $("#calSub").textContent="Upcoming stock splits and reverse splits for US-listed companies.";
     body.innerHTML=`<section class="panel">${c.data.length?`<div class="tbl-wrap"><table class="hold"><thead><tr><th class="l">Date</th><th class="l">Company</th><th>Split</th><th class="l">Kind</th></tr></thead><tbody>${c.data.map(r=>`<tr data-sel="${esc(r.t)}"><td class="l">${r.date?dayLabel(r.date):"–"}</td><td class="l"><b class="mono">${esc(r.t)}</b> <span class="qn">${esc(r.company||"")}</span></td><td class="num">${r.new}-for-${r.old}</td><td class="l ks">${r.new>r.old?"Split":"Reverse split"}</td></tr>`).join("")}</tbody></table></div>`:`<p class="hint">No splits scheduled in this window.</p>`}</section>`; }
 }
+const CAL_SHOW=10;
 /* earnings grid: W maps ticker -> weight (or null when weights don't apply) */
 function earnGrid(W,label,isMine){
   const today=nyToday();
@@ -370,14 +371,27 @@ function earnGrid(W,label,isMine){
   const byDay=new Map(); items.sort((a,b)=>a.date.localeCompare(b.date)||(b.w??0)-(a.w??0)||a.t.localeCompare(b.t)).forEach(e=>{ if(!byDay.has(e.date)) byDay.set(e.date,[]); byDay.get(e.date).push(e); });
   const up=items.filter(e=>e.date>=today&&e.reported==null), upW=up.reduce((a,e)=>a+(e.w||0),0);
   const done=items.filter(e=>e.reported!=null&&e.surprise!=null), beats=done.filter(e=>e.surprise>0).length;
-  const wtxt=(w)=>`<span class="ew">${w==null?"":w.toFixed(w<1?2:1)+"%"}</span>`;
+  const wtxt=(w)=>`<span class="ew">${w==null?"":w.toFixed(w<1?2:1)+"%"}</span>`, eit=e=>eitHTML(e,wtxt);
   return `<p class="hint" style="margin:0 0 12px">${up.length} ${isMine?(up.length===1?"of your stocks reports":"of your stocks report"):(up.length===1?"holding reports":"holdings report")} in the next two weeks${upW?`, ${upW.toFixed(1)}% of ${esc(label)} by weight`:""}.${done.length?` So far ${beats} of ${done.length} beat estimates.`:""} ☀ before the open, ☾ after the close. Past reports show the earnings surprise, then the stock's move the next session.</p>
    <div class="ecal">${[...byDay].map(([d,list])=>{ const past=d<today||list.every(e=>e.reported!=null), tw=list.reduce((a,e)=>a+(e.w||0),0);
-     return `<div class="eday ${d===today?"today":""} ${past?"past":""}"><div class="edh">${dayLabel(d,today)}${tw?`<span>${tw.toFixed(1)}%</span>`:""}</div>
-     ${list.slice(0,10).map(e=>{ const rx=e.reported!=null?reaction(e.t,e.date,e.timing==="BMO"?9:16):null;
-       return `<button class="eit" data-sel="${esc(e.t)}"><b class="mono">${esc(e.t)}</b><span class="et">${e.timing==="BMO"?"☀":e.timing==="AMC"?"☾":""}</span>${wtxt(e.w)}${e.reported!=null?`<span class="${cls(e.surprise)}">${e.surprise!=null?pct(e.surprise/100,0):""}</span><span class="num ${rx!=null?cls(rx):""}">${rx!=null?pct(rx,1):""}</span>`:`<span class="ks">${e.epsEst!=null?"est "+(e.epsEst<0?"−":"")+"$"+Math.abs(e.epsEst).toFixed(2):""}</span>`}</button>`; }).join("")}
-     ${list.length>10?`<div class="ks" style="padding:4px 8px">+${list.length-10} more</div>`:""}</div>`; }).join("")}</div>`;
+     const open=calDay===d&&list.length>CAL_SHOW;
+     return `<div class="eday ${d===today?"today":""} ${past?"past":""} ${open?"open":""}" data-day="${d}"><div class="edh">${dayLabel(d,today)}${tw?`<span>${tw.toFixed(1)}%</span>`:""}</div>
+     ${list.slice(0,CAL_SHOW).map(eit).join("")}
+     ${list.length>CAL_SHOW?`<button type="button" class="emore" data-eday="${d}" aria-expanded="${open}" aria-controls="eall">${open?"Hide the full list":`Show all ${list.length}`}${ic("chev",12)}</button>`:""}</div>`
+     +(open?`<section class="eall" id="eall" data-for="${d}" aria-label="Everyone reporting ${esc(dayLabel(d,today))}"><div class="eah"><b>${dayLabel(d,today)}</b><span>${list.length} companies${tw?`, ${tw.toFixed(1)}% of ${esc(label)}`:""}</span><button type="button" class="eax" data-eday="${d}" aria-label="Close the full list" title="Close">${ic("close",14)}</button></div><div class="eits">${list.map(eit).join("")}</div></section>`:""); }).join("")}</div>`;
 }
+function eitHTML(e,wtxt){ const rx=e.reported!=null?reaction(e.t,e.date,e.timing==="BMO"?9:16):null;
+       return `<button class="eit" data-sel="${esc(e.t)}"><b class="mono">${esc(e.t)}</b><span class="et">${e.timing==="BMO"?"☀":e.timing==="AMC"?"☾":""}</span>${wtxt(e.w)}${e.reported!=null?`<span class="${cls(e.surprise)}">${e.surprise!=null?pct(e.surprise/100,0):""}</span><span class="num ${rx!=null?cls(rx):""}">${rx!=null?pct(rx,1):""}</span>`:`<span class="ks">${e.epsEst!=null?"est "+(e.epsEst<0?"−":"")+"$"+Math.abs(e.epsEst).toFixed(2):""}</span>`}</button>`;
+}
+/* the full list of one day opens as a band right under that day's row, so the grid keeps its shape */
+function placeEall(){
+  const a=$("#eall"); if(!a) return; const card=$(`.eday[data-day="${a.dataset.for}"]`); if(!card) return;
+  a.remove(); card.hidden=false; let last=card;
+  for(let n=card.nextElementSibling; n&&n.offsetTop===card.offsetTop; n=n.nextElementSibling) last=n;
+  last.after(a);
+  card.hidden=last===card; // one column (a phone): the full list simply takes the day's place
+}
+addEventListener("resize",()=>{ if(page==="calendar") placeEall(); });
 
 /* ======================= SCREENER ======================= */
 let scrSel=load("scr","undervalued_growth_stocks"), scrSort={k:null,dir:-1};
@@ -434,7 +448,7 @@ function renderScreener(){
 
 /* ======================= events for pages ======================= */
 document.addEventListener("click",e=>{
-  const t=e.target.closest("[data-page]:not(body),[data-mr],[data-mov],[data-sector],[data-sector-close],[data-industry],[data-ct],[data-cs],[data-scr],[data-star],[data-retry-x]"); if(!t) return;
+  const t=e.target.closest("[data-page]:not(body),[data-mr],[data-mov],[data-sector],[data-sector-close],[data-industry],[data-ct],[data-cs],[data-eday],[data-scr],[data-star],[data-retry-x]"); if(!t) return;
   if(t.dataset.page){ e.preventDefault(); if(t.dataset.cal) { calTab=t.dataset.cal; save("calTab",calTab); } goPage(t.dataset.page); return; }
   if(t.dataset.mr){ mktRange=t.dataset.mr; save("mktRange",mktRange); renderMarket(); return; }
   if(t.dataset.mov){ save("movers",t.dataset.mov); xget("screen",{name:t.dataset.mov}).then(()=>renderMarket()); renderMarket(); return; }
@@ -442,7 +456,10 @@ document.addEventListener("click",e=>{
   if(t.dataset.sector){ sectorOpen=sectorOpen===t.dataset.sector?null:t.dataset.sector; industryOpen=null; renderMarket(); if(sectorOpen) setTimeout(()=>$("#mSector")?.scrollIntoView({behavior:"smooth",block:"nearest"}),60); return; }
   if(t.dataset.industry){ industryOpen=industryOpen===t.dataset.industry?null:t.dataset.industry; renderSectorDetail(); return; }
   if(t.dataset.ct){ calTab=t.dataset.ct; save("calTab",calTab); renderCalendar(); return; }
-  if(t.dataset.cs){ calScope=t.dataset.cs; save("calScope",calScope); renderCalendar(); return; }
+  if(t.dataset.cs){ calScope=t.dataset.cs; save("calScope",calScope); calDay=null; renderCalendar(); return; }
+  if(t.dataset.eday){ const d=t.dataset.eday, opening=calDay!==d; calDay=opening?d:null; renderCalendar();
+    if(opening){ const a=$("#eall"); a?.querySelector(".eax")?.focus({preventScroll:true}); if(a&&a.getBoundingClientRect().bottom>innerHeight) a.scrollIntoView({behavior:"smooth",block:"start"}); }
+    else $(`.eday[data-day="${d}"] .emore`)?.focus({preventScroll:true}); return; }
   if(t.dataset.scr){ scrSel=t.dataset.scr; save("scr",scrSel); scrSort={k:null,dir:-1}; renderScreener(); return; }
   if(t.dataset.star){ e.stopPropagation(); const s=t.dataset.star, on=!me?.watch?.includes(s); api("/api/me/watch",{t:s,on}).then(()=>{ if(page==="screener") renderScreener(); else if(page==="market") renderMarket(); }).catch(()=>{}); return; }
   if(t.dataset.retryX){ t.disabled=true; t.textContent="Loading…"; xget(t.dataset.retryX,JSON.parse(t.dataset.retryP||"{}"),true).then(()=>{ if(t.closest("#drawer")) return renderTab(); ({market:renderMarket,calendar:renderCalendar,screener:renderScreener}[page]||render)(); }); return; }
