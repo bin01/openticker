@@ -1033,7 +1033,7 @@ def ticker_earnings(sym):
         c = yf.Ticker(sym).calendar or {}
         days = c.get("Earnings Date") or []
         if not days:
-            raise ValueError("no earnings date")
+            return {}        # Yahoo answered: no date is scheduled (funds, or a company that hasn't announced one)
         d = days[0].isoformat() if hasattr(days[0], "isoformat") else str(days[0])
         return {"date": d[:10], "timing": None, "epsEst": jsonable(c.get("Earnings Average")),
                 "revEst": jsonable(c.get("Revenue Average")), "reported": None, "surprise": None, "event": None, "src": "company"}
@@ -1074,8 +1074,10 @@ def earnings_loop():
                     if t in got:
                         continue
                     try:
-                        got[t] = ticker_earnings(t)
-                        filled += 1
+                        e = ticker_earnings(t)
+                        if e:
+                            got[t] = e
+                            filled += 1
                     except Exception:
                         pass
                     time.sleep(0.3)
