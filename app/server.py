@@ -120,6 +120,27 @@ def download_closes(syms, **kw):
     return pd.concat(frames, axis=1).sort_index()
 
 
+def session_closes(syms, day):
+    """Each symbol's last regular-session price on `day` from minute bars. Yahoo's daily download leaves the
+    current session's close empty until well after the close (DUOL on 2026-11-04 had a row with no price), so a
+    symbol fetched from it would otherwise sit at the previous close all evening."""
+    if not syms or not day:
+        return {}
+    try:
+        m = download_closes(syms, period="1d", interval="1m")
+    except Exception as e:
+        log(f"couldn't get {day} from minute bars: {e!r}")
+        return {}
+    if m.empty:
+        return {}
+    days = [pd.Timestamp(i).tz_convert(NY).strftime("%Y-%m-%d") for i in m.index]
+    m = m[[d == day for d in days]]
+    if m.empty:
+        return {}
+    last = m.ffill().iloc[-1]
+    return {t: round(float(v), 4) for t, v in last.items() if v is not None and v == v}
+
+
 # ---------------------------------------------------------------- holdings
 def holdings_ssga(fund):
     """Any SPDR fund: State Street's daily holdings file."""
@@ -297,6 +318,14 @@ class State:
         with self.lock:
             have = {s for s in syms if s in self.px}
             dates = list(self.dates)
+            empty = [s for s in have if self.px[s] and self.px[s][-1] is None and any(v is not None for v in self.px[s][-6:-1])]   # tracked before the session's close was out
+        if empty and dates:
+            got = session_closes(empty, dates[-1])
+            with self.lock:
+                if self.dates == dates:
+                    for t, v in got.items():
+                        self.px[t][-1] = v
+                    self.version += bool(got)
         todo = [s for s in dict.fromkeys(syms) if s not in have]
         if not todo or not dates:
             return have
@@ -311,6 +340,9 @@ class State:
             arr = [None if v != v else round(float(v), 4) for v in col.tolist()]
             if any(v is not None for v in arr):
                 got[sym] = arr
+        holes = [t for t, a in got.items() if a[-1] is None]
+        for t, v in session_closes(holes, dates[-1]).items():
+            got[t][-1] = v
         if not got:
             return have
         with self.lock:
@@ -353,6 +385,14 @@ class State:
                     log(f"filled {day} from minute bars ({int(last.notna().sum())} symbols); the daily download didn't have it yet")
             except Exception as e:
                 log(f"couldn't fill {session} from minute bars: {e!r}")
+        # the same gap for single symbols: the session's row is there but some closes in it are still empty
+        if session and dates and dates[-1] == session:
+            holes = [t for t, a in px.items() if a and a[-1] is None and any(v is not None for v in a[-6:-1])]
+            got = session_closes(holes, session)
+            for t, v in got.items():
+                px[t][-1] = v
+            if holes:
+                log(f"filled {len(got)}/{len(holes)} empty {session} closes from minute bars")
         with self.lock:
             # never go backwards: if the download is behind what we already had, keep our newer session
             if self.dates and dates and self.dates[-1] > dates[-1] and self.dates[-2:-1] == dates[-1:]:
@@ -882,7 +922,13 @@ def fetch_chart(sym, rng):
     ma = None
     if interval == "1d":
         # two years of bars so the 200-day average exists from the first day shown, then trim to the range
-        h = tk.history(period="2y", interval="1d", auto_adjust=True, prepost=False).dropna(subset=["Close"])
+        h = tk.history(period="2y", interval="1d", auto_adjust=True, prepost=False)
+        # Yahoo leaves the current session's close empty until well after the close; use the quote's price for it
+        # rather than dropping the day, or every range would end at yesterday (DUOL's +26% on 2026-11-04)
+        px = (tk.history_metadata or {}).get("regularMarketPrice")
+        if len(h.index) and h["Close"].iloc[-1] != h["Close"].iloc[-1] and px:
+            h.loc[h.index[-1], "Close"] = float(px)
+        h = h.dropna(subset=["Close"])
         avgs = {n: h["Close"].rolling(n).mean() for n in MA_DAYS}
         last = h.index[-1] if len(h.index) else pd.Timestamp.now(tz=NY)
         start = (pd.Timestamp(year=last.year, month=1, day=1, tz=last.tz) if rng == "YTD"

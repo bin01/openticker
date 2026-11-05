@@ -1766,7 +1766,8 @@ function renderDetail(){
   renderAnalyst(r,d);
   // earnings
   const cal=i.calendar||{};
-  $("#drEarn").innerHTML=et?`<div class="stats">
+  $("#drEarn").innerHTML=et&&days<0?`<p class="hint" style="margin:0">Reported ${new Date(et*1000).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}, ${days===-1?"yesterday":-days+" days ago"}. The next date isn't out yet; the results are under Earnings history.</p>`
+    :et?`<div class="stats">
      <div class="stat"><div class="lbl">Date</div><div class="v">${new Date(et*1000).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",year:"numeric"})}</div><div class="ks">${i.isEarningsDateEstimate?"Estimated date":"Confirmed"}${days!=null&&days>=0?` · in ${days} day${days===1?"":"s"}`:""}</div></div>
      <div class="stat"><div class="lbl">EPS estimate</div><div class="v">${cal["Earnings Average"]!=null?"$"+cal["Earnings Average"].toFixed(2):"–"}</div><div class="ks">${cal["Earnings Low"]!=null?`Range $${cal["Earnings Low"].toFixed(2)} to $${cal["Earnings High"].toFixed(2)}`:""}</div></div>
      <div class="stat"><div class="lbl">Revenue estimate</div><div class="v">${big(cal["Revenue Average"])}</div><div class="ks">${cal["Revenue Low"]!=null?`Range ${big(cal["Revenue Low"])} to ${big(cal["Revenue High"])}`:""}</div></div>
@@ -1839,8 +1840,12 @@ function renderKeyStats(){
   }
   el.innerHTML=`<h4 class="kf-h">Key stats</h4>`+cells.join("");
 }
-function earnTs(i){ const now=Date.now()/1000-86400; const c=[i.earningsTimestampStart,i.earningsTimestamp].filter(x=>x&&x>now); if(c.length) return Math.min(...c);
-  const ed=(i.calendar||{})["Earnings Date"]; const s=Array.isArray(ed)?ed[0]:ed; if(s){ const t=Date.parse(s+"T16:00:00Z")/1000; if(t>now) return t; } return null; }
+// The next report, or one from the last few days: Yahoo keeps the date it just reported until it publishes the next
+// one, and "Last earnings Nov 3, just reported" says more than a dash.
+function earnTs(i){ const now=Date.now()/1000-86400, back=now-4*86400; const ts=[i.earningsTimestampStart,i.earningsTimestamp];
+  const ed=(i.calendar||{})["Earnings Date"]; const s=Array.isArray(ed)?ed[0]:ed; if(s) ts.push(Date.parse(s+"T16:00:00Z")/1000);
+  const c=ts.filter(x=>x&&x>now); if(c.length) return Math.min(...c);
+  const p=ts.filter(x=>x&&x>back); return p.length?Math.max(...p):null; }
 function recLabel(i){ const k=i.recommendationKey; if(!k||k==="none") return "–"; return k.replace("_"," ").replace(/\b\w/g,c=>c.toUpperCase()); }
 function recCls(m){ return m==null?"":m<=2.2?"up":m>=3.5?"down":""; }
 function renderAnalyst(r,d,id="drAnalyst"){
