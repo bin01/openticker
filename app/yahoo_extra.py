@@ -482,11 +482,27 @@ def futures_overnight():
 
 
 def market_status():
+    """Whether US stocks are trading, from Yahoo. When Yahoo doesn't answer (it rate-limits now and then), the New York
+    clock decides instead (9:30 to 4 on weekdays; holidays aside), so the page never says closed in the middle of a session."""
     try:
         st = yf.Market("US").status or {}
-        return {"status": st.get("status"), "message": st.get("message"), "open": clean(st.get("open")), "close": clean(st.get("close"))}
+        if st.get("status") in ("open", "closed"):
+            return {"status": st.get("status"), "message": st.get("message"), "open": clean(st.get("open")), "close": clean(st.get("close"))}
     except Exception:
-        return {}
+        pass
+    return clock_status()
+
+
+def clock_status(now=None):
+    t = now or pd.Timestamp.now(tz=NY)
+    day = t.normalize()
+    o, c = day + pd.Timedelta(hours=9, minutes=30), day + pd.Timedelta(hours=16)
+    if t.weekday() < 5 and o <= t < c:
+        return {"status": "open", "message": None, "open": o.isoformat(), "close": c.isoformat(), "src": "clock"}
+    nxt = o if t < o else o + pd.Timedelta(days=1)
+    while nxt.weekday() >= 5:
+        nxt += pd.Timedelta(days=1)
+    return {"status": "closed", "message": None, "open": nxt.isoformat(), "close": None, "src": "clock"}
 
 
 def sector_detail(key):
