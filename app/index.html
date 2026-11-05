@@ -1151,6 +1151,10 @@ body.tick-docked .live{margin-left:auto}
 .agl .btn{min-width:72px;justify-content:center}
 .agcmd,.pairbox{background:var(--raise);border:1px solid var(--rule);border-radius:12px;padding:12px;margin:0 0 12px;font-size:13px;color:var(--ink-2);line-height:1.5}
 .agcmd p,.pairbox p{margin:0}
+.agwait{display:flex;align-items:center;gap:8px;color:var(--ink-3);font-size:12.5px}
+.agwait i{flex:none;width:7px;height:7px;border-radius:50%;background:var(--warn);animation:agw 1.6s ease-in-out infinite}
+.agwait .lnk{margin-left:auto;padding:0}
+@keyframes agw{50%{opacity:.25}}
 .pairl{display:flex;gap:8px;align-items:center;margin:9px 0}
 .pairqr{display:flex;gap:16px;align-items:center;margin:4px 0 6px}
 .pairqr[hidden]{display:none}
