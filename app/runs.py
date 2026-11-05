@@ -136,8 +136,7 @@ def _work(lv, context=None, resume=False):
                 ctx = "(Live data wasn't available just now.)"
             spec["ctx"] = ctx
             spec["prompt"] = agent.build_prompt(spec["q"], ctx, agent.skill(spec["skill"]) if spec.get("skill") else None,
-                                                spec.get("history") or [], tools=prov != "ollama", bench=bench,
-                                                focus=agent.focus_line(spec.get("scope"), spec.get("t"), spec.get("switched")))
+                                                spec.get("history") or [], tools=prov != "ollama", bench=bench)
             personal.run_set(row["id"], spec=json.dumps(spec))
             lv.append("status", {"text": f"Asking {label}"})
         session = None
@@ -183,8 +182,7 @@ def _work(lv, context=None, resume=False):
             if session:
                 lv.append("session", {"id": session})
             spec["prompt"] = agent.build_prompt(spec["q"], spec.get("ctx") or "", agent.skill(spec["skill"]) if spec.get("skill") else None,
-                                                spec.get("history") or [], tools=True,
-                                                focus=agent.focus_line(spec.get("scope"), spec.get("t"), spec.get("switched")))
+                                                spec.get("history") or [], tools=True)
             lv.append("reset", {})
             lv.append("status", {"text": "Answering without the workbench"})
             go(None, None)
