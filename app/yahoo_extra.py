@@ -483,7 +483,7 @@ def futures_overnight():
 
 def market_status():
     """Whether US stocks are trading, from Yahoo. When Yahoo doesn't answer (it rate-limits now and then), the New York
-    clock decides instead (9:30 to 4 on weekdays; holidays aside), so the page never says closed in the middle of a session."""
+    exchange calendar decides instead (session_hours), so the page never says closed in the middle of a session."""
     try:
         st = yf.Market("US").status or {}
         if st.get("status") in ("open", "closed"):
@@ -493,16 +493,71 @@ def market_status():
     return clock_status()
 
 
+# ---------------------------------------------------------------- the New York Stock Exchange's calendar
+def _observed(d):
+    """A fixed-date holiday on a Saturday is taken the Friday before; on a Sunday, the Monday after."""
+    return d - dt.timedelta(days=1) if d.weekday() == 5 else d + dt.timedelta(days=1) if d.weekday() == 6 else d
+
+
+def _nth(year, month, weekday, n):
+    """The nth weekday (0 = Monday) of a month; n = -1 is the last one."""
+    if n > 0:
+        d = dt.date(year, month, 1)
+        return d + dt.timedelta(days=(weekday - d.weekday()) % 7 + 7 * (n - 1))
+    d = dt.date(year + (month == 12), month % 12 + 1, 1) - dt.timedelta(days=1)
+    return d - dt.timedelta(days=(d.weekday() - weekday) % 7)
+
+
+def _easter(year):
+    a, b, c = year % 19, year // 100, year % 100
+    d, e = divmod(b, 4)
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = divmod(c, 4)
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month, day = divmod(h + l - 7 * m + 114, 31)
+    return dt.date(year, month, day + 1)
+
+
+_HOLIDAYS: dict = {}
+
+
+def market_holidays(year):
+    """Days the exchange is closed, by the NYSE's standing rules (one-off closures, like a national day of mourning, aside)."""
+    if year not in _HOLIDAYS:
+        h = {_nth(year, 1, 0, 3), _nth(year, 2, 0, 3), _easter(year) - dt.timedelta(days=2), _nth(year, 5, 0, -1),
+             _nth(year, 9, 0, 1), _nth(year, 11, 3, 4)}
+        for m, d in ((1, 1), (6, 19), (7, 4), (12, 25)):
+            o = _observed(dt.date(year, m, d))
+            if o.year == year:          # New Year's Day on a Saturday isn't moved back into December
+                h.add(o)
+        _HOLIDAYS[year] = h
+    return _HOLIDAYS[year]
+
+
+def session_hours(day):
+    """(open, close) as New York times for a trading day, or None when the market is shut. The exchange closes at 1 pm
+    the day after Thanksgiving, on Christmas Eve and on July 3 (when those are trading days)."""
+    if day.weekday() >= 5 or day in market_holidays(day.year):
+        return None
+    early = day == _nth(day.year, 11, 3, 4) + dt.timedelta(days=1) or (day.month, day.day) in ((12, 24), (7, 3))
+    return dt.time(9, 30), dt.time(13 if early else 16)
+
+
 def clock_status(now=None):
     t = now or pd.Timestamp.now(tz=NY)
     day = t.normalize()
-    o, c = day + pd.Timedelta(hours=9, minutes=30), day + pd.Timedelta(hours=16)
-    if t.weekday() < 5 and o <= t < c:
-        return {"status": "open", "message": None, "open": o.isoformat(), "close": c.isoformat(), "src": "clock"}
-    nxt = o if t < o else o + pd.Timedelta(days=1)
-    while nxt.weekday() >= 5:
-        nxt += pd.Timedelta(days=1)
-    return {"status": "closed", "message": None, "open": nxt.isoformat(), "close": None, "src": "clock"}
+    at = lambda d, tm: pd.Timestamp(dt.datetime.combine(d, tm)).tz_localize(NY)
+    hours = session_hours(day.date())
+    if hours and at(day.date(), hours[0]) <= t < at(day.date(), hours[1]):
+        return {"status": "open", "message": None, "open": at(day.date(), hours[0]).isoformat(),
+                "close": at(day.date(), hours[1]).isoformat(), "src": "clock"}
+    d = day.date() if hours and t < at(day.date(), hours[0]) else day.date() + dt.timedelta(days=1)
+    while not session_hours(d):
+        d += dt.timedelta(days=1)
+    return {"status": "closed", "message": None, "open": at(d, session_hours(d)[0]).isoformat(), "close": None, "src": "clock"}
 
 
 def sector_detail(key):

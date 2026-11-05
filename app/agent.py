@@ -1312,7 +1312,7 @@ def build_prompt(q, ctx, skill_obj=None, history=None, tools=True, bench=False):
     if tools:
         parts.append(TOOLS_NOTE)
     if bench:
-        parts.append(workbench.NOTE)
+        parts.append(workbench.note())
     if skill_obj:
         parts.append(f"Follow this playbook ({skill_obj['name']}):\n{skill_obj['body']}")
     parts.append("<data>\n" + ctx.strip() + "\n</data>")
@@ -1476,6 +1476,16 @@ def _codex_add_dir():
         except Exception:
             _partial["codex"] = False
     return _partial["codex"]
+
+
+PLAIN_FAILURE = re.compile(r"isn.t signed in|not logged in|log ?in|usage limit|rate.?limit|couldn.t find|overloaded|credit|"
+                           r"network|ENOTFOUND|ECONNREFUSED|timed? ?out", re.I)
+
+
+def plain_failure(message):
+    """Whether an agent's error says plainly what went wrong (signed out, at its plan limit, not installed, offline), so it
+    isn't mistaken for a sandbox that didn't start."""
+    return bool(PLAIN_FAILURE.search(message or ""))
 
 
 class Run:

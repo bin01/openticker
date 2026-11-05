@@ -145,9 +145,10 @@ def start(uid, cid, prov, spec, context):
 def _work(lv, context=None, resume=False):
     row, spec, prov = lv.row, lv.row["spec"], lv.row["provider"]
     label = _label(prov)
-    bench = prov in workbench.PROVIDERS and (prov != "claude" or workbench.state["claude_ok"])
+    bench = prov in workbench.PROVIDERS and (prov != "claude" or workbench.claude_ready())
     try:
         if bench:
+            workbench.build()                       # a toolbox install that failed earlier gets another go
             lv.ws = workbench.space(row.get("chat_id") or row["id"], row["user_id"])
         if not resume:
             lv.append("status", {"text": "Gathering the data"})
@@ -194,12 +195,14 @@ def _work(lv, context=None, resume=False):
             lv.append("status", {"text": "Picking up where I left off"})
         t_go = time.time()
         go(resume_from)
-        quick_fail = got["error"] and time.time() - t_go < 30          # e.g. an older Claude Code that rejects the settings
+        # an error within 30 s may be an older Claude Code rejecting the sandbox settings; but not when the error says what
+        # it is (signed out, at its plan limit, not installed), which answering without the workbench wouldn't fix
+        quick_fail = got["error"] and time.time() - t_go < 30 and not agent.plain_failure(got["error"])
         if lv.ws and prov == "claude" and not got["text"] and not lv.stopped and (workbench.sandbox_failed(got["error"]) or quick_fail):
             # Claude Code couldn't start its sandbox on this Mac: answer without the workbench, and don't try it again
             why = " ".join(x.strip() for x in (getattr(lv.run, "_err", None) or [])[-4:]) or got["error"]
-            agent.srv.log(f"Claude Code's sandbox didn't start, so Tick answers without the workbench: {why[:400]}")
-            workbench.state["claude_ok"] = False
+            agent.srv.log(f"Claude Code's sandbox didn't start, so Tick answers without the workbench for an hour: {why[:400]}")
+            workbench.claude_failed()
             lv.ws, session = None, (str(uuid.uuid4()) if prov == "claude" else None)
             if session:
                 lv.append("session", {"id": session})
@@ -279,8 +282,13 @@ def follow(rid, uid, after, write, alive):
         row = personal.run_get(rid)
         if not row or row["user_id"] != uid:
             return False
-        for seq, kind, p in personal.run_events(rid, after):
-            write(seq, kind, p)
+        events = personal.run_events(rid, 0)
+        for seq, kind, p in events:
+            if seq > after:
+                write(seq, kind, p)
+        if row["status"] != "running" and not any(k == "end" for _, k, _ in events):
+            # an older log that stops without an end (OpenTicker gave up on it): end it, so the page stops waiting
+            write(None, "end", {"error": GAVE_UP})
         return True
     if lv.row["user_id"] != uid:
         return False
@@ -302,6 +310,23 @@ def follow(rid, uid, after, write, alive):
     return True
 
 
+GAVE_UP = "OpenTicker restarted before this answer finished. Ask again."
+
+
+def _close_finished(row, events):
+    """A run whose log already ends (OpenTicker stopped between finishing the answer and closing the run): close it
+    instead of answering again, and save the answer to its conversation if it didn't get there."""
+    end = next(p for _, k, p in reversed(events) if k == "end")
+    acc = summary(events, _label(row["provider"]))
+    if row.get("chat_id"):
+        chat = personal.chat(row["user_id"], row["chat_id"]) or {}
+        if not any(m.get("role") == "assistant" and (m.get("ts") or 0) >= row["started"] for m in chat.get("messages") or []):
+            personal.chat_add(row["user_id"], row["chat_id"], {"role": "assistant", "text": acc["text"], "steps": acc["steps"][:160],
+                                                               "by": acc["by"], "secs": end.get("secs"), "error": end.get("error"),
+                                                               "files": end.get("files") or [], "ts": time.time()})
+    personal.run_set(row["id"], status="error" if end.get("error") and not acc["text"] else "done", ended=time.time())
+
+
 def recover():
     """At start-up: answers that were still running when OpenTicker stopped get picked up again."""
     threading.Thread(target=_flusher, daemon=True).start()
@@ -310,15 +335,21 @@ def recover():
             spec = json.loads(row.get("spec") or "{}")
         except Exception:
             spec = {}
+        events = personal.run_events(row["id"], 0)
+        if any(k == "end" for _, k, _ in events):
+            _close_finished(row, events)
+            continue
         if row["resumes"] >= 2 or not spec.get("prompt"):
+            # give up, and say so in the log too: a page reading it stops reconnecting and shows why
+            personal.run_events_add(row["id"], [((events[-1][0] if events else 0) + 1, "end", {"error": GAVE_UP})])
             personal.run_set(row["id"], status="error", ended=time.time())
             if row.get("chat_id"):
                 personal.chat_add(row["user_id"], row["chat_id"], {"role": "assistant", "text": "", "steps": [], "by": _label(row["provider"]),
-                                                                   "error": "OpenTicker restarted before this answer finished. Ask again.", "ts": time.time()})
+                                                                   "error": GAVE_UP, "ts": time.time()})
             continue
         row = {**row, "spec": spec, "resumes": row["resumes"] + 1, "started": row["started"]}
         personal.run_set(row["id"], resumes=row["resumes"])
-        lv = Live(row, personal.run_events(row["id"], 0))
+        lv = Live(row, events)
         with _glock:
             _live[row["id"]] = lv
         agent.srv.log(f"picking up an unfinished answer ({row['provider']}{', resuming its session' if row.get('session') and row['provider'] in RESUMABLE else ''})")

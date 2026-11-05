@@ -2564,6 +2564,7 @@ function setStatus(L){
   const t=new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",second:"2-digit"});
   if(age!=null&&age<90){dot.className="dot on";st.textContent=`Live · updated ${t}`;}
   else if(L.lastPoll&&L.now-L.lastPoll<180){dot.className="dot warn";st.textContent=`Stream quiet, polling · ${t}`;}
+  else if(L.open){const last=Math.max(L.lastTick||0,L.lastPoll||0);dot.className="dot warn";st.textContent=last?`Prices delayed · last update ${new Date(last*1000).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}`:"Market open · waiting for prices";}
   else{dot.className="dot";st.textContent=`Market closed · as of ${shortDate(L.date)} close`;}
   dot.title=st.textContent;   // the text hides on narrow headers; the dot still explains itself on hover
 }
