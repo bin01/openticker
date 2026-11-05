@@ -701,6 +701,16 @@ def stale_age(key):
         return time.time() - hit[0] if hit and key in _stale_keys else None
 
 
+def _yf_fresh():
+    """yfinance keeps its own copy of every Yahoo answer with no expiry (an LRU on YfData.cache_get), so after our TTL ran
+    out we'd get the same old answer back: the market stayed "closed" all morning. Drop it before each real fetch."""
+    try:
+        from yfinance.data import YfData
+        YfData.cache_get.cache_clear()
+    except Exception:
+        pass
+
+
 def _absent(e):
     """Whether Yahoo answered that it has nothing for this symbol, as opposed to failing."""
     return bool(re.search(r"\b404\b|Not Found|No fundamentals data", str(e)))
@@ -714,6 +724,7 @@ def cached(key, ttl, fn):
         hit = _detail_cache.get(key)
     if hit and now - hit[0] < ttl:
         return hit[1]
+    _yf_fresh()
     try:
         try:
             val = fn()
