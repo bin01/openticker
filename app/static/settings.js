@@ -103,7 +103,7 @@ function bindSettings(d,{cur,st}){
   $("#setNtOff")?.addEventListener("click",async()=>{ await api("/api/me/settings",{ntfyTopic:"",ntfyServer:st.ntfyServer}).catch(()=>{}); renderSettings(); });
   $("#setCn").onchange=async e=>{ await api("/api/me/settings",{closeNote:e.target.checked}).catch(()=>{}); };
   $("#setCnPrev").onclick=async()=>{ const b=$("#setCnBox"); b.hidden=false; b.innerHTML=`<small>Writing it…</small>`;
-    try{ const n=await (await fetch("/api/me/close-note")).json();
+    try{ const n=await (await fetch("/api/me/close-note",{headers:meHeaders()})).json();
       b.innerHTML=n.title?`<div class="cn"><b>${esc(n.title)}</b><p>${esc(n.body)}</p><small>${n.live?"With prices right now. The real one goes out after the close.":"From the last closing prices."}</small></div>`:`<small>There's no price data yet.</small>`; }
     catch(x){ b.innerHTML=`<small>Couldn't write it: ${esc(x.message)}</small>`; } };
   $("#setBr").onchange=async e=>{ if(e.target.checked&&"Notification" in window){ const p=await Notification.requestPermission(); if(p!=="granted"){ e.target.checked=false; return; } } notifyOn=e.target.checked; save("notify",notifyOn?"1":"0"); };

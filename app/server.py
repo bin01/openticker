@@ -1699,10 +1699,21 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def private_ok(self):
+        """The person's own data (watchlist, positions, alerts, brief, Tick's data commands) answers only this Mac or a
+        paired phone, the same rule as Tick. With phone access on, anyone else on the Wi-Fi sees market data only."""
+        if agent.may_ask(self):
+            return True
+        self.send(403, json.dumps({"error": "Pair this phone first: on your Mac, open Settings, Your phone, QR code.", "pair": True}).encode(),
+                  "application/json")
+        return False
+
     def do_POST(self):
         # JSON only: a cross-site form can't send application/json without a CORS preflight we never allow
         if not (self.headers.get("Content-Type") or "").startswith("application/json"):
             return self.send(415, b"json only", "text/plain")
+        if self.path.split("?")[0].startswith("/api/me/") and not self.private_ok():
+            return
         if self.path.split("?")[0] == "/api/ask":
             return self.ask()
         if self.path.split("?")[0] == "/api/ask/stop":
@@ -1934,6 +1945,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?")[0]
+        if (path in ("/api/me", "/api/me/close-note", "/api/brief") or path.startswith("/api/agent/")) and not self.private_ok():
+            return
         if path in ("/", "/index.html"):
             self.send(200, (HERE / "index.html").read_bytes(), "text/html; charset=utf-8")
         elif path == "/api/base":

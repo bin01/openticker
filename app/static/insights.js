@@ -14,7 +14,7 @@ let BRIEF=null, briefAt=0, briefAll=false;
 async function loadBrief(force){
   if(!force&&Date.now()-briefAt<(BRIEF?.pending?8e3:90e3)) return;
   briefAt=Date.now();
-  try{ BRIEF=await (await fetch("/api/brief")).json(); }catch(e){ return; }
+  try{ const r=await fetch("/api/brief",{headers:meHeaders()}); if(!r.ok) return; BRIEF=await r.json(); }catch(e){ return; }
   renderBrief(); if(page==="market") renderMarket();
 }
 function dailySd(a,n=60){ const r=[]; for(let k=a.length-1;k>0&&r.length<n;k--) if(a[k]!=null&&a[k-1]!=null) r.push(a[k]/a[k-1]-1); if(r.length<20) return null; const m=r.reduce((x,y)=>x+y,0)/r.length; return Math.sqrt(r.reduce((x,y)=>x+(y-m)**2,0)/(r.length-1)); }

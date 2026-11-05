@@ -2130,13 +2130,16 @@ let rt; addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(()=>{ if(!
 const PSEUDO={Watchlist:"Your watchlist, equal weight",Portfolio:"Your positions, weighted by value"};
 let me=null, EARN={}, earnAt=0, earnHist={}, lastEventId=+load("lastEvent","0"), notifyOn=load("notify","0")==="1";
 const isPseudo=k=>k in PSEUDO;
+// a paired phone proves itself on every call for the person's own data (server.py private_ok)
+const meHeaders=(h={})=>{ const t=load("askToken",""); return t?{...h,"X-Ask-Token":t}:h; };
 async function api(path,body){
-  const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})});
+  const r=await fetch(path,{method:"POST",headers:meHeaders({"Content-Type":"application/json"}),body:JSON.stringify(body||{})});
   const d=await r.json().catch(()=>({error:"The server didn't answer."}));
   if(!r.ok) throw new Error(d.error||"Something went wrong.");
   me=d; afterMe(); return d;
 }
-async function loadMe(){ try{ me=await (await fetch("/api/me")).json(); afterMe(); }catch(e){} }
+async function loadMe(){ try{ const r=await fetch("/api/me",{headers:meHeaders()});
+  me=r.status===403?{watch:[],positions:[],alerts:[],events:[],unread:0,kinds:{},settings:{},locked:true}:await r.json(); afterMe(); }catch(e){} }
 async function loadEarnings(){ if(Date.now()-earnAt<30*60e3) return; earnAt=Date.now(); try{ EARN=await (await fetch("/api/earnings")).json(); if(model) renderEarnCal(); if(page==="calendar") renderCalendar(); }catch(e){ earnAt=0; } }
 function afterMe(){
   renderBell();
@@ -2255,6 +2258,8 @@ const SAMPLE=[["AAPL",20,150],["MSFT",10,310],["NVDA",30,48],["AMZN",15,135],["G
 const STARTERS=["AAPL","NVDA","MSFT","AMZN","GOOGL","META","TSLA","AVGO","JPM","COST"];
 function renderEmptyMine(){
   const w=fund==="Watchlist";
+  if(me?.locked){ $("#app").innerHTML=`<section class="panel empty" id="emptyMine"><h2>Pair this phone to see your stocks</h2>
+   <p class="hint lead">Your watchlist and portfolio stay private to your Mac. On the Mac, open Settings, then Your phone, then QR code, and scan it with this phone's camera. Market data works without pairing.</p></section>`; return; }
   $("#app").innerHTML=w?`<section class="panel empty" id="emptyMine"><h2>Start a watchlist</h2>
    <p class="hint lead">Follow the stocks you care about. Each day you get a brief of what changed for them: big moves, upgrades and downgrades, price-target changes, insider buying, unusual options and earnings ahead. Alerts can reach your phone.</p>
    <form class="frm" id="eForm"><input id="eT" placeholder="Ticker, e.g. NVDA" maxlength="10" required><button class="btn">Add to watchlist</button><span class="err" id="eErr"></span></form>
