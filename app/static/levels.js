@@ -1,10 +1,14 @@
 /* OpenTicker: the Levels page. Support and resistance for the S&P 500, VXX and the Nasdaq-100 across the top, and
    one stock of your choice below, as large as the window allows. Levels come from /api/x/levels (key_levels in
-   yahoo_extra.py): swing highs and lows over the last year, grouped into zones. Uses globals from index.html and pages.js. */
+   levels.py): swing highs and lows at the bar size you pick, from 5 minutes to quarterly, grouped into zones. Uses globals from index.html and pages.js. */
 
 const LV_TOP=[["^GSPC","S&P 500","The 500 largest US companies"],["VXX","VXX","Tracks VIX futures: rises when investors get nervous"],["^NDX","Nasdaq-100","The 100 largest Nasdaq companies"]];
-const LV_RANGES=[["3M",63],["6M",126],["1Y",252]];
-let lvRange=load("lvRange","6M"); if(!LV_RANGES.some(r=>r[0]===lvRange)) lvRange="6M";
+/* bar sizes: [key, label, short label for phones, what the levels cover] (the server's LEVEL_BARS in yahoo_extra.py) */
+const LV_IV=[["5m","5 min","5m","the past five sessions"],["15m","15 min","15m","the past month"],["1h","1 hour","1h","the past six months"],
+  ["1d","Daily","D","the past year"],["1wk","Weekly","W","the past ten years"],["3mo","Quarterly","Q",null]];
+let lvIv=load("lvIv","1d"); if(!LV_IV.some(r=>r[0]===lvIv)) lvIv="1d";
+const lvQ=t=>({t,iv:lvIv});
+const lvSpan=d=>{ const x=LV_IV.find(x=>x[0]===d.iv)?.[3]; return x?"in "+x:`since ${d.span?.[0]?.slice(0,4)||"the start"}`; };   // "in the past year", "since 1999"
 let lvT=load("lvT","")||null, lvHover=null;
 const lvIdx=t=>t.startsWith("^");
 const lvLabel=t=>LV_TOP.find(x=>x[0]===t)?.[1]||t;
@@ -14,7 +18,22 @@ function lvPick(t){ if(!t) return; lvT=t; save("lvT",t); $("#lvMain")?.setAttrib
 /* an index is points, everything else dollars; big numbers drop the cents so a column of levels lines up */
 function lvP(t,x){ if(x==null||!isFinite(x)) return "–"; const dp=x>=1000?0:2;
   return (lvIdx(t)?"":"$")+x.toLocaleString("en-US",{minimumFractionDigits:dp,maximumFractionDigits:dp}); }
-const lvDay=d=>new Date(d+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"});
+/* bar times come as New York wall-clock strings ("2026-11-05" or "2026-11-05T14:35"); read them as written */
+const lvDate=d=>new Date(d.slice(0,10)+"T12:00:00Z"), lvFmt=(d,o)=>lvDate(d).toLocaleDateString("en-US",{...o,timeZone:"UTC"});
+function lvClock(d){ const [hh,mm]=d.slice(11,16).split(":").map(Number); return `${hh%12||12}:${String(mm).padStart(2,"0")} ${hh<12?"am":"pm"}`; }
+function lvWeek(d){ const x=lvDate(d); x.setUTCDate(x.getUTCDate()-((x.getUTCDay()+6)%7)); return x.toISOString().slice(0,10); }
+const lvQuarter=d=>`Q${Math.floor((+d.slice(5,7)-1)/3)+1} ${d.slice(0,4)}`;
+function lvDay(d,iv=lvIv){   // when a level was last touched, as briefly as is clear
+  if(iv==="3mo") return lvQuarter(d);
+  if(iv==="1h") return lvFmt(d,{weekday:"short"})+" "+lvFmt(d,{month:"short",day:"numeric"});
+  if(d.length>10) return lvFmt(d,{weekday:"short"})+" "+lvClock(d);
+  return lvFmt(d,{month:"short",day:"numeric",...(d.slice(0,4)!==String(new Date().getFullYear())?{year:"numeric"}:{})});
+}
+function lvWhen(d,iv=lvIv){   // the hover label for one bar
+  if(iv==="3mo") return lvQuarter(d);
+  if(iv==="1wk") return "Week of "+lvFmt(d,{month:"short",day:"numeric",year:"numeric"});
+  return lvFmt(d,{weekday:"short",month:"short",day:"numeric",...(d.length>10?{}:{year:"numeric"})})+(d.length>10?" · "+lvClock(d):"");
+}
 const lvAway=(p,last)=>{ const r=p/last-1; return `${Math.abs(r*100).toFixed(Math.abs(r)<.1?1:0)}% ${r>=0?"above":"below"}`; };
 const LV_STR=["","light","moderate","strong"];
 
@@ -34,10 +53,10 @@ function lvRead(t,d,last){
   const L=lvLevels(d,last), {s,r,here}=lvNearest(L), N=lvIdx(t)?`The ${lvLabel(t)}`:t, P=x=>lvP(t,x);
   const ma=["50","200"].map(k=>[k,d.ma?.[k]?.slice(-1)[0]]).filter(([k,v])=>v&&Math.abs(last/v-1)<.012)[0];
   const nearMa=ma?` It's also near its ${ma[0]}-day average (${P(ma[1])}), a line many traders watch.`:"";
-  if(here) return `<b>${N} is testing ${P(here.p)}</b>, a price where it has turned ${lvTimes(here.touches)} in the past year. A close clearly above or below it often sets the next leg.${nearMa}`;
-  if(!r&&s) return `<b>No resistance overhead.</b> ${N} is ${last>=d.hi52.p*.99?"at":"near"} its high for the year, so there's no recent price where sellers took over. Nearest support: ${P(s.p)}, ${lvAway(s.p,last).replace(" below","")} below.${nearMa}`;
-  if(!s&&r) return `<b>No support below.</b> ${N} is ${last<=d.lo52.p*1.01?"at":"near"} its low for the year, so there's no recent price where buyers stepped in. Nearest resistance: ${P(r.p)}, ${lvAway(r.p,last).replace(" above","")} above.${nearMa}`;
-  if(!s||!r) return `Not enough swings in the past year to mark clear levels for ${N}.`;
+  if(here) return `<b>${N} is testing ${P(here.p)}</b>, a price where it has turned ${lvTimes(here.touches)} ${lvSpan(d)}. A close clearly above or below it often sets the next leg.${nearMa}`;
+  if(!r&&s) return `<b>No resistance overhead.</b> ${N} is ${last>=d.hi52.p*.99?"at":"near"} its highest price ${lvSpan(d)}, so there's no price above where sellers took over. Nearest support: ${P(s.p)}, ${lvAway(s.p,last).replace(" below","")} below.${nearMa}`;
+  if(!s&&r) return `<b>No support below.</b> ${N} is ${last<=d.lo52.p*1.01?"at":"near"} its lowest price ${lvSpan(d)}, so there's no price below where buyers stepped in. Nearest resistance: ${P(r.p)}, ${lvAway(r.p,last).replace(" above","")} above.${nearMa}`;
+  if(!s||!r) return `Not enough swings ${lvSpan(d)} to mark clear levels for ${N}.`;
   const dS=1-s.p/last, dR=r.p/last-1, toR=dR<dS*.8, toS=dS<dR*.8;
   const side=toR?` It's closer to resistance, where sellers stopped it ${lvTimes(r.touches)}${r.flip?" (that price has worked as support too)":""}.`
     :toS?` It's closer to support, where buyers stepped in ${lvTimes(s.touches)}${s.flip?" (that price has capped it too)":""}.`:" It's about midway between the two.";
@@ -45,19 +64,23 @@ function lvRead(t,d,last){
 }
 
 /* ---------- the chart: price, level zones and their labels, the latest price, and on the big chart the averages ---------- */
-function lvChart(t,d,{w,h,last,n,big}){
-  const N=Math.min(n,d.c.length), i0=d.c.length-N, O=d.o.slice(i0), Hh=d.h.slice(i0), Lo=d.l.slice(i0), C=d.c.slice(i0), D=d.d.slice(i0);
+function lvChart(t,d,{w,h,last,big}){
+  const N=d.c.length, i0=d.c.length-N, O=d.o.slice(i0), Hh=d.h.slice(i0), Lo=d.l.slice(i0), C=d.c.slice(i0), D=d.d.slice(i0);
   const L=lvLevels(d,last), near=lvNearest(L);
   const ph=innerWidth<=600, left=big?(ph?36:46):8, R=big?(ph?70:78):64, T=big?12:8, B=big?24:8, PW=w-left-R, PH=h-T-B;
   const step=PW/N, X=i=>left+step*(i+.5);
   let lo=Math.min(...Lo,last), hi=Math.max(...Hh,last);
   // the nearest level on each side always shows (if it's not absurdly far); others only when they fit the window
   [near.s,near.r].forEach(x=>{ if(x&&Math.abs(x.p/last-1)<.18){ lo=Math.min(lo,x.lo); hi=Math.max(hi,x.hi); } });
-  const pad=(hi-lo)*.06||hi*.01; lo-=pad; hi+=pad;
-  const Y=v=>T+PH*(1-(v-lo)/(hi-lo)), inView=x=>x.p>=lo&&x.p<=hi;
+  // years of weekly or quarterly bars can span a hundredfold move: a log scale keeps the early years readable
+  const logY=lo>0&&hi/lo>4;
+  if(logY){ const k=Math.pow(hi/lo,.04); lo/=k; hi*=k; } else { const pad=(hi-lo)*.06||hi*.01; lo-=pad; hi+=pad; }
+  const Y=logY?v=>T+PH*(1-Math.log(Math.max(v,lo)/lo)/Math.log(hi/lo)):v=>T+PH*(1-(v-lo)/(hi-lo)), inView=x=>x.p>=lo&&x.p<=hi;
   const MA=big?[["50","var(--accent)"],["200","var(--warn)"]].map(([k,col])=>({k,col,a:(d.ma?.[k]||[]).slice(-N)})).filter(m=>m.a.some(v=>v!=null)):[];
-  let s=`<svg class="lvsvg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(lvLabel(t))} price with support and resistance levels, ${lvRange}">`;
-  if(big) niceTicks(lo,hi,Math.max(3,Math.round(PH/70))).forEach(v=>{ s+=`<line x1="${left}" x2="${w-R}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="var(--grid)"/><text x="${left-8}" y="${(Y(v)+4).toFixed(1)}" font-size="11" text-anchor="end" class="num" fill="var(--ink-3)">${v>=1000?v.toLocaleString("en-US",{maximumFractionDigits:0}):v.toFixed(v<10?2:0)}</text>`; });
+  let s=`<svg class="lvsvg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="${esc(lvLabel(t))} price with support and resistance levels, ${LV_IV.find(x=>x[0]===d.iv)?.[1]||""} bars">`;
+  const ticks=logY?(()=>{ const out=[]; let lastY=1e9; for(let e=Math.floor(Math.log10(lo));e<=Math.ceil(Math.log10(hi));e++) for(const m of [1,2,5]){ const v=m*10**e; if(v<lo||v>hi) continue; if(lastY-Y(v)>=26){ out.push(v); lastY=Y(v); } } return out; })()
+    :niceTicks(lo,hi,Math.max(3,Math.round(PH/70)));
+  if(big) ticks.forEach(v=>{ s+=`<line x1="${left}" x2="${w-R}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="var(--grid)"/><text x="${left-8}" y="${(Y(v)+4).toFixed(1)}" font-size="11" text-anchor="end" class="num" fill="var(--ink-3)">${v>=1000?v.toLocaleString("en-US",{maximumFractionDigits:0}):v<1?String(+v.toFixed(2)):v.toFixed(v<10&&!logY?2:0)}</text>`; });
   // zones under the price, so the bars read on top of them
   const col=x=>x.k==="resistance"?"var(--down)":x.k==="support"?"var(--up)":"var(--accent)";
   L.filter(inView).forEach(x=>{ const y1=Y(Math.min(hi,x.hi)), y2=Y(Math.max(lo,x.lo)), zh=Math.max(big?4:3,y2-y1), yc=(y1+y2)/2;
@@ -83,13 +106,15 @@ function lvChart(t,d,{w,h,last,n,big}){
   items.forEach(o=>{ const tw=o.txt.length*fs*.6+14, x0=w-R+6, c=o.now?"var(--ink)":col(o.x);
     s+=o.now?`<rect x="${x0}" y="${(o.y-lh/2+2).toFixed(1)}" width="${tw.toFixed(1)}" height="${lh-4}" rx="${(lh-4)/2}" fill="var(--ink)"/><text x="${(x0+7).toFixed(1)}" y="${(o.y+fs*.36).toFixed(1)}" font-size="${fs}" font-weight="650" class="num" fill="var(--panel)">${o.txt}</text>`
       :`<rect x="${x0}" y="${(o.y-lh/2+2).toFixed(1)}" width="${tw.toFixed(1)}" height="${lh-4}" rx="${(lh-4)/2}" fill="var(--panel)" stroke="${c}" stroke-opacity=".6"/><text x="${(x0+7).toFixed(1)}" y="${(o.y+fs*.36).toFixed(1)}" font-size="${fs}" font-weight="600" class="num" fill="${c}">${o.txt}</text>`; });
-  if(big){ // month ticks along the bottom
-    let lastM=""; const every=N>180?2:1; let cnt=0;
-    D.forEach((dd,i)=>{ const m=dd.slice(0,7); if(m===lastM) return; const first=!lastM; lastM=m; if(first) return; if(cnt++%every) return;
-      const lab=new Date(dd+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",timeZone:"UTC"})+(dd.slice(5,7)==="01"?" ’"+dd.slice(2,4):"");
-      s+=`<line x1="${X(i).toFixed(1)}" x2="${X(i).toFixed(1)}" y1="${T}" y2="${h-B}" stroke="var(--grid)" opacity=".7"/><text x="${X(i).toFixed(1)}" y="${h-6}" font-size="11" text-anchor="middle" fill="var(--ink-3)">${lab}</text>`; });
+  if(big){ // time marks along the bottom: days for intraday bars, weeks for hourly, months, years
+    const iv=d.iv, key=dd=>iv==="5m"||iv==="15m"?dd.slice(0,10):iv==="1h"?lvWeek(dd):iv==="1d"?dd.slice(0,7):iv==="1wk"?dd.slice(0,4):dd.slice(0,3);
+    const lab=dd=>iv==="5m"||iv==="15m"?lvFmt(dd,{weekday:"short"})+" "+(+dd.slice(8,10)):iv==="1h"?lvFmt(dd,{month:"short",day:"numeric"})
+      :iv==="1d"?lvFmt(dd,{month:"short"})+(dd.slice(5,7)==="01"?" ’"+dd.slice(2,4):""):iv==="1wk"?dd.slice(0,4):dd.slice(0,3)+"0s";
+    const marks=[]; let prevK=null; D.forEach((dd,i)=>{ const k=key(dd); if(prevK!==null&&k!==prevK) marks.push(i); prevK=k; });
+    let lastX=-1e9; marks.forEach(i=>{ if(X(i)-lastX<56||X(i)>w-R-16) return; lastX=X(i);
+      s+=`<line x1="${X(i).toFixed(1)}" x2="${X(i).toFixed(1)}" y1="${T}" y2="${h-B}" stroke="var(--grid)" opacity=".7"/><text x="${X(i).toFixed(1)}" y="${h-6}" font-size="11" text-anchor="middle" fill="var(--ink-3)">${lab(D[i])}</text>`; });
     s+=`<line id="lvX" x1="0" x2="0" y1="${T}" y2="${h-B}" stroke="var(--ink-3)" stroke-width="1" visibility="hidden"/>`;
-    lvHover={t,left,step,N,i0,T,B,h,O,Hh,Lo,C,D};
+    lvHover={t,iv:d.iv,left,step,N,i0,T,B,h,O,Hh,Lo,C,D};
   }
   return s+"</svg>";
 }
@@ -105,56 +130,57 @@ function lvLadder(t,d,last,prev){
     if(r.ma) return `<li class="ma ma${r.ma}"><span class="lk"><i aria-hidden="true"></i>${r.lab}</span><span class="lp num">${lvP(t,r.p)}</span><span class="ld num">${lvAway(r.p,last)}</span></li>`;
     const x=r.x, kind=x.k==="here"?"At this level":x.k==="resistance"?"Resistance":"Support";
     return `<li class="${x.k}"><span class="lk">${kind}<span class="str" title="${LV_STR[x.strength][0].toUpperCase()+LV_STR[x.strength].slice(1)} level${x.flip?". It has worked as both support and resistance":""}" aria-label="${LV_STR[x.strength]} level">${[1,2,3].map(j=>`<i class="${j<=x.strength?"on":""}"></i>`).join("")}</span></span><span class="lp num">${lvP(t,x.p)}</span><span class="ld num">${x.k==="here"?"right here":lvAway(x.p,last)}</span>
-      <span class="lm">${x.touches===1?"Turned here once":`Turned here ${lvTimes(x.touches)}`}, last ${lvDay(x.last)}${x.flip?" · both ways":""}</span></li>`; }).join("")}</ol>`;
+      <span class="lm">${x.touches===1?"Turned here once":`Turned here ${lvTimes(x.touches)}`}, last ${lvDay(x.last,d.iv)}${x.flip?" · both ways":""}</span></li>`; }).join("")}</ol>`;
 }
 
 /* ---------- the page ---------- */
 function renderLevels(){
   if(!$("#lvl")){
     $("#app").innerHTML=`<div id="lvl" class="page">
-      <div class="phead"><div><h1 class="ptitle">Levels</h1><p class="hint">Support is a price where buyers have stepped in before; resistance is where sellers have. The more often a price turned the market in the past year, the stronger the level.</p></div>
-        <div class="seg" id="lvRng" role="group" aria-label="Chart range"></div></div>
+      <div class="phead"><div><h1 class="ptitle">Levels</h1><p class="hint">Support is where buyers have stepped in before; resistance is where sellers have. The more often a price turned the market, the stronger the level. Short bars are for trading within a day; long bars show the big picture.</p></div>
+        <div class="seg lviv" id="lvRng" role="group" aria-label="Bar size"></div></div>
       <section class="lvtop" id="lvTop" aria-label="Market levels">${LV_TOP.map(([s])=>`<button class="lvcard" data-lv="${esc(s)}" aria-pressed="false">${sk(170)}</button>`).join("")}</section>
       <section class="panel lvmain" id="lvMain">
         <div class="lvhead"><div class="lvwho" id="lvWho"></div>
           <div class="lvfind"><div class="lvsrch">${ic("search",14)}<input id="lvQ" type="search" placeholder="Show another stock…" autocomplete="off" spellcheck="false" aria-label="Show levels for another stock" aria-controls="lvRes"><div class="sres" id="lvRes" role="listbox" hidden></div></div><div class="lvquick" id="lvQuick"></div></div></div>
         <p class="lvread" id="lvRead"></p>
         <div class="lvbody"><div><div class="lvchart" id="lvChart">${sk(420)}</div>
-          <div class="lvkey"><span><i class="k res"></i>Resistance</span><span><i class="k sup"></i>Support</span><span><i class="k m50"></i>50-day average</span><span><i class="k m200"></i>200-day average</span><span>Thicker band, stronger level</span></div></div>
+          <div class="lvkey"><span><i class="k res"></i>Resistance</span><span><i class="k sup"></i>Support</span><span class="kma"><i class="k m50"></i>50-day average</span><span class="kma"><i class="k m200"></i>200-day average</span><span>Thicker band, stronger level</span></div></div>
           <div class="lvside"><div class="lbl">Levels, top to bottom</div><div id="lvLad">${sk(300)}</div></div></div>
       </section></div>`;
     lvWire();
   }
-  $("#lvRng").innerHTML=LV_RANGES.map(([k])=>`<button data-lvr="${k}" aria-pressed="${k===lvRange}">${k}</button>`).join("");
-  LV_TOP.forEach(([s])=>{ const c=xpeek("levels",{t:s}); if(c?.data||c?.error) lvCard(s); else xget("levels",{t:s}).then(()=>{ if(page==="levels") lvCard(s); }); });
+  $("#lvRng").innerHTML=LV_IV.map(([k,l,sh])=>`<button data-lvr="${k}" aria-pressed="${k===lvIv}" aria-label="${l} bars"><span class="lg">${l}</span><span class="sh">${sh}</span></button>`).join("");
+  document.querySelectorAll("#lvl .kma").forEach(x=>x.hidden=lvIv!=="1d");
+  LV_TOP.forEach(([s])=>{ const c=xpeek("levels",lvQ(s)); if(c?.data||c?.error) lvCard(s); else { lvCard(s); const iv=lvIv; xget("levels",lvQ(s)).then(()=>{ if(page==="levels"&&lvIv===iv) lvCard(s); }); } });
   lvMain();
 }
 function lvCard(s){
   const el=document.querySelector(`.lvcard[data-lv="${CSS.escape(s)}"]`); if(!el) return;
-  const c=xpeek("levels",{t:s}), t=lvSym(); el.setAttribute("aria-pressed",String(t===s));
+  const c=xpeek("levels",lvQ(s)), t=lvSym(); el.setAttribute("aria-pressed",String(t===s));
   if(!c?.data){ el.innerHTML=c?.error?`<div class="lvch"><b>${esc(lvLabel(s))}</b></div>${errBox(c.error)}`:sk(170); return; }
   const d=c.data, last=lvLast(s,d), prev=lvPrev(s,d), chg=prev?last/prev-1:null, L=lvLevels(d,last), {s:sp,r:rs,here}=lvNearest(L);
   const w=Math.max(220,Math.round(el.clientWidth-26)), h=innerWidth<=600?96:92;
   el.title=`Show ${lvLabel(s)} below`;
   el.innerHTML=`<div class="lvch"><div><b>${esc(lvLabel(s))}</b><span class="hint">${esc(LV_TOP.find(x=>x[0]===s)[2])}</span></div><div class="lvpx"><span class="num">${lvP(s,last)}</span><span class="num ${cls(chg)}">${pct(chg)}</span></div></div>
-    <div class="lvmini">${lvChart(s,d,{w,h,last,n:LV_RANGES.find(r=>r[0]===lvRange)[1]})}</div>
+    <div class="lvmini">${lvChart(s,d,{w,h,last})}</div>
     <div class="lvfoot">${here?`<span><i class="k here"></i>Testing <b class="num">${lvP(s,here.p)}</b></span>`:""}${rs?`<span><i class="k res"></i>Resistance <b class="num">${lvP(s,rs.p)}</b> <span class="num">+${lvAway(rs.p,last).replace(" above","")}</span></span>`:`<span><i class="k res"></i>No resistance overhead</span>`}${sp?`<span><i class="k sup"></i>Support <b class="num">${lvP(s,sp.p)}</b> <span class="num">−${lvAway(sp.p,last).replace(" below","")}</span></span>`:`<span><i class="k sup"></i>No support below</span>`}</div>`;
 }
 function lvMain(){
-  const t=lvSym(), c=xpeek("levels",{t});
+  const t=lvSym(), c=xpeek("levels",lvQ(t));
   document.querySelectorAll(".lvcard").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.lv===t)));
   const top=LV_TOP.find(x=>x[0]===t), nm=top?top[2]:nameOf(t);
   $("#lvWho").innerHTML=`<h2>${esc(lvLabel(t))}</h2><span class="nm">${esc(nm&&nm!==t?nm:c?.data?.name||"")}</span>${lvIdx(t)?"":`<button class="lnk" data-sel="${esc(t)}">Open ${esc(t)} ›</button>`}`;
   const q=[...new Set([...(typeof recent!=="undefined"?recent:[]),...(me?.positions||[]).map(p=>p.t),...(me?.watch||[])])].filter(x=>x!==t).slice(0,5);
   $("#lvQuick").innerHTML=q.map(x=>`<button class="chip" data-lv="${esc(x)}">${esc(x)}</button>`).join("");
   if(!c?.data){
-    if(c?.error){ $("#lvChart").innerHTML=errBox(c.error,"levels",{t}); $("#lvLad").innerHTML=""; $("#lvRead").innerHTML=""; return; }
+    if(c?.error){ $("#lvChart").innerHTML=errBox(c.error,"levels",lvQ(t)); $("#lvLad").innerHTML=""; $("#lvRead").innerHTML=""; return; }
     $("#lvChart").innerHTML=sk(lvHeight()); $("#lvLad").innerHTML=sk(300); $("#lvRead").innerHTML=`<span class="sk" style="display:block;height:20px;max-width:640px"></span>`;
-    xget("levels",{t}).then(()=>{ if(page==="levels"&&lvSym()===t) lvMain(); }); return;
+    const iv=lvIv; xget("levels",lvQ(t)).then(()=>{ if(page==="levels"&&lvSym()===t&&lvIv===iv) lvMain(); }); return;
   }
   const d=c.data, last=lvLast(t,d), prev=lvPrev(t,d), box=$("#lvChart");
   $("#lvRead").innerHTML=lvRead(t,d,last);
-  const H=lvHeight(); box.innerHTML=lvChart(t,d,{w:Math.max(300,box.clientWidth),h:H,last,n:LV_RANGES.find(r=>r[0]===lvRange)[1],big:true});
+  const H=lvHeight(); box.innerHTML=lvChart(t,d,{w:Math.max(300,box.clientWidth),h:H,last,big:true});
   $(".lvside").style.maxHeight=innerWidth>1100?H+28+"px":"";     // the list scrolls beside the chart rather than running past it
   const lad=$("#lvLad"); lad.innerHTML=lvLadder(t,d,last,prev);
   const now=lad.querySelector(".now"), scr=lad.scrollHeight>lad.clientHeight+4; lad.classList.toggle("scr",scr); if(now&&scr) lad.scrollTop=now.offsetTop-lad.clientHeight/2+now.offsetHeight/2;   // keep "Now" in view
@@ -183,12 +209,12 @@ function lvWire(){
     const line=svg.querySelector("#lvX"); if(i<0||i>=g.N){ line?.setAttribute("visibility","hidden"); hideTip(); return; }
     const cx=g.left+g.step*(i+.5); line?.setAttribute("x1",cx); line?.setAttribute("x2",cx); line?.setAttribute("visibility","visible");
     const P=v=>lvP(g.t,v), ch1=i>0?g.C[i]/g.C[i-1]-1:null;
-    showTip(e,`<b>${new Date(g.D[i]+"T12:00:00Z").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",year:"numeric",timeZone:"UTC"})}</b><br>Close ${P(g.C[i])}${ch1!=null?` <span class="${cls(ch1)}">${pct(ch1)}</span>`:""}<br><span style="opacity:.75">Open ${P(g.O[i])} · High ${P(g.Hh[i])} · Low ${P(g.Lo[i])}</span>`); });
+    showTip(e,`<b>${lvWhen(g.D[i],g.iv)}</b><br>Close ${P(g.C[i])}${ch1!=null?` <span class="${cls(ch1)}">${pct(ch1)}</span>`:""}<br><span style="opacity:.75">Open ${P(g.O[i])} · High ${P(g.Hh[i])} · Low ${P(g.Lo[i])}</span>`); });
   ch.addEventListener("pointerleave",()=>{ ch.querySelector("#lvX")?.setAttribute("visibility","hidden"); hideTip(); });
 }
 document.addEventListener("click",e=>{
   const o=e.target.closest("[data-levels]"); if(o){ e.preventDefault(); openLevels(o.dataset.levels); return; }
-  const r=e.target.closest("[data-lvr]"); if(r){ lvRange=r.dataset.lvr; save("lvRange",lvRange); renderLevels(); return; }
+  const r=e.target.closest("[data-lvr]"); if(r){ lvIv=r.dataset.lvr; save("lvIv",lvIv); renderLevels(); return; }
   const g=e.target.closest("[data-lvgo]"); if(g){ e.preventDefault(); lvPick(g.dataset.lvgo); return; }
   const c=e.target.closest("#lvl [data-lv]"); if(c){ lvPick(c.dataset.lv); const m=$("#lvMain"); if(m&&c.classList.contains("lvcard")&&m.getBoundingClientRect().top>innerHeight*.6) m.scrollIntoView({behavior:"smooth",block:"start"}); }
 });
@@ -196,4 +222,4 @@ document.addEventListener("click",e=>{
 function openLevels(t){ if(t){ lvT=t; save("lvT",t); } if(drawerOpen) closeDrawer(); if(page!=="levels") goPage("levels"); else renderLevels(); }
 { let rz=null; addEventListener("resize",()=>{ clearTimeout(rz); rz=setTimeout(()=>{ if(page==="levels"&&$("#lvl")) renderLevels(); },150); }); }
 setInterval(()=>{ if(page!=="levels"||document.hidden||!$("#lvl")) return;      // new prices every few minutes while the page is open
-  [...LV_TOP.map(x=>x[0]),lvSym()].forEach(s=>xget("levels",{t:s}).then(()=>{ if(page==="levels") renderLevels(); })); },60e3);
+  [...LV_TOP.map(x=>x[0]),lvSym()].forEach(s=>xget("levels",lvQ(s)).then(()=>{ if(page==="levels") renderLevels(); })); },60e3);

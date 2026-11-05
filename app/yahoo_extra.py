@@ -218,41 +218,83 @@ def ohlc(sym):
 
 
 # ---------------------------------------------------------------- support and resistance
-def levels(sym, keep=3):
-    """A year of daily bars with the nearest support and resistance levels around the last price."""
+# bar size -> (Yahoo period, Yahoo interval, swing window w, smallest zone as a share of price, bars shown,
+# farthest level worth showing as a share of price).
+# Levels come from every bar fetched (daily: the last year); the chart shows the latest `show` bars.
+LEVEL_BARS = {
+    "5m":  ("5d", "5m", 6, 0.0015, 260, 0.06),     # five sessions; a swing is the extreme of half an hour each side
+    "15m": ("1mo", "15m", 4, 0.0025, 260, 0.1),   # a month; the chart shows about ten sessions
+    "1h":  ("6mo", "1h", 4, 0.004, 260, 0.2),     # six months; the chart shows about six weeks
+    "1d":  ("2y", "1d", 5, 0.006, 252, 0.35),      # two years fetched for the 200-day average, levels from the last year
+    "1wk": ("10y", "1wk", 3, 0.012, 260, 0.5),    # ten years; the chart shows five
+    "3mo": ("max", "1mo", 2, 0.02, 400, 0.7),     # every quarter Yahoo has, built from monthly bars
+}
+
+
+def levels(sym, iv="1d", keep=3):
+    """Bars at one size with the nearest support and resistance levels around the last price."""
+    iv = iv if iv in LEVEL_BARS else "1d"
+    period, yiv, w, min_pct, show, far = LEVEL_BARS[iv]
     tk = yf.Ticker(sym)
-    hist = tk.history(period="2y", interval="1d", auto_adjust=True)
+    hist = tk.history(period=period, interval=yiv, auto_adjust=True, prepost=False)
     if hist is None or hist.empty:
         raise RuntimeError("Yahoo didn't send price history just now. Try again in a minute.")
     md = tk.history_metadata or {}
     px = md.get("regularMarketPrice")
-    # Yahoo leaves the current session's close empty for a while: use the quote's price rather than drop the day
+    # Yahoo leaves the current session's close empty for a while: use the quote's price rather than drop the bar
     if hist["Close"].iloc[-1] != hist["Close"].iloc[-1] and px:
         hist.loc[hist.index[-1], ["Close", "High", "Low", "Open"]] = [float(px)] * 4
     hist = hist.dropna(subset=["Close"])
-    if len(hist) < 60:
-        raise RuntimeError("Not enough price history to find levels.")
-    d = [i.strftime("%Y-%m-%d") for i in hist.index]
+    if iv == "3mo":     # Yahoo's own 3-month bars start on odd dates; calendar quarters read better
+        hist = hist.resample("QS").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna(subset=["Close"])
+    intraday = iv in ("5m", "15m", "1h")
+    if iv in ("1wk", "3mo") and px:     # the current week's or quarter's bar ends at today's price
+        k = hist.index[-1]
+        hist.loc[k, "Close"] = float(px)
+        hist.loc[k, "High"] = max(float(hist.loc[k, "High"]), float(px))
+        hist.loc[k, "Low"] = min(float(hist.loc[k, "Low"]), float(px))
+    if len(hist) < (20 if iv == "3mo" else 60):
+        raise RuntimeError("Not enough price history to find levels at this bar size.")
+    idx = hist.index.tz_convert(NY) if intraday and hist.index.tz is not None else hist.index
+    d = [i.strftime("%Y-%m-%dT%H:%M" if intraday else "%Y-%m-%d") for i in idx]
     o, h, l, c = ([float(x) for x in hist[k]] for k in ("Open", "High", "Low", "Close"))
     n, last = len(c), c[-1]
-    lv, tol = key_levels(h, l, c, d)
-    for kind, side in nearest(lv, last, tol, keep).items():
+    look = 252 if iv == "1d" else n
+    lv, tol = key_levels(h, l, c, d, look=look, w=w, min_pct=min_pct, recent=max(8, look // 4))
+    for kind, side in nearest(lv, last, tol, keep, far).items():
         for x in side:
             x["kind"] = kind
     chosen = sorted([x for x in lv if "kind" in x], key=lambda x: -x["p"])
+    cut = max(0, n - show)
     ma = {}
-    for k in (50, 200):
-        if n >= k:
-            ma[str(k)] = [None if i < k - 1 else round(sum(c[i - k + 1:i + 1]) / k, 4) for i in range(n)][-252:]
-    yr = range(max(0, n - 252), n)
+    if iv == "1d":      # the 50- and 200-day averages are daily ideas; other bar sizes leave them off
+        for k in (50, 200):
+            if n >= k:
+                ma[str(k)] = [None if i < k - 1 else round(sum(c[i - k + 1:i + 1]) / k, 4) for i in range(n)][cut:]
+    yr = range(max(0, n - look), n)     # the high and low over the stretch the levels come from
     hi_i, lo_i = max(yr, key=lambda i: h[i]), min(yr, key=lambda i: l[i])
-    prev = c[-2] if n > 1 else None
-    cut = max(0, n - 252)
+    # the day's change compares with yesterday's close, whatever the bar size
+    if iv == "1d":
+        prev = c[-2] if n > 1 else None
+    elif intraday:      # the last bar of the session before the latest one
+        day = d[-1][:10]
+        prev = next((c[i] for i in range(n - 1, -1, -1) if d[i][:10] < day), None)
+    else:
+        try:
+            dd = tk.history(period="5d", interval="1d", auto_adjust=True)["Close"].dropna()
+            prev = float(dd.iloc[-2]) if len(dd) > 1 else None
+        except Exception:
+            prev = None
     r4 = lambda a: [round(x, 4) for x in a[cut:]]
-    return {"t": sym, "name": md.get("shortName") or md.get("longName"), "last": round(last, 4), "prev": prev and round(prev, 4),
-            "d": d[cut:], "o": r4(o), "h": r4(h), "l": r4(l), "c": r4(c), "ma": ma, "levels": chosen, "tol": round(tol, 4),
+    return {"t": sym, "iv": iv, "name": md.get("shortName") or md.get("longName"), "last": round(last, 4),
+            "prev": jround(prev), "d": d[cut:], "o": r4(o), "h": r4(h), "l": r4(l), "c": r4(c), "ma": ma, "levels": chosen,
+            "tol": round(tol, 4), "span": [d[max(0, n - look)], d[-1]],
             "hi52": {"p": round(h[hi_i], 4), "d": d[hi_i]}, "lo52": {"p": round(l[lo_i], 4), "d": d[lo_i]},
             "currency": md.get("currency"), "instrument": md.get("instrumentType")}
+
+
+def jround(x):
+    return round(float(x), 4) if isinstance(x, (int, float)) and x == x else None
 
 
 # ---------------------------------------------------------------- options
