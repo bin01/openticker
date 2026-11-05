@@ -1103,8 +1103,12 @@ SEARCH_PATHS = ["~/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "~/.openc
 
 
 def _which(name):
-    path = os.pathsep.join([os.environ.get("PATH", ""), login_path()] + [os.path.expanduser(p) for p in SEARCH_PATHS])
-    return shutil.which(name, path=path)
+    def find():
+        return shutil.which(name, path=os.pathsep.join([os.environ.get("PATH", ""), login_path()] + [os.path.expanduser(p) for p in SEARCH_PATHS]))
+    found = find()
+    if not found and _reread_login_path(60):   # just installed somewhere only a fresh login shell knows (nvm, a new PATH line)
+        found = find()
+    return found
 
 
 PROVIDERS = [
@@ -1213,8 +1217,12 @@ def _configured_effort(pid):
 
 
 def providers(force=False):
-    """Every agent with its state: ready, signin (installed, not signed in), off (Ollama not running), missing."""
-    if not force and time.time() - _prov_cache["t"] < 90 and _prov_cache["v"]:
+    """Every agent with its state: ready, signin (installed, not signed in), off (Ollama not running), missing.
+    Kept 90 seconds when the installed agents are all ready; 10 when one is waiting on a sign-in or on Ollama, so
+    signing in shows up on the next look instead of after a restart."""
+    v = _prov_cache["v"]
+    ttl = 10 if v and any(q["state"] in ("signin", "off") for q in v) else 90
+    if not force and v and time.time() - _prov_cache["t"] < ttl:
         return _with_seen(_prov_cache["v"])
     out = []
     for p in PROVIDERS:
@@ -1323,13 +1331,14 @@ def build_prompt(q, ctx, skill_obj=None, history=None, tools=True, bench=False):
 
 
 _login_path = None
+_login_path_at = 0.0
 
 
 def login_path():
     """The PATH a Terminal window would have. Apps started from launchd or nohup get a bare PATH and miss agents."""
-    global _login_path
+    global _login_path, _login_path_at
     if _login_path is None:
-        _login_path = ""
+        _login_path, _login_path_at = "", time.time()
         sh = os.environ.get("SHELL") or "/bin/zsh"
         try:
             r = subprocess.run([sh, "-ilc", 'printf "__P__%s" "$PATH"'], capture_output=True, text=True, timeout=6)
@@ -1337,6 +1346,17 @@ def login_path():
         except Exception:
             pass
     return _login_path
+
+
+def _reread_login_path(after):
+    """Read the login PATH again if the copy is older than `after` seconds: an agent installed since may have added
+    itself to it (nvm, a new line in .zprofile). True when it was read again."""
+    global _login_path
+    if _login_path is None or time.time() - _login_path_at < after:
+        return False
+    _login_path = None
+    login_path()
+    return True
 
 
 # Runs bill the plan the agent is signed in with: drop API keys the server's own environment may carry.

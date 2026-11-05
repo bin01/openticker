@@ -562,23 +562,48 @@ function askAgentsView(){
     <ul class="agl">${P.map(p=>{ const [lab,cls]=ST[p.state]||["",""]; const act=p.state==="ready"?`<button class="btn ${cur?.id===p.id?"":"ghost"}" data-ag-use="${p.id}">${cur?.id===p.id?"In use":"Use"}</button>`
         :local?`<button class="btn ghost" data-ag-act="${p.state==="missing"?"install":"login"}" data-ag="${p.id}">${p.state==="missing"?"Install":p.id==="ollama"?(p.state==="off"?"Start":"Get a model"):"Sign in"}</button>`:"";
       return `<li><div><b>${esc(p.label)}</b><small>${esc(p.state==="ready"?p.note:p.why||p.note)}</small></div><span class="st ${cls}">${lab}</span>${act}</li>`; }).join("")}</ul>
-    <div class="agcmd" id="agCmd" hidden></div>
-    ${cur?`<button class="lnk" data-ag-done>Back to the conversation</button>`:`<button class="lnk" data-ag-refresh>Check again</button>`}</div>`;
+    ${agSetupBox(P)}
+    ${cur?`<button class="lnk" data-ag-done>Back to the conversation</button>`:ASK.setup?"":`<button class="lnk" data-ag-refresh>Check again</button>`}</div>`;
+}
+/* The step the person started in Terminal (install or sign in), so the page can say what it's waiting for and notice
+   by itself when it's done: no Check again, no restart. */
+function agSetupBox(P){
+  const s=ASK.setup, p=s&&P.find(x=>x.id===s.id); if(!p||p.available) return "";
+  const cmd=s.action==="install"?p.install:p.login, installed=s.action==="install"&&p.state!=="missing";
+  if(installed) return `<div class="agcmd"><p><b>${esc(p.label)} is installed.</b> ${p.id==="ollama"?"Next, get a model":"Next, sign in"} with the button above.</p></div>`;
+  return `<div class="agcmd"><p><b>Terminal opened</b> to ${s.action==="install"?`install ${esc(p.label)}`:p.id==="ollama"?"get a model":`sign in to ${esc(p.label)}`}. Follow it there. This page updates by itself when it's done.</p>
+    <div class="pairl"><code>${esc(cmd)}</code><button class="btn ghost" data-ag-copy="${esc(cmd)}">${ic("copy",13)}Copy</button></div>
+    <p class="agwait" role="status"><i></i>Waiting for ${s.action==="install"?"the install":p.id==="ollama"?"a model":"you to sign in"}<button class="lnk" data-ag-refresh>Check now</button></p></div>`;
 }
 document.addEventListener("click",async e=>{
   const b=e.target.closest("[data-ag-use],[data-ag-act],[data-ag-refresh],[data-ag-done],[data-ag-copy]"); if(!b) return;
   if(b.dataset.agUse){ ASK.prov=b.dataset.agUse; save("askProv",ASK.prov); ASK.view=null; return askRender(); }
   if(b.hasAttribute("data-ag-done")){ ASK.view=null; return askRender(); }
-  if(b.hasAttribute("data-ag-refresh")){ b.textContent="Checking…"; await askInfo(true); return askRender(); }
+  if(b.hasAttribute("data-ag-refresh")){ b.textContent="Checking…"; await agentsCheck(); return askRender(); }
   if(b.dataset.agCopy){ navigator.clipboard?.writeText(b.dataset.agCopy); b.innerHTML=ic("check",13)+"Copied"; return; }
   const p=(ASK.info?.providers||[]).find(x=>x.id===b.dataset.ag), action=b.dataset.agAct, cmd=p&&(action==="install"?p.install:p.login);
   if(!cmd) return;
   fetch("/api/ask/terminal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({provider:p.id,action})}).catch(()=>{});
-  const box=$("#agCmd"); box.hidden=false;
-  box.innerHTML=`<p><b>Terminal opened</b> to ${action==="install"?`install ${esc(p.label)}`:`set up ${esc(p.label)}`}. Follow it there, then come back and choose <b>Check again</b>.</p>
-    <div class="pairl"><code>${esc(cmd)}</code><button class="btn ghost" data-ag-copy="${esc(cmd)}">${ic("copy",13)}Copy</button></div>
-    <button class="lnk" data-ag-refresh>Check again</button>`;
+  ASK.setup={id:p.id,action,at:Date.now()}; askRender();
 });
+/* Watching for an agent to become ready: every few seconds while a Terminal step is under way and the page is in
+   view, and whenever the window comes back to the front while an agent isn't ready. */
+const agKey=()=>(ASK.info?.providers||[]).map(p=>p.id+":"+p.state).join();
+let agBusy=false, agLast=0;
+async function agentsCheck(){
+  if(agBusy) return; agBusy=true; agLast=Date.now();
+  const before=agKey(); try{ await askInfo(true); }finally{ agBusy=false; }
+  const s=ASK.setup, p=s&&(ASK.info?.providers||[]).find(x=>x.id===s.id);
+  if(p?.available){ ASK.setup=null; ASK.prov=p.id; save("askProv",p.id);
+    if(ASK.view==="agents") ASK.view=null;
+    toast(p.id==="ollama"?`Ollama is ready. ${TICK} will think with it.`:`${p.label} is signed in. ${TICK} will think with it.`); }
+  else if(s&&Date.now()-s.at>20*60e3) ASK.setup=null;   // gave up on it; the Check again link stays
+  if(agKey()!==before||p?.available){ if(ASK.open) askRender(); if($("#sets")?.open) renderSettings(); }
+}
+setInterval(()=>{ if(ASK.setup&&document.visibilityState==="visible") agentsCheck(); },3000);
+const agBack=()=>{ if(document.visibilityState!=="visible"||Date.now()-agLast<2000||!ASK.info?.local) return;
+  if(ASK.setup||(ASK.info?.providers||[]).some(p=>p.state==="signin"||p.state==="off")||ASK.info&&!askProv()) agentsCheck(); };
+addEventListener("focus",agBack); document.addEventListener("visibilitychange",agBack);
 function askPair(m,info){
   const pb=m.querySelector("[data-ask-pair]"); if(pb) pb.onclick=e=>{ e.stopPropagation(); const box=$("#pairBox"); box.hidden=false;
     box.innerHTML=`<p>Open this link on your phone (same Wi-Fi). It pairs the phone so ${TICK} works there too.</p>${pairRow('id="pairCopy"')}<p class="hint">Send it with AirDrop or Messages. Anyone with this link on your Wi-Fi can talk to ${TICK}, so keep it to yourself.</p>`;
