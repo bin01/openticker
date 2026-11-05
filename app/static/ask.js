@@ -90,6 +90,8 @@ function say(text,kind,ms){ const b=$("#askSay"); if(!b) return; clearTimeout(sa
   if(ms) sayT=setTimeout(()=>b.classList.remove("on"),ms); }
 const QUIPS=["Still here.","Numbers before adjectives.","I don't do hype.","Type @ to bring in another stock.","Ask me why something moved.","I read the live numbers, not the headlines."];
 let quip=0;
+/* while an answer runs, the bubble by Tick's face names what he's doing, in a word or two ("Searching the web") */
+function sayStep(st){ const t=(String(st||"Thinking").split(/:| for /)[0]||"Thinking")+"…"; if($("#askSay")?.textContent!==t||!$("#askSay")?.classList.contains("on")) say(t); }
 /* Tick watches the cursor: his eyes follow it, and the one on the composer leans toward it */
 let lookXY=null, lookRaf=0, lookT=0;
 function tickLook(){ lookRaf=0;
@@ -177,7 +179,7 @@ function askShell(){
     if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){ e.preventDefault(); $("#askF").requestSubmit(); }
   });
   $("#askF").onsubmit=async e=>{ e.preventDefault(); const q=Q.value.trim();
-    if(ASK.run){ askStop(); if(!q) return; await new Promise(r=>setTimeout(r,80)); }   // Enter while Tick works steers: stop, then go again with the new words
+    if(ASK.run){ await askStop(); if(!q) return; }   // Enter while Tick works steers: stop, then go again with the new words
     if(!q) return; Q.value=""; grow(); hidePop(); askSend({q}); };
   $("#askClose").onclick=closeAsk;
   $("#askNew").onclick=()=>newChat();
@@ -244,13 +246,14 @@ function closeAsk(){ ASK.open=false; save("tickOpen","0"); hideMenus(); applyDoc
 async function restoreChat(){
   if(ASK.restored||!ASK.info?.allowed) return; ASK.restored=true;
   if(!ASK.chat) return;
-  try{ const c=await askGet("/api/ask/chat?id="+encodeURIComponent(ASK.chat)); if(c&&c.messages&&!ASK.conv.length) ASK.conv=c.messages.map(m=>({...m,done:true})); }catch(e){}
+  try{ const c=await askGet("/api/ask/chat?id="+encodeURIComponent(ASK.chat)); if(c&&c.messages&&!ASK.conv.length){ ASK.conv=c.messages.map(m=>({...m,done:true})); if(c.running){ askFollow(c.running); return; } } }catch(e){}
 }
-function newChat(){ askStop(); ASK.conv=[]; ASK.chat=""; save("tickChat",""); ASK.view=null; ASK.also=[]; ASK.pinned=false; ASK.ctx=askDefaultCtx(); askRender(); $("#askQ").focus(); }
+function newChat(){ askLeave(); ASK.conv=[]; ASK.chat=""; save("tickChat",""); ASK.view=null; ASK.also=[]; ASK.pinned=false; ASK.ctx=askDefaultCtx(); askRender(); $("#askQ").focus(); }
 async function openChat(id){
-  askStop();
+  askLeave();
   try{ const c=await askGet("/api/ask/chat?id="+encodeURIComponent(id)); if(!c.messages) return;
     ASK.chat=id; save("tickChat",id); ASK.conv=c.messages.map(m=>({...m,done:true})); ASK.view=null; ASK.stick=true;
+    if(c.running){ askFollow(c.running); }
     const lastU=[...ASK.conv].reverse().find(m=>m.role==="user"&&m.ctx); if(lastU){ ASK.ctx=lastU.ctx; ASK.pinned=true; }
     askRender(); }catch(e){}
 }
@@ -370,7 +373,18 @@ function greeting(){ const h=new Date().getHours(); return h<5?"Up late.":h<12?"
 
 /* rendering ------------------------------------------------------------------------------------------ */
 function stepIcon(t){ return /^Searching/.test(t)?"search":/web page/.test(t)?"globe":/news/.test(t)?"news":/^Checking/.test(t)?"chart":"term"; }
-const stepRow=(t,now)=>`<div class="stp${now?" now":""}"><i class="sb">${now?"":ic(stepIcon(t),12)}</i><span>${esc(t)}</span></div>`;
+/* one step of the work log. now: the step under way (a spinning ring, its label shimmering, a running clock);
+   fresh: it just arrived and slides in; just: it just finished and its icon pops in; fade: older steps recede */
+const stepRow=(t,now,o={})=>`<div class="stp${now?" now":""}${o.fresh?" fresh":""}${o.just?" just":""}"${o.fade?` style="--f:${o.fade}"`:""}><i class="sb">${now?"":ic(stepIcon(t),12)}</i><span class="sl">${esc(t)}</span>${now&&o.since?`<em class="el" data-since="${o.since}">${stepClock(o.since)}</em>`:""}</div>`;
+const stepClock=since=>{ const s=Math.round((Date.now()-since)/1000); return s<3?"":dur(s); };
+setInterval(()=>document.querySelectorAll("#askB .stp.now .el").forEach(e=>{ e.textContent=stepClock(+e.dataset.since); }),1000);
+function liveLog(m,steps){
+  const at=m.stepAt||[], n=steps.length, rows=n?steps.slice(-5):[m.status||"Thinking"], off=n-rows.length, t=Date.now();
+  return `<div class="log going" data-sig="${n}|${n?"":esc(m.status||"")}">${n>5?`<div class="more">${n-5} earlier step${n-5>1?"s":""}</div>`:""}${rows.map((x,k)=>{
+    const last=k===rows.length-1, j=off+k, back=rows.length-1-k;
+    return stepRow(x,last,{fresh:last&&(!n||t-(at[j]||0)<900),just:!last&&j===n-2&&t-(at[n-1]||0)<900,since:last?(n?at[j]:m.t0):0,fade:back?Math.max(.42,1-back*.16).toFixed(2):0});
+  }).join("")}</div>`;
+}
 const dur=s=>s<60?s+"s":Math.floor(s/60)+"m "+(s%60)+"s";
 function askRender(){
   if(!$("#ask")) return;
@@ -384,7 +398,7 @@ function askRender(){
     md.title=`Model: ${mn}${ef?`, ${EFFORT[ef]||ef} effort`:""}`; md.setAttribute("aria-label",md.title); }
   $("#askHist").classList.toggle("on",ASK.view==="history");
   paintSend();
-  if(ASK.run) say((ASK.conv[ASK.conv.length-1]?.status||"Thinking")+"…");
+  if(ASK.run) sayStep(ASK.conv[ASK.conv.length-1]?.status);
   const B=$("#askB");
   if(info&&!info.allowed){ B.innerHTML=`<div class="tk-hi"><p class="tk-greet">${TICK} lives on your Mac.</p><p class="tk-sub">${TICK} answers with the AI agents signed in on your Mac, such as Claude Code or Codex, so they use your own plan. To talk to ${TICK} from this phone, open OpenTicker on the Mac, click the agent name at the top of this panel, then <b>Use on your phone</b>.</p></div>`; $("#askF").classList.add("off"); return; }
   $("#askF").classList.toggle("off",!!info&&!p);
@@ -412,9 +426,9 @@ function askRender(){
 }
 function amHTML(m,i){
     const live=!m.done, steps=(m.steps||[]).filter(Boolean);
-    return `<div class="am a${live?" live":""}" data-i="${i}">
-      ${live&&!m.text?`<div class="log">${steps.slice(-5).map((s,k,a)=>stepRow(s,k===a.length-1)).join("")||stepRow(m.status||"Thinking",true)}</div>`
-        :steps.length?`<details class="how"><summary>How I got there${ic("chevr",13)}</summary><div class="log">${steps.map(s=>stepRow(s)).join("")}</div></details>`:""}
+    return `<div class="am a${live?" busy":""}" data-i="${i}">
+      ${live&&!m.text?liveLog(m,steps)
+        :steps.length?`<details class="how" data-sig="${steps.length}"><summary>How I got there<span class="hn">${steps.length} step${steps.length>1?"s":""}</span>${ic("chevr",13)}</summary><div class="log">${steps.map(s=>stepRow(s)).join("")}</div></details>`:""}
       <div class="md">${mdToHtml(m.text,m)}${live&&m.text?`<span class="caret"></span>`:""}</div>
       ${m.error?`<div class="aerr">${esc(m.error)}</div>`:""}
       ${m.done?`<div class="af">${m.text?`<button class="ib" data-ask-copy="${i}" title="Copy" aria-label="Copy">${ic("copy",14)}</button>`:""}${i===ASK.conv.length-1?`<button class="ib" data-ask-retry title="Ask again" aria-label="Ask again">${ic("retry",14)}</button>`:""}<span>${m.secs!=null?`Worked for <b>${dur(m.secs)}</b>`:""}${m.by?` · ${esc(m.by.split(" · ").map((x,j)=>j?prettyModel(x):x).join(" · "))}`:""}</span></div>`:""}</div>`;
@@ -427,7 +441,7 @@ function askPatchLive(){
   const tmp=document.createElement("div"); tmp.innerHTML=amHTML(m,i); const nu=tmp.firstElementChild; if(!nu) return false;
   const drawn=new Map([...el.querySelectorAll("figure.tkc[data-drawn]")].map(f=>[f.dataset.c,f]));
   nu.querySelectorAll("figure.tkc[data-c]").forEach(f=>{ const o=drawn.get(f.dataset.c); if(o) f.replaceWith(o); });
-  const open=el.querySelector("details.how")?.open, d=nu.querySelector("details.how"); if(open&&d) d.open=true;
+  for(const q of [".log.going","details.how"]){ const o=el.querySelector(q), n=nu.querySelector(q); if(o&&n&&o.dataset.sig===n.dataset.sig) n.replaceWith(o); }
   el.replaceWith(nu); drawCharts(nu);
   if(ASK.stick!==false) B.scrollTop=B.scrollHeight;
   return true;
@@ -520,38 +534,88 @@ async function askSend({q,skill,retry}){
   const full=q&&also.length?`${q}\n\n(Also bring in: ${also.join(", ")}. Use openticker for their data.)`:q;
   const history=ASK.conv.filter(m=>m.text&&!m.error).map(m=>({role:m.role,text:m.text})).slice(-6);
   if(!retry) ASK.conv.push({role:"user",text:shown,ctx:c,skill:sk?.name||null});
-  const msg={role:"assistant",text:"",status:"Gathering the data",steps:[],done:false,by:askProvLabel(prov)}; ASK.conv.push(msg); ASK.stick=true;
+  const msg=askLiveMsg(askProvLabel(prov)); ASK.conv.push(msg); ASK.stick=true;
   ASK.also=[];
-  const ctl=new AbortController(), t0=Date.now(); ASK.run=ctl; setMood("think"); askRender();
-  let toolSince=false, raf=0, started=false; const paint=()=>{ if(!raf) raf=requestAnimationFrame(()=>{ raf=0; if(!askPatchLive()) askRender(); }); };
+  const ctl=new AbortController(); ASK.run=ctl; setMood("think"); askRender();
+  let first=null;
   try{
-    const r=await fetch("/api/ask",{method:"POST",headers:askHeaders(),signal:ctl.signal,body:JSON.stringify({provider:prov.id,model:askModelOf(prov)||undefined,effort:(prov.efforts?.length&&askEffortOf(prov))||undefined,scope:c.scope,t:c.t,
+    first=await fetch("/api/ask",{method:"POST",headers:askHeaders(),signal:ctl.signal,body:JSON.stringify({provider:prov.id,model:askModelOf(prov)||undefined,effort:(prov.efforts?.length&&askEffortOf(prov))||undefined,scope:c.scope,t:c.t,
       skill:sk&&!q?sk.name:undefined,q:full||undefined,show:shown,history,chat:ASK.chat})});
-    if(!r.ok){ const d=await r.json().catch(()=>({})); throw new Error(d.error||`${TICK} didn't answer.`); }
-    const rd=r.body.getReader(), dec=new TextDecoder(); let buf="";
-    for(;;){
-      const {value,done}=await rd.read(); if(done) break;
-      buf+=dec.decode(value,{stream:true}); let k;
-      while((k=buf.indexOf("\n\n"))>=0){
-        const block=buf.slice(0,k); buf=buf.slice(k+2);
-        const ev=(block.match(/^event: (.*)$/m)||[])[1]||"message", data=JSON.parse((block.match(/^data: (.*)$/m)||[])[1]||"{}");
-        if(ev==="text"){ msg.text+=data.text; toolSince=false; msg.status="Writing"; }
-        else if(ev==="status"){ msg.status=data.text; if(started) msg.steps.push(data.text); else if(/^Asking /.test(data.text)){ started=true; msg.status="Reading the numbers"; } if(msg.text) toolSince=true; }
-        else if(ev==="turn"){ if(toolSince){ msg.text=""; toolSince=false; } }   // drop "let me check…" narration once the agent has looked something up
-        else if(ev==="meta"&&data.model){ msg.by=`${prov.label} · ${data.model}`; const k=askModelOf(prov); prov.seen={...(prov.seen||{}),[k]:data.model}; }
-        else if(ev==="error") msg.error=data.message;
-        paint();
-      }
+    if(!first.ok){ const d=await first.json().catch(()=>({})); throw new Error(d.error||`${TICK} didn't answer.`); }
+  }catch(e){ if(e.name!=="AbortError") msg.error=e.message==="Failed to fetch"?"Couldn't reach OpenTicker on your Mac.":e.message; first=null; }
+  await askDrive(msg,prov,ctl,first);
+}
+/* An answer is a log on the server (runs.py). The page only reads it: closing, reloading or switching conversations
+   never stops the agent, and if the connection drops (OpenTicker restarting) the page reattaches and reads it again. */
+const askLiveMsg=by=>({role:"assistant",text:"",status:"Gathering the data",steps:[],stepAt:[],done:false,by,t0:Date.now()});
+function askApply(msg,prov,st,ev,data){
+  if(ev==="run"){ msg.run=data.id; msg.t0=data.started*1000; }
+  else if(ev==="text"){ if(!msg.text) msg.textAt=Date.now(); msg.text+=data.text; st.toolSince=false; msg.status="Writing"; }
+  else if(ev==="status"){ msg.status=data.text; if(st.started){ msg.steps.push(data.text); msg.stepAt.push(Date.now()); } else if(/^Asking /.test(data.text)){ st.started=true; msg.status="Reading the numbers"; } if(msg.text) st.toolSince=true; }
+  else if(ev==="reset"){ msg.text=""; st.toolSince=false; }
+  else if(ev==="turn"){ if(st.toolSince){ msg.text=""; st.toolSince=false; } }   // drop "let me check…" narration once the agent has looked something up
+  else if(ev==="meta"&&data.model){ msg.by=`${prov?.label||msg.by.split(" · ")[0]} · ${data.model}`; if(prov){ const k=askModelOf(prov); prov.seen={...(prov.seen||{}),[k]:data.model}; } }
+  else if(ev==="error") msg.error=data.message;
+  else if(ev==="end"){ st.ended=true; msg.secs=data.secs; if(data.by) msg.by=data.by; if(data.error&&!msg.text) msg.error=data.error; }
+  else if(ev==="gone") st.ended=true;
+}
+async function askRead(r,msg,prov,st,paint){
+  const rd=r.body.getReader(), dec=new TextDecoder(); let buf="";
+  for(;;){
+    const {value,done}=await rd.read(); if(done) break;
+    buf+=dec.decode(value,{stream:true}); let k;
+    while((k=buf.indexOf("\n\n"))>=0){
+      const block=buf.slice(0,k); buf=buf.slice(k+2);
+      const ev=(block.match(/^event: (.*)$/m)||[])[1]||"message"; if(ev==="ping") continue;
+      askApply(msg,prov,st,ev,JSON.parse((block.match(/^data: (.*)$/m)||[])[1]||"{}")); paint();
     }
-  }catch(e){ if(e.name!=="AbortError") msg.error=e.message==="Failed to fetch"?"Couldn't reach OpenTicker on your Mac.":e.message; }
-  msg.done=true; msg.status=""; msg.secs=Math.round((Date.now()-t0)/1000);
+  }
+}
+async function askDrive(msg,prov,ctl,first){
+  let raf=0; const paint=()=>{ if(ASK.run!==ctl) return; if(!raf) raf=requestAnimationFrame(()=>{ raf=0; if(ASK.run!==ctl) return; if(!askPatchLive()) askRender(); else sayStep(msg.status); }); };
+  const st={started:false,toolSince:false,ended:false};
+  for(let r=first,tries=0;;){
+    try{
+      if(!r&&msg.run){ r=await fetch(`/api/ask/run?id=${msg.run}&after=0`,{headers:askHeaders(),signal:ctl.signal}); if(!r.ok) throw new Error("gone"); }
+      if(r){ await askRead(r,msg,prov,st,paint); tries=0; }
+    }catch(e){ if(e.name==="AbortError") break; }
+    r=null;
+    if(st.ended||ctl.signal.aborted||!msg.run) break;
+    // the connection dropped mid-answer: wait for OpenTicker and read the whole log again
+    if(++tries>45){ msg.error=`Lost touch with OpenTicker. The answer will appear in this conversation when it's done.`; break; }
+    msg.status="Reconnecting"; paint();
+    await new Promise(f=>setTimeout(f,Math.min(600*tries,2500)));
+    if(ctl.signal.aborted) break;
+    Object.assign(msg,{text:"",steps:[],stepAt:[],error:null,status:"Reconnecting"}); Object.assign(st,{started:false,toolSince:false});
+  }
+  if(ASK.run!==ctl) return;   // the person moved to another conversation; the answer is saved there
+  msg.done=true; msg.status="";
+  if(msg.secs==null) msg.secs=Math.round((Date.now()-msg.t0)/1000);
   if(!msg.text&&!msg.error) msg.error=ctl.signal.aborted?"Stopped.":"No answer came back. Try again, or pick another agent.";
   ASK.run=null; const bad=msg.error&&!msg.text; setMood(bad?"err":"done"); askRender();
-  say(bad?(ctl.signal.aborted?"Stopped.":"I hit a snag."):`Done in ${dur(msg.secs)}.`,bad?"err":null,2400);
+  say(bad?(msg.error==="Stopped."?"Stopped.":"I hit a snag."):`Done in ${dur(msg.secs)}.`,bad?"err":null,2400);
   setTimeout(()=>{ if(!ASK.run) setMood("idle"); },1600);
   if(!ASK.open||document.hidden) tickPing(msg);
 }
-function askStop(){ if(ASK.run){ ASK.run.abort(); ASK.run=null; } }
+/* pick up an answer that's still being written, e.g. after a reload */
+function askFollow(running){
+  if(ASK.run||!running) return;
+  const prov=(ASK.info?.providers||[]).find(p=>p.id===running.provider);
+  const msg=askLiveMsg(running.label); msg.run=running.id; msg.t0=running.started*1000;
+  ASK.conv.push(msg); ASK.stick=true;
+  const ctl=new AbortController(); ASK.run=ctl; setMood("think"); askRender();
+  askDrive(msg,prov,ctl,null);
+}
+/* Stop asks the server to stop the agent, then the log ends on its own; leaving only stops reading */
+async function askStop(){
+  const ctl=ASK.run; if(!ctl) return;
+  const m=ASK.conv[ASK.conv.length-1], id=m?.run;
+  if(id) fetch("/api/ask/stop",{method:"POST",headers:askHeaders(),body:JSON.stringify({id})}).catch(()=>{});
+  else ctl.abort();
+  for(let k=0;k<30&&ASK.run===ctl;k++) await new Promise(f=>setTimeout(f,100));
+  if(ASK.run===ctl){ ctl.abort(); }
+}
+function askLeave(){ const ctl=ASK.run; if(!ctl) return; ASK.run=null; ctl.abort(); setMood("idle"); }
 function askRetry(){ if(ASK.run) return; const i=ASK.conv.length-1; if(ASK.conv[i]?.role!=="assistant") return; ASK.conv.pop(); const u=ASK.conv[ASK.conv.length-1]; if(!u) return;
   ASK.ctx=u.ctx||ASK.ctx; askSend(u.skill?{skill:u.skill,retry:true}:{q:u.text,retry:true}); }
 /* when an answer lands while Tick is hidden, the header button says so */

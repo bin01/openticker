@@ -1,0 +1,279 @@
+"""Tick's answers as durable runs.
+
+An answer is a log. Every step the agent takes is appended as it happens: kept in memory while the answer runs,
+and saved to SQLite twice a second. A page is only a reader of that log, so closing or reloading it never stops
+the agent, and any page (or the phone) can reattach and replay what it missed.
+
+The agent's own session ID is the save point. Claude Code is started with a session ID we choose, Codex reports
+its thread ID; both are kept with the run. If OpenTicker restarts mid-answer, the answer is resumed through the
+agent's built-in resume and keeps appending to the same log. Agents that can't resume (OpenCode, Ollama), or a
+resume that fails, start the question again.
+"""
+from __future__ import annotations
+
+import json
+import secrets
+import threading
+import time
+import uuid
+
+import agent
+import personal
+
+RESUMABLE = {"claude", "codex"}
+RESUME_ASK = ("OpenTicker restarted while you were answering, so your reply was cut off. "
+              "Write your complete final answer to my last question now, using what you already looked up.")
+
+_live: dict = {}            # run id -> Live, for answers running in this process
+_glock = threading.Lock()
+
+
+class Live:
+    """One running answer: its events, the readers waiting on them, and the agent run behind it."""
+
+    def __init__(self, row, events=None):
+        self.row = row
+        self.events = list(events or [])        # [(seq, kind, payload)]
+        self.saved = len(self.events)           # events[:saved] are already in SQLite
+        self.cond = threading.Condition()
+        self.done = False
+        self.run = None
+        self.stopped = False
+
+    @property
+    def rid(self):
+        return self.row["id"]
+
+    def append(self, kind, payload):
+        if kind == "session":                   # the save point: kept with the run, not shown
+            self.row["session"] = payload.get("id")
+            personal.run_set(self.rid, session=self.row["session"])
+            return
+        with self.cond:
+            seq = (self.events[-1][0] + 1) if self.events else 1
+            self.events.append((seq, kind, payload))
+            self.cond.notify_all()
+
+    def flush(self):
+        with self.cond:
+            todo = self.events[self.saved:]
+            self.saved = len(self.events)
+        if todo:
+            personal.run_events_add(self.rid, todo)
+
+
+def _flusher():
+    while True:
+        time.sleep(0.5)
+        with _glock:
+            lives = list(_live.values())
+        for lv in lives:
+            try:
+                lv.flush()
+            except Exception as e:
+                agent.srv.log(f"run log save failed: {e!r}")
+
+
+def summary(events, label):
+    """What the conversation keeps of an answer: the text the person saw, the steps, which model, any error.
+    Same rules the page uses: statuses before "Asking ..." are setup, and narration before a tool call is dropped."""
+    acc = {"text": "", "steps": [], "tool": False, "by": None, "error": None, "on": False}
+    for _, kind, p in events:
+        if kind == "status" and not acc["on"]:
+            acc["on"] = str(p.get("text", "")).startswith("Asking ")
+            continue
+        if kind == "reset":
+            acc["text"], acc["tool"] = "", False
+        elif kind == "text":
+            acc["text"] += p.get("text", "")
+            acc["tool"] = False
+        elif kind == "status":
+            acc["steps"].append(p.get("text", ""))
+            acc["tool"] = bool(acc["text"])
+        elif kind == "turn" and acc["tool"]:
+            acc["text"], acc["tool"] = "", False
+        elif kind == "meta" and p.get("model"):
+            acc["by"] = p["model"]
+        elif kind == "error":
+            acc["error"] = p.get("message")
+    acc["by"] = label + (f" · {acc['by']}" if acc["by"] else "")
+    return acc
+
+
+def _label(prov):
+    return next((p["label"] for p in agent.PROVIDERS if p["id"] == prov), prov)
+
+
+def start(uid, cid, prov, spec, context):
+    """Start an answer in the background and return its id. spec: model, effort, question parts;
+    context(): the data to put in the prompt (gathered on the run's own thread)."""
+    rid = secrets.token_hex(8)
+    row = {"id": rid, "user_id": uid, "chat_id": cid, "provider": prov, "session": None, "status": "running",
+           "started": time.time(), "resumes": 0, "spec": spec}
+    personal.run_new(row)
+    lv = Live(row)
+    with _glock:
+        _live[rid] = lv
+    threading.Thread(target=_work, args=(lv, context), daemon=True).start()
+    return rid
+
+
+def _work(lv, context=None, resume=False):
+    row, spec, prov = lv.row, lv.row["spec"], lv.row["provider"]
+    label = _label(prov)
+    try:
+        if not resume:
+            lv.append("status", {"text": "Gathering the data"})
+            try:
+                ctx = context()
+            except Exception as e:
+                agent.srv.log(f"ask context failed: {e!r}")
+                ctx = "(Live data wasn't available just now.)"
+            spec["prompt"] = agent.build_prompt(spec["q"], ctx, agent.skill(spec["skill"]) if spec.get("skill") else None,
+                                                spec.get("history") or [], tools=prov != "ollama")
+            personal.run_set(row["id"], spec=json.dumps(spec))
+            lv.append("status", {"text": f"Asking {label}"})
+        session = None
+        if prov == "claude" and not resume:
+            session = str(uuid.uuid4())             # choose the save point up front, so even an early crash can resume
+            lv.append("session", {"id": session})
+        resume_from = row.get("session") if resume and prov in RESUMABLE else None
+        got = {"text": False}
+
+        def emit(kind, payload):
+            if kind == "text" and payload.get("text"):
+                got["text"] = True
+            elif kind == "meta" and payload.get("model"):
+                try:
+                    agent.remember_model(prov, spec.get("model"), payload["model"])
+                except Exception:
+                    pass
+            lv.append(kind, payload)
+
+        def go(resume_id):
+            run = agent.Run(prov, RESUME_ASK if resume_id else spec["prompt"], emit, spec.get("model"), spec.get("effort"),
+                            session=session, resume=resume_id)
+            lv.run = run
+            if lv.stopped:
+                run.cancelled = True
+                return
+            run.run()
+
+        if resume:
+            lv.append("reset", {})
+            lv.append("status", {"text": "Picking up where I left off"})
+        go(resume_from)
+        if resume and resume_from and not got["text"] and not lv.stopped:
+            # the agent couldn't continue its session (it never saved one, or it expired): ask again from the top
+            lv.append("reset", {})
+            lv.append("status", {"text": "Starting the answer again"})
+            go(None)
+    except Exception as e:
+        lv.append("error", {"message": f"Something went wrong: {e}"})
+    _finish(lv, label)
+
+
+def _finish(lv, label):
+    row = lv.row
+    with lv.cond:
+        events = list(lv.events)
+    acc = summary(events, label)
+    secs = round(time.time() - row["started"])
+    stopped = lv.stopped
+    error = acc["error"] or ("Stopped." if stopped and not acc["text"] else None)
+    if not acc["text"] and not error:
+        error = "No answer came back. Try again, or pick another agent."
+    lv.append("end", {"secs": secs, "by": acc["by"], "error": error if not acc["text"] else acc["error"]})
+    lv.flush()
+    if row.get("chat_id"):
+        try:
+            personal.chat_add(row["user_id"], row["chat_id"], {"role": "assistant", "text": acc["text"], "steps": acc["steps"][:24],
+                                                               "by": acc["by"], "secs": secs, "error": error, "ts": time.time()})
+        except Exception as e:
+            agent.srv.log(f"saving the answer failed: {e!r}")
+    personal.run_set(row["id"], status="stopped" if stopped else "error" if error and not acc["text"] else "done", ended=time.time())
+    with lv.cond:
+        lv.done = True
+        lv.cond.notify_all()
+    agent.srv.log(f"ask via {row['provider']} ({row['spec'].get('skill') or 'question'}) took {secs}s"
+                  + (" after a restart" if row.get("resumes") else ""))
+    threading.Timer(120, lambda: _drop(row["id"])).start()   # late readers still get it from memory for a bit
+
+
+def _drop(rid):
+    with _glock:
+        _live.pop(rid, None)
+
+
+def stop(rid, uid):
+    with _glock:
+        lv = _live.get(rid)
+    if not lv or lv.row["user_id"] != uid or lv.done:
+        return False
+    lv.stopped = True
+    if lv.run:
+        lv.run.cancel()
+    return True
+
+
+def running_for_chat(uid, cid):
+    with _glock:
+        for lv in _live.values():
+            if lv.row["chat_id"] == cid and lv.row["user_id"] == uid and not lv.done:
+                return {"id": lv.rid, "started": lv.row["started"], "provider": lv.row["provider"], "label": _label(lv.row["provider"])}
+    return None
+
+
+def follow(rid, uid, after, write, alive):
+    """Send the answer's events after `after` to one reader, then the new ones as they come, until it ends.
+    write(seq, kind, payload) sends one; alive() says whether the reader is still there."""
+    with _glock:
+        lv = _live.get(rid)
+    if lv is None:
+        row = personal.run_get(rid)
+        if not row or row["user_id"] != uid:
+            return False
+        for seq, kind, p in personal.run_events(rid, after):
+            write(seq, kind, p)
+        return True
+    if lv.row["user_id"] != uid:
+        return False
+    write(0, "run", {"id": rid, "started": lv.row["started"], "provider": lv.row["provider"]})
+    while alive():
+        with lv.cond:
+            todo = [e for e in lv.events if e[0] > after]
+            if not todo:
+                if lv.done:
+                    break
+                lv.cond.wait(15)
+                todo = [e for e in lv.events if e[0] > after]
+                if not todo:
+                    write(None, "ping", {})   # keeps the connection open through proxies and tells us if the reader left
+                    continue
+        for seq, kind, p in todo:
+            write(seq, kind, p)
+            after = seq
+    return True
+
+
+def recover():
+    """At start-up: answers that were still running when OpenTicker stopped get picked up again."""
+    threading.Thread(target=_flusher, daemon=True).start()
+    for row in personal.runs_open():
+        try:
+            spec = json.loads(row.get("spec") or "{}")
+        except Exception:
+            spec = {}
+        if row["resumes"] >= 2 or not spec.get("prompt"):
+            personal.run_set(row["id"], status="error", ended=time.time())
+            if row.get("chat_id"):
+                personal.chat_add(row["user_id"], row["chat_id"], {"role": "assistant", "text": "", "steps": [], "by": _label(row["provider"]),
+                                                                   "error": "OpenTicker restarted before this answer finished. Ask again.", "ts": time.time()})
+            continue
+        row = {**row, "spec": spec, "resumes": row["resumes"] + 1, "started": row["started"]}
+        personal.run_set(row["id"], resumes=row["resumes"])
+        lv = Live(row, personal.run_events(row["id"], 0))
+        with _glock:
+            _live[row["id"]] = lv
+        agent.srv.log(f"picking up an unfinished answer ({row['provider']}{', resuming its session' if row.get('session') and row['provider'] in RESUMABLE else ''})")
+        threading.Thread(target=_work, args=(lv, None, True), daemon=True).start()

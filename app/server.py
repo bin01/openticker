@@ -43,6 +43,7 @@ import yfinance as yf  # noqa: E402
 import agent  # noqa: E402
 import paths  # noqa: E402
 import personal  # noqa: E402
+import runs  # noqa: E402
 import yahoo_extra as X  # noqa: E402
 
 warnings.filterwarnings("ignore")   # yfinance resets filters on import; keep pandas deprecation noise out of the log
@@ -1680,6 +1681,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(415, b"json only", "text/plain")
         if self.path.split("?")[0] == "/api/ask":
             return self.ask()
+        if self.path.split("?")[0] == "/api/ask/stop":
+            if not agent.may_ask(self):
+                return self.send(403, b'{"error":"not allowed"}', "application/json")
+            try:
+                body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 10_000)) or b"{}")
+            except Exception:
+                return self.send(400, b"bad json", "text/plain")
+            return self.send(200, json.dumps({"ok": runs.stop(str(body.get("id") or ""), user_for(self))}).encode(), "application/json")
         if self.path.split("?")[0] == "/api/ask/chat/delete":
             if not agent.may_ask(self):
                 return self.send(403, b'{"error":"not allowed"}', "application/json")
@@ -1837,65 +1846,30 @@ class Handler(BaseHTTPRequestHandler):
                                              "skill": sk["name"] if sk else None, "ts": time.time()})
             except PermissionError:
                 cid = ""
+        spec = {"q": q, "skill": sk["name"] if sk else None, "history": hist, "model": body.get("model"), "effort": body.get("effort"),
+                "scope": scope, "t": t or None}
+        rid = runs.start(uid, cid, prov, spec, lambda: agent.context_for(scope, t, uid))
+        self.follow_run(rid, uid, 0)   # the answer runs on its own: leaving this stream doesn't stop it
+
+    def follow_run(self, rid, uid, after):
+        """Stream a run's log as Server-Sent Events: what's there after `after`, then the rest as it comes."""
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
-        wlock, state = threading.Lock(), {"alive": True, "run": None}
+        state = {"alive": True}
 
-        acc = {"text": "", "steps": [], "tool": False, "by": None, "error": None, "on": False}
-
-        def remember(kind, payload):
-            """Keep what the user saw, so the conversation is still there after a reload or on the phone."""
-            if not acc["on"]:
-                return
-            if kind == "text":
-                acc["text"] += payload.get("text", "")
-                acc["tool"] = False
-            elif kind == "status":
-                acc["steps"].append(payload.get("text", ""))
-                acc["tool"] = bool(acc["text"])
-            elif kind == "turn" and acc["tool"]:
-                acc["text"], acc["tool"] = "", False
-            elif kind == "meta" and payload.get("model"):
-                acc["by"] = payload["model"]
-                agent.remember_model(prov, body.get("model"), payload["model"])
-            elif kind == "error":
-                acc["error"] = payload.get("message")
-
-        def emit(kind, payload):
-            remember(kind, payload)
+        def write(seq, kind, payload):
             if not state["alive"]:
                 return
             try:
-                with wlock:
-                    self.wfile.write(f"event: {kind}\ndata: {json.dumps(payload)}\n\n".encode())
-                    self.wfile.flush()
+                self.wfile.write(((f"id: {seq}\n" if seq else "") + f"event: {kind}\ndata: {json.dumps(payload)}\n\n").encode())
+                self.wfile.flush()
             except Exception:
                 state["alive"] = False
-                if state["run"]:
-                    state["run"].cancel()
-
-        label = next(p["label"] for p in agent.PROVIDERS if p["id"] == prov)
-        emit("status", {"text": "Gathering the data"})
-        try:
-            ctx = agent.context_for(scope, t, uid)
-        except Exception as e:
-            log(f"ask context failed: {e!r}")
-            ctx = "(Live data wasn't available just now.)"
-        emit("status", {"text": f"Asking {label}"})
-        run = agent.Run(prov, agent.build_prompt(q, ctx, sk, hist, tools=prov != "ollama"), emit, body.get("model"), body.get("effort"))
-        state["run"] = run
-        t0 = time.time()
-        acc["on"] = True
-        run.run()
-        if cid:
-            stopped = not state["alive"] or run.cancelled
-            personal.chat_add(uid, cid, {"role": "assistant", "text": acc["text"], "steps": acc["steps"][:24],
-                                         "by": label + (f" · {acc['by']}" if acc["by"] else ""), "secs": round(time.time() - t0),
-                                         "error": acc["error"] or ("Stopped." if stopped and not acc["text"] else None), "ts": time.time()})
-        log(f"ask via {prov} ({sk['name'] if sk else 'question'}, {scope} {t}) took {time.time() - t0:.0f}s")
+        if not runs.follow(rid, uid, after, write, lambda: state["alive"]):
+            write(None, "gone", {})
 
     def do_GET(self):
         path = self.path.split("?")[0]
@@ -1949,6 +1923,14 @@ class Handler(BaseHTTPRequestHandler):
                 "skills": [{k: s[k] for k in ("name", "label", "scope", "prompt", "description", "blurb")} for s in agent.skills()],
                 "pair": (f"{LINK_BASE or 'http://' + (self.headers.get('Host') or '')}/#pair={agent.pair_token()}" if agent.is_local(self) and agent.host_ok(self) else None),
             }).encode(), "application/json")
+        elif path == "/api/ask/run":
+            if not agent.may_ask(self):
+                return self.send(403, b'{"error":"not allowed"}', "application/json")
+            qs = parse_qs(urlsplit(self.path).query)
+            rid, after = (qs.get("id") or [""])[0], (qs.get("after") or ["0"])[0]
+            if not re.fullmatch(r"[0-9a-f]{16}", rid) or not after.isdigit():
+                return self.send(400, b'{"error":"bad run"}', "application/json")
+            self.follow_run(rid, user_for(self), int(after))
         elif path in ("/api/ask/chats", "/api/ask/chat"):
             if not agent.may_ask(self):
                 return self.send(403, b'{"error":"not allowed"}', "application/json")
@@ -1956,7 +1938,10 @@ class Handler(BaseHTTPRequestHandler):
             if path.endswith("chats"):
                 body = personal.chats(uid)
             else:
-                body = personal.chat(uid, (parse_qs(urlsplit(self.path).query).get("id") or [""])[0]) or {"error": "not found"}
+                cid = (parse_qs(urlsplit(self.path).query).get("id") or [""])[0]
+                body = personal.chat(uid, cid) or {"error": "not found"}
+                if "error" not in body:
+                    body["running"] = runs.running_for_chat(uid, cid)   # an answer still being written: the page reattaches
             self.send(200, json.dumps(body).encode(), "application/json")
         elif path == "/api/brief":
             self.send(200, json.dumps(brief(user_for(self))).encode(), "application/json")
@@ -2016,6 +2001,7 @@ def main():
     PORT, HOST = args.port, args.host
     personal.init()
     agent.bind(sys.modules[__name__])
+    runs.recover()
     # Serve right away: from the last run's prices if there are any, otherwise a loading screen that says what's
     # happening. Fresh holdings and history download behind it, then the background loops start.
     S.load_cache()

@@ -39,6 +39,10 @@ create table if not exists settings(user_id text, key text, value text, primary 
 create table if not exists chats(id text primary key, user_id text, title text, created real, updated real);
 create table if not exists chat_msgs(id integer primary key, chat_id text, ts real, body text);
 create index if not exists chat_msgs_chat on chat_msgs(chat_id, id);
+create table if not exists runs(id text primary key, user_id text, chat_id text, provider text, spec text, session text,
+    status text, started real, ended real, resumes integer default 0);
+create index if not exists runs_status on runs(status);
+create table if not exists run_events(run_id text, seq integer, kind text, body text, primary key(run_id, seq));
 """
 
 # Alert kinds. "scope" rules apply to a group of tickers; "t" rules to one ticker.
@@ -363,3 +367,43 @@ def chat_delete(uid, cid):
     if _q("select id from chats where id=? and user_id=?", (cid, uid), one=True):
         _exec("delete from chat_msgs where chat_id=?", (cid,))
         _exec("delete from chats where id=?", (cid,))
+
+
+# ---------------------------------------------------------------- Tick's answers as logs (see runs.py)
+RUN_FIELDS = {"spec", "session", "status", "ended", "resumes"}
+
+
+def run_new(row):
+    _exec("insert into runs(id, user_id, chat_id, provider, spec, session, status, started, resumes) values(?,?,?,?,?,?,?,?,?)",
+          (row["id"], row["user_id"], row["chat_id"], row["provider"], json.dumps(row["spec"]), row["session"], row["status"],
+           row["started"], row["resumes"]))
+    # answers older than a month have long been saved in their conversation; their step logs can go
+    old = time.time() - 30 * 86400
+    _exec("delete from run_events where run_id in (select id from runs where started<? and status!='running')", (old,))
+    _exec("delete from runs where started<? and status!='running'", (old,))
+
+
+def run_set(rid, **kw):
+    keys = [k for k in kw if k in RUN_FIELDS]
+    if keys:
+        _exec(f"update runs set {', '.join(k + '=?' for k in keys)} where id=?", tuple(kw[k] for k in keys) + (rid,))
+
+
+def run_get(rid):
+    return _q("select * from runs where id=?", (rid,), one=True)
+
+
+def runs_open():
+    return _q("select * from runs where status='running' order by started")
+
+
+def run_events_add(rid, events):
+    with _lock:
+        _conn.executemany("insert or replace into run_events(run_id, seq, kind, body) values(?,?,?,?)",
+                          [(rid, seq, kind, json.dumps(p)) for seq, kind, p in events])
+        _conn.commit()
+
+
+def run_events(rid, after=0):
+    return [(r["seq"], r["kind"], json.loads(r["body"])) for r in
+            _q("select seq, kind, body from run_events where run_id=? and seq>? order by seq", (rid, after))]

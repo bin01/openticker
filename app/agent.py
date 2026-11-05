@@ -1382,9 +1382,11 @@ def _claude_partial():
 
 class Run:
     """One streaming agent run. emit(kind, payload) is called from this thread; cancel() stops it."""
-    def __init__(self, provider, prompt, emit, model=None, effort=None):
+    def __init__(self, provider, prompt, emit, model=None, effort=None, session=None, resume=None):
         model = model if isinstance(model, str) and re.match(r"^[A-Za-z0-9][\w.:/@+-]{0,100}$", model) else None   # never a flag
         self.provider, self.prompt, self.emit, self.model = provider, prompt, emit, model
+        ok = lambda x: x if isinstance(x, str) and re.fullmatch(r"[\w-]{8,80}", x) else None   # never a flag either
+        self.session, self.resume = ok(session), ok(resume)   # the agent's own session: start it with this ID, or continue it
         self.effort = effort if effort in EFFORTS else None
         self.proc = None
         self.cancelled = False
@@ -1443,14 +1445,19 @@ class Run:
 
     # Claude Code: headless print mode, streaming JSON, read-only tools limited to the openticker command and web search
     def _run_claude(self):
+        # the session is kept (in Claude Code's folder for OpenTicker's work dir) so an answer cut off by a restart can resume
         args = [_which("claude"), "-p", "--output-format", "stream-json", "--verbose"] + (["--include-partial-messages"] if _claude_partial() else []) + [
-                "--no-session-persistence", "--strict-mcp-config", "--permission-mode", "dontAsk",
+                "--strict-mcp-config", "--permission-mode", "dontAsk",
                 "--tools", "Bash", "WebSearch", "WebFetch",
                 "--allowedTools", "Bash(openticker:*)", "Bash(openticker *)", "WebSearch", "WebFetch"]
         if self.model:
             args += ["--model", self.model]
         if self.effort:
             args += ["--effort", self.effort]
+        if self.resume:
+            args += ["--resume", self.resume]
+        elif self.session:
+            args += ["--session-id", self.session]
         p = self._spawn(args)
         for line in p.stdout:
             if self.cancelled:
@@ -1489,7 +1496,11 @@ class Run:
             args += ["-m", self.model]
         if self.effort:
             args += ["-c", f'model_reasoning_effort="{self.effort}"']
-        args.append("-")
+        if self.resume:
+            args += ["resume", self.resume, self.prompt]   # flags don't carry over a resume, so they come first again
+            self.prompt = ""
+        else:
+            args.append("-")
         p = self._spawn(args)
         for line in p.stdout:
             if self.cancelled:
@@ -1499,7 +1510,9 @@ class Run:
             except Exception:
                 continue
             ty, item = ev.get("type"), ev.get("item") or {}
-            if ty == "item.started" and item.get("type") == "command_execution":
+            if ty == "thread.started" and ev.get("thread_id"):
+                self.emit("session", {"id": ev["thread_id"]})
+            elif ty == "item.started" and item.get("type") == "command_execution":
                 self.emit("status", {"text": _describe_tool("Bash", {"command": item.get("command")})})
             elif ty == "item.started" and item.get("type") == "web_search":
                 self.emit("status", {"text": "Searching the web"})
