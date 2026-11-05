@@ -4,7 +4,7 @@
    (Claude Code, Codex, OpenCode) or a free local Ollama model.
    Shares globals with index.html: $, esc, ic, IC, load, save, base, sel, drawerOpen, page, openStock, COMMANDS, me, EARN, ret, idx, nameOf. */
 
-Object.assign(IC,{
+Object.assign(IC,{calc:'<path d="M18 7V4H6l6 8-6 8h12v-3"/>',
   spark:'<path d="M12 3l1.8 4.9L18.7 9.7 13.8 11.5 12 16.4 10.2 11.5 5.3 9.7 10.2 7.9z"/><path d="M19 15l.7 1.8 1.8.7-1.8.7L19 20l-.7-1.8-1.8-.7 1.8-.7z"/>',
   send:'<path d="M12 19V5M5 12l7-7 7 7"/>', stop:'<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>',
   copy:'<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>', check:'<path d="M20 6 9 17l-5-5"/>',
@@ -372,7 +372,7 @@ function noticings(c){
 function greeting(){ const h=new Date().getHours(); return h<5?"Up late.":h<12?"Good morning.":h<17?"Good afternoon.":"Good evening."; }
 
 /* rendering ------------------------------------------------------------------------------------------ */
-function stepIcon(t){ return /^Searching/.test(t)?"search":/web page/.test(t)?"globe":/news/.test(t)?"news":/^Checking/.test(t)?"chart":"term"; }
+function stepIcon(t){ return /^Running the numbers/.test(t)?"calc":/^Searching/.test(t)?"search":/web page/.test(t)?"globe":/news/.test(t)?"news":/^Checking/.test(t)?"chart":"term"; }
 /* one step of the work log. now: the step under way (a spinning ring, its label shimmering, a running clock);
    fresh: it just arrived and slides in; just: it just finished and its icon pops in; fade: older steps recede */
 const stepRow=(t,now,o={})=>`<div class="stp${now?" now":""}${o.fresh?" fresh":""}${o.just?" just":""}"${o.fade?` style="--f:${o.fade}"`:""}><i class="sb">${now?"":ic(stepIcon(t),12)}</i><span class="sl">${esc(t)}</span>${now&&o.since?`<em class="el" data-since="${o.since}">${stepClock(o.since)}</em>`:""}</div>`;

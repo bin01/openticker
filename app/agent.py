@@ -1007,6 +1007,21 @@ def calendar_context(uid):
     return "\n".join(L) + "\n"
 
 
+def prices_json(syms, n):
+    """Daily closes for up to ten tickers as JSON, for `openticker calc` (which loads them into pandas)."""
+    syms = list(dict.fromkeys(srv.yahoo_symbol(s) for s in syms if s))[:10]
+    for s in syms:
+        if s not in srv.S.px:
+            srv.S.track(s)
+    with srv.S.lock:
+        dates = list(srv.S.dates)
+        px = {s: list(srv.S.px.get(s) or []) for s in syms}
+    k = min(n, len(dates))
+    return json.dumps({"dates": dates[-k:] if k else [],
+                       "px": {s: [v if v else None for v in px[s][-k:]] for s in syms if any(px[s])},
+                       "missing": [s for s in syms if not any(px[s])]})
+
+
 def text_for(cmd, args, uid):
     """Dispatch for /api/agent/<cmd> and the openticker CLI."""
     t = (args.get("t") or [""])[0]
@@ -1030,6 +1045,9 @@ def text_for(cmd, args, uid):
     if cmd == "history":
         h = (args.get("h") or ["3M"])[0].upper()
         return history_context([x for x in re.split(r"[,\s]+", t) if x], dict(HORIZONS).get(h, 63), h)
+    if cmd == "prices":
+        h = (args.get("h") or ["ALL"])[0].upper()
+        return prices_json([x for x in re.split(r"[,\s]+", t) if x], dict(HORIZONS).get(h, 100000) + 1)
     if cmd == "search":
         res = srv.search_tickers((args.get("q") or [""])[0][:40])
         return "\n".join(f"- {r.get('t')}: {r.get('n') or ''}" + "".join(f" ({x})" for x in [", ".join(v for v in (r.get('type', '').title().replace('Etf', 'ETF').replace('Equity', 'Stock'), r.get('exch')) if v)] if x)
@@ -1285,7 +1303,13 @@ How to answer:
 TOOLS_NOTE = """If you can run shell commands, the `openticker` command returns more live data from the app as Markdown:
   openticker stock T | analysts T | earnings T | ownership T | options T | news T | financials T | events T
   openticker portfolio | brief | market | fund SPY --h 1M | compare NVDA AMD AVGO | calendar | search "name"
-Use it when the provided data isn't enough (for example, to compare with a peer). Use web search only for news newer than the data."""
+  openticker insiders T | technicals T | history T T2 --h 3M
+Use it when the provided data isn't enough (for example, to compare with a peer). Use web search only for news newer than the data.
+For any math beyond a quick ratio (returns, volatility, drawdowns, correlation, beta, what-ifs on a position), run Python instead of doing it in your head:
+  openticker calc NVDA AMD SPY <<'PY'
+  print((px.iloc[-1] / px.iloc[-63] - 1).round(3))
+  PY
+The tickers you name are loaded as `px`, a pandas DataFrame of daily closes (dates down, tickers across, about two years), and `rets`, their daily returns; numpy is `np`, pandas `pd`. Only what you print comes back. It runs in a sandbox with no network and no files, so put any other numbers you need into the code."""
 
 
 def build_prompt(q, ctx, skill_obj=None, history=None, tools=True):
@@ -1339,6 +1363,9 @@ def _describe_tool(name, inp):
         cmd = (inp or {}).get("command") or (inp or {}).get("cmd") or ""
         cmd = " ".join(cmd) if isinstance(cmd, list) else str(cmd)
         m = re.search(r"\bopenticker\s+(\w+)\s*([A-Za-z.\-^=, ]*)", cmd)
+        if m and m.group(1) == "calc":
+            ts = [x for x in re.split(r"[,\s]+", re.split(r"\s-", " " + m.group(2))[0].upper()) if x]
+            return "Running the numbers" + (f" for {', '.join(ts[:4])}" if ts else "")
         if m:
             what = {"stock": "the full picture", "analysts": "analyst data", "earnings": "earnings history", "ownership": "insider and holder data",
                     "options": "options activity", "news": "the news", "financials": "the financial statements", "events": "dividends and filings",

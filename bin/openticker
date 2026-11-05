@@ -31,6 +31,7 @@ Data, as Markdown (for you or any agent)
   openticker history NVDA SMH --h 3M daily closes, for charts
   openticker calendar                earnings and economic events in the next two weeks
   openticker search palantir         find a ticker
+  openticker calc NVDA SPY <<'PY'    run Python on their daily closes (px) in a sandbox, for any math
 
 Change it (with Claude Code, Codex or any coding agent; see AGENTS.md)
   openticker edit ["what you want"]  open your coding agent in OpenTicker's code
@@ -776,6 +777,119 @@ def data_query(cmd, rest):
     return q
 
 
+# --------------------------------------------------------------------------- calc
+# Agents do their math here instead of in their heads. The code runs in the venv's Python (numpy, pandas) under macOS's
+# sandbox: no network, no new processes, and nothing under your home folder except Python itself; it can only write
+# to a scratch folder that's deleted afterwards. The prices are fetched before the sandbox starts.
+CALC_PRELUDE = r"""
+import json, math, statistics, traceback, warnings
+warnings.filterwarnings("ignore")
+import numpy as np, pandas as pd
+pd.set_option("display.width", 150); pd.set_option("display.max_columns", 12); pd.set_option("display.max_rows", 60)
+_d = json.load(open("data.json"))
+px = pd.DataFrame(_d["px"], index=pd.to_datetime(_d["dates"]), dtype=float); px.index.name = "date"
+rets = px.pct_change(fill_method=None).iloc[1:]
+_ns = {"__name__": "__main__", "np": np, "pd": pd, "px": px, "rets": rets, "math": math, "statistics": statistics}
+try:
+    exec(compile(open("calc.py").read(), "calc", "exec"), _ns)
+except Exception:
+    lines = traceback.format_exc().splitlines()
+    keep = [lines[-1]] + [l for l in lines if 'File "calc"' in l][-1:]
+    print("Error: " + " / ".join(reversed(keep)).strip(), file=__import__("sys").stderr)
+    raise SystemExit(1)
+"""
+CALC_LIMIT = 20000      # characters of output the agent gets back
+CALC_SECONDS = 30
+
+
+def _sb(p):
+    return '"' + str(p).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def calc_profile(scratch, python_dirs, exes):
+    """The sandbox-exec profile: everything allowed except network, writes, new processes and reading your files.
+    Later rules win, so the allows after each deny carve out the scratch folder and Python."""
+    home = os.path.realpath(str(Path.home()))
+    return "\n".join([
+        "(version 1)",
+        "(allow default)",
+        "(deny network*)",
+        "(deny process-fork)",
+        "(deny process-exec)",
+        "(allow process-exec " + " ".join(f"(literal {_sb(e)})" for e in exes) + ")",
+        "(deny file-write*)",
+        f'(allow file-write* (subpath {_sb(scratch)}) (literal "/dev/null"))',
+        # your files, other drives, and other apps' temporary files
+        f'(deny file-read-data (subpath {_sb(home)}) (subpath "/Volumes") (subpath "/private/var/folders") (subpath "/private/tmp"))',
+        "(allow file-read-data " + " ".join(f"(subpath {_sb(d)})" for d in [scratch] + python_dirs) + ")",
+    ])
+
+
+def run_calc(code, data, sandbox=True):
+    """Run the code with the prices loaded. Returns (exit code, output)."""
+    import tempfile
+    scratch = os.path.realpath(tempfile.mkdtemp(prefix="openticker-calc-"))
+    try:
+        Path(scratch, "data.json").write_text(json.dumps(data))
+        Path(scratch, "calc.py").write_text(code)
+        Path(scratch, "run.py").write_text(CALC_PRELUDE)
+        python = py()
+        args = [python, "-I", "-B", "run.py"]
+        if sandbox:
+            where = subprocess.run([python, "-I", "-c", "import sys,os,json;print(json.dumps([os.path.realpath(p) for p in "
+                                    "(sys.prefix, sys.base_prefix, sys.exec_prefix, os.path.dirname(sys.executable))]))"],
+                                   capture_output=True, text=True, timeout=30)
+            dirs = sorted(set(json.loads(where.stdout or "[]")) | {os.path.realpath(str(Path(python).parent.parent))})
+            exes = sorted({python, os.path.realpath(python)})
+            args = ["/usr/bin/sandbox-exec", "-p", calc_profile(scratch, dirs, exes)] + args
+        env = {"PATH": "/usr/bin:/bin", "HOME": scratch, "TMPDIR": scratch, "LANG": "en_US.UTF-8",
+               "OMP_NUM_THREADS": "2", "OPENBLAS_NUM_THREADS": "2", "VECLIB_MAXIMUM_THREADS": "2"}
+        try:
+            r = subprocess.run(args, cwd=scratch, env=env, capture_output=True, text=True, timeout=CALC_SECONDS)
+        except subprocess.TimeoutExpired:
+            return 1, f"The calculation took longer than {CALC_SECONDS} seconds and was stopped."
+        out = (r.stdout or "") + (("\n" if r.stdout and r.stderr else "") + r.stderr.strip() if r.stderr.strip() else "")
+        if len(out) > CALC_LIMIT:
+            out = out[:CALC_LIMIT] + f"\n… cut off after {CALC_LIMIT} characters; print less."
+        if not out.strip() and r.returncode == 0:
+            out = "(Nothing printed. Use print() to show the result.)"
+        return r.returncode, out.rstrip() + "\n"
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def cmd_calc(args):
+    """openticker calc [TICKER ...] [--h 1Y] [-c CODE]; without -c the code comes on stdin."""
+    code, h, tickers, i = None, "ALL", [], 0
+    while i < len(args):
+        a = args[i]
+        if a in ("-c", "--code") and i + 1 < len(args):
+            code, i = args[i + 1], i + 2
+            continue
+        if a == "--h" and i + 1 < len(args):
+            h, i = args[i + 1].upper(), i + 2
+            continue
+        tickers += [x.upper() for x in re.split(r"[,\s]+", a) if x]
+        i += 1
+    if code is None:
+        if sys.stdin.isatty():
+            die("usage: openticker calc NVDA SPY <<'PY'\n  print(px.tail())\nPY\n"
+                "px holds the tickers' daily closes (a pandas DataFrame); rets their daily returns. Print what you want back.", 2)
+        code = sys.stdin.read()
+    if not code.strip():
+        die("no code to run", 2)
+    if not MAC:
+        die("openticker calc runs code in macOS's sandbox, so it only works on a Mac.")
+    data = {"dates": [], "px": {}}
+    if tickers:
+        data = json.loads(fetch("prices", {"t": ",".join(tickers[:10]), "h": h}, autostart=True))
+        if data.get("missing"):
+            sys.stdout.write(f"(No prices for {', '.join(data['missing'])}.)\n")
+    rc, out = run_calc(code, data)
+    sys.stdout.write(out)
+    return rc
+
+
 # --------------------------------------------------------------------------- MCP (stdio)
 TICKER = {"type": "string", "description": "Ticker symbol, e.g. NVDA, AAPL, BRK-B, ^VIX"}
 MCP_TOOLS = [
@@ -905,7 +1019,8 @@ def cmd_mcp(args):
 # --------------------------------------------------------------------------- main
 COMMANDS = {"start": cmd_start, "stop": lambda a: stop(), "restart": cmd_restart, "status": cmd_status,
             "open": cmd_open, "logs": cmd_logs, "pair": cmd_pair, "setup": cmd_setup, "update": cmd_update,
-            "doctor": cmd_doctor, "skills": cmd_skills, "mcp": cmd_mcp, "edit": cmd_edit, "check": cmd_check, "test": cmd_test, "shot": cmd_shot}
+            "doctor": cmd_doctor, "skills": cmd_skills, "mcp": cmd_mcp, "edit": cmd_edit, "check": cmd_check, "test": cmd_test, "shot": cmd_shot,
+            "calc": cmd_calc}
 
 
 def main(argv):

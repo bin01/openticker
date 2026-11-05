@@ -23,6 +23,7 @@ OpenTicker runs on the user's Mac and serves live data from Yahoo Finance plus t
 | `openticker history NVDA SMH --h 3M` | Daily closes over 1W, 1M, 3M, 6M or 1Y, with % change since the start, for charts |
 | `openticker calendar` | Earnings and economic events in the next two weeks |
 | `openticker search "palantir"` | Find a ticker |
+| `openticker calc NVDA SPY <<'PY'` … `PY` | Runs Python on the tickers' daily closes: `px` (pandas DataFrame, dates down, tickers across), `rets` (daily returns), `np`, `pd`. Prints come back. Sandboxed: no network, no files. Use it for any math beyond a quick ratio |
 
 If an MCP server named `openticker` is connected, its tools return the same data; use whichever you have.
 
