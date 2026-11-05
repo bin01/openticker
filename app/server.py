@@ -1735,13 +1735,26 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, b"bad json", "text/plain")
         uid, path = user_for(self), self.path.split("?")[0]
 
-        def sym():
-            t = yahoo_symbol(str(body.get("t") or ""))
+        def sym(raw=None):
+            t = yahoo_symbol(str((body.get("t") if raw is None else raw) or ""))
             if not VALID.fullmatch(t):
-                raise ValueError("That isn't a ticker symbol.")
+                raise ValueError(f"{t or 'That'} isn't a ticker symbol." if raw is not None else "That isn't a ticker symbol.")
             if t not in S.px and not S.track(t):
                 raise ValueError(f"Couldn't find prices for {t}.")
             return t
+
+        def lot(r, label):
+            """Shares, cost per share and date from one row of the positions editor, checked."""
+            try:
+                shares, cost = float(r.get("shares")), float(r.get("cost"))
+            except (TypeError, ValueError):
+                raise ValueError(f"{label}: shares and cost per share need numbers.")
+            if not (math.isfinite(shares) and math.isfinite(cost)) or shares <= 0 or shares >= 1e12 or cost < 0 or cost >= 1e9:
+                raise ValueError(f"{label}: shares must be above zero and cost can't be negative.")
+            opened = str(r.get("opened") or "")[:10]
+            if opened and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", opened):
+                raise ValueError(f"{label}: the date should look like 2024-03-15.")
+            return shares, cost, opened
 
         def num(k, required=True):
             v = body.get(k)
@@ -1767,6 +1780,29 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     personal.clear_sample(uid)   # a real position replaces the sample portfolio
                     personal.add_position(uid, sym(), shares, cost, opened)
+            elif path == "/api/me/watch/save":
+                add, remove = body.get("add") or [], body.get("remove") or []
+                if not isinstance(add, list) or not isinstance(remove, list) or len(add) + len(remove) > 500:
+                    raise ValueError("Nothing to save.")
+                add = list(dict.fromkeys(sym(t) for t in add))
+                remove = [yahoo_symbol(str(t)) for t in remove]
+                personal.save_watch(uid, add, [t for t in remove if t not in add])
+            elif path == "/api/me/positions/save":
+                rows, dele = body.get("lots") or [], body.get("delete") or []
+                if not isinstance(rows, list) or not isinstance(dele, list) or len(rows) + len(dele) > 1000:
+                    raise ValueError("Nothing to save.")
+                mine = {p["id"] for p in personal.positions(uid)}
+                upd, add = [], []
+                for r in rows:
+                    r = r if isinstance(r, dict) else {}
+                    if r.get("id"):
+                        if int(r["id"]) not in mine:
+                            raise ValueError("A position changed while you were editing. Close and open the editor again.")
+                        upd.append((int(r["id"]), *lot(r, str(r.get("t") or "A position"))))
+                    else:
+                        t = sym(r.get("t") or "")
+                        add.append((t, *lot(r, t)))
+                personal.save_positions(uid, upd, add, [int(i) for i in dele if int(i) in mine])
             elif path == "/api/me/positions/import":
                 rows = body.get("rows") or []
                 if not isinstance(rows, list) or not rows or len(rows) > 500:

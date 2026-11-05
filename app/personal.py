@@ -172,6 +172,26 @@ def import_positions(uid, rows, replace=False, note="imported"):
         _conn.commit()
 
 
+def save_watch(uid, add=(), remove=()):
+    """Apply the watchlist editor in one go: add and remove tickers together."""
+    with _lock:
+        _conn.executemany("delete from watch where user_id=? and t=?", [(uid, t) for t in remove])
+        _conn.executemany("insert or ignore into watch(user_id, t, added) values(?,?,?)", [(uid, t, time.time()) for t in add])
+        _conn.commit()
+
+
+def save_positions(uid, update=(), add=(), delete=()):
+    """Apply the positions editor in one go. update: (id, shares, cost, opened); add: (t, shares, cost, opened);
+    delete: ids. Only this user's rows are touched."""
+    with _lock:
+        _conn.executemany("delete from positions where id=? and user_id=?", [(int(i), uid) for i in delete])
+        _conn.executemany("update positions set shares=?, cost=?, opened=? where id=? and user_id=?",
+                          [(float(sh), float(c), o or "", int(i), uid) for i, sh, c, o in update])
+        _conn.executemany("insert into positions(user_id, t, shares, cost, opened, note, created) values(?,?,?,?,?,?,?)",
+                          [(uid, t, float(sh), float(c), o or "", "", time.time()) for t, sh, c, o in add])
+        _conn.commit()
+
+
 def clear_sample(uid):
     _exec("delete from positions where user_id=? and note='sample'", (uid,))
 
