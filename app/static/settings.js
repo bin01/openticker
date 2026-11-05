@@ -69,7 +69,7 @@ function renderSettings(){
      !local?setRow("You're on another device","These settings live on the Mac that runs OpenTicker.",""):
      setRow("Open OpenTicker on your phone",a.phone?`On. Your phone can reach it on the same Wi-Fi.`:`Off. Only this Mac can open it.`+(a.mac?` Changing this restarts OpenTicker in a Terminal window.`:""),
        a.mac?setTgl("setPhone",!!a.phone,"Let your phone open OpenTicker"):`<span class="sv">${a.phone?"On":"Off"}</span>`)
-     +(a.phone&&ASK.info?.pair?`<div class="srow col"><div class="sl"><b>Pair your phone</b><small>Open this link on your phone. It also lets you ask Tick from there. Keep it to yourself.</small></div><div class="pairl"><code>${esc(ASK.info.pair)}</code><button type="button" class="btn ghost" id="setPair">${ic("copy",13)}Copy</button></div></div>`:""))}
+     +(a.phone&&ASK.info?.pair?`<div class="srow col"><div class="sl"><b>Pair your phone</b><small>Scan the QR code with your phone's camera, or open this link on it. It also lets you ask Tick from there. Keep it to yourself.</small></div>${pairRow('id="setPair"')}</div>`:""))}
   ${sec("data","Data",
      !HEALTH?setRow("Checking…","",""):
      (HEALTH.problems.length?`<div class="srow col dprob"><div class="sl"><b>${HEALTH.problems.length===1?"One thing is off":`${HEALTH.problems.length} things are off`}</b>${HEALTH.problems.map(p=>`<small>${esc(p)}</small>`).join("")}</div></div>`
@@ -111,6 +111,7 @@ function bindSettings(d,{cur,st}){
   $("#setPhone")?.addEventListener("change",async e=>{ const r=await fetch("/api/app/terminal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({step:e.target.checked?"phone-on":"phone-off"})}).catch(()=>null);
     e.target.closest(".srow").querySelector("small").textContent=r?.ok?"Restarting OpenTicker in Terminal. This page reconnects in about a minute.":"Couldn't open Terminal. Run openticker start --lan yourself."; });
   $("#setPair")?.addEventListener("click",e=>{ navigator.clipboard?.writeText(ASK.info.pair); e.currentTarget.innerHTML=ic("check",13)+"Copied"; });
+  d.querySelector(".pairl [data-qr]")?.addEventListener("click",e=>qrToggle(e.currentTarget));
   $("#setEdit")?.addEventListener("click",async e=>{ const b=e.currentTarget; const r=await fetch("/api/app/terminal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({step:"edit"})}).catch(()=>null);
     b.textContent=r?.ok?"Opened in Terminal":"Run openticker edit"; });
   $("#setUpd")?.addEventListener("click",async e=>{ const b=e.currentTarget; const r=await fetch("/api/app/terminal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({step:"update"})}).catch(()=>null);

@@ -8,7 +8,8 @@ Object.assign(IC,{code:'<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>',file
   
   spark:'<path d="M12 3l1.8 4.9L18.7 9.7 13.8 11.5 12 16.4 10.2 11.5 5.3 9.7 10.2 7.9z"/><path d="M19 15l.7 1.8 1.8.7-1.8.7L19 20l-.7-1.8-1.8-.7 1.8-.7z"/>',
   send:'<path d="M12 19V5M5 12l7-7 7 7"/>', stop:'<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>',
-  copy:'<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>', check:'<path d="M20 6 9 17l-5-5"/>',
+  copy:'<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
+  qr:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/>', check:'<path d="M20 6 9 17l-5-5"/>',
   compose:'<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>', phone:'<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/>',
   chev:'<path d="m6 9 6 6 6-6"/>', chevr:'<path d="m9 6 6 6-6 6"/>', clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   dock:'<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M15 4v16"/>', retry:'<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>',
@@ -494,6 +495,65 @@ function askPatchLive(){
 }
 document.addEventListener("click",e=>{ const b=e.target.closest("[data-nt]"); if(!b) return; const n=ASK.notes?.[+b.dataset.nt]; if(!n) return; ASK.ctx={scope:n.go.scope,t:n.go.t||null}; ASK.pinned=n.go.scope==="stock"; askSend({skill:n.go.skill}); });
 
+/* A QR code as an SVG, made here so the pairing link (which carries the token) never leaves this Mac. Byte mode,
+   error correction M, versions 1 to 15 (up to 412 bytes). Follows the QR spec as laid out in Nayuki's qrcodegen. */
+function qrSVG(text,px=4){
+  const ECC=[0,10,16,26,18,24,16,18,22,22,26,30,22,22,24,24], NB=[0,1,1,1,2,2,4,4,4,5,5,5,8,9,9,10];
+  const data=[...new TextEncoder().encode(text)];
+  const raw=v=>{ let r=(16*v+128)*v+64; if(v>=2){ const n=Math.floor(v/7)+2; r-=(25*n-10)*n-55; if(v>=7) r-=36; } return r; };
+  const cap=v=>Math.floor(raw(v)/8)-ECC[v]*NB[v];
+  let ver=1; while(ver<=15&&4+(ver<10?8:16)+data.length*8>cap(ver)*8) ver++;
+  if(ver>15) return "";
+  const bits=[], put=(v,n)=>{ for(let i=n-1;i>=0;i--) bits.push((v>>>i)&1); };
+  put(4,4); put(data.length,ver<10?8:16); data.forEach(b=>put(b,8));
+  const C=cap(ver); put(0,Math.min(4,C*8-bits.length)); put(0,(8-bits.length%8)%8);
+  for(let p=0xEC;bits.length<C*8;p^=0xEC^0x11) put(p,8);
+  const words=[]; for(let i=0;i<bits.length;i+=8) words.push(bits.slice(i,i+8).reduce((a,b)=>a*2+b,0));
+  // Reed-Solomon over GF(256)
+  const mul=(x,y)=>{ let z=0; for(let i=7;i>=0;i--){ z=(z<<1)^((z>>>7)*0x11D); z^=((y>>>i)&1)*x; } return z; };
+  const deg=ECC[ver], div=new Array(deg).fill(0); div[deg-1]=1;
+  for(let i=0,root=1;i<deg;i++){ for(let j=0;j<deg;j++){ div[j]=mul(div[j],root); if(j+1<deg) div[j]^=div[j+1]; } root=mul(root,2); }
+  const rem=d=>{ const r=new Array(deg).fill(0); d.forEach(b=>{ const f=b^r.shift(); r.push(0); div.forEach((c,i)=>{ r[i]^=mul(c,f); }); }); return r; };
+  const nb=NB[ver], rawW=Math.floor(raw(ver)/8), short=nb-rawW%nb, sl=Math.floor(rawW/nb), blocks=[];
+  for(let i=0,k=0;i<nb;i++){ const d=words.slice(k,k+=sl-deg+(i<short?0:1)), e=rem(d); if(i<short) d.push(0); blocks.push(d.concat(e)); }
+  const all=[]; for(let i=0;i<blocks[0].length;i++) blocks.forEach((b,j)=>{ if(i!==sl-deg||j>=short) all.push(b[i]); });
+  // the grid: function patterns first, then the data, then the best of the eight masks
+  const n=ver*4+17, M=[...Array(n)].map(()=>new Array(n).fill(false)), F=[...Array(n)].map(()=>new Array(n).fill(false));
+  const set=(x,y,d)=>{ M[y][x]=d; F[y][x]=true; };
+  for(let i=0;i<n;i++){ set(6,i,i%2===0); set(i,6,i%2===0); }
+  [[3,3],[n-4,3],[3,n-4]].forEach(([cx,cy])=>{ for(let dy=-4;dy<=4;dy++) for(let dx=-4;dx<=4;dx++){ const x=cx+dx,y=cy+dy, d=Math.max(Math.abs(dx),Math.abs(dy)); if(x>=0&&x<n&&y>=0&&y<n) set(x,y,d!==2&&d!==4); } });
+  if(ver>1){ const na=Math.floor(ver/7)+2, step=Math.ceil((ver*4+4)/(na*2-2))*2, pos=[6]; for(let p=n-7;pos.length<na;p-=step) pos.splice(1,0,p);
+    pos.forEach((a,i)=>pos.forEach((b,j)=>{ if((i===0&&j===0)||(i===0&&j===na-1)||(i===na-1&&j===0)) return; for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++) set(a+dx,b+dy,Math.max(Math.abs(dx),Math.abs(dy))!==1); })); }
+  const format=mask=>{ const d=(0<<3)|mask; let r=d; for(let i=0;i<10;i++) r=(r<<1)^((r>>>9)*0x537); const b=((d<<10)|r)^0x5412, g=i=>((b>>>i)&1)===1;
+    for(let i=0;i<=5;i++) set(8,i,g(i)); set(8,7,g(6)); set(8,8,g(7)); set(7,8,g(8)); for(let i=9;i<15;i++) set(14-i,8,g(i));
+    for(let i=0;i<8;i++) set(n-1-i,8,g(i)); for(let i=8;i<15;i++) set(8,n-15+i,g(i)); set(8,n-8,true); };
+  format(0);
+  if(ver>=7){ let r=ver; for(let i=0;i<12;i++) r=(r<<1)^((r>>>11)*0x1F25); const b=(ver<<12)|r;
+    for(let i=0;i<18;i++){ const d=((b>>>i)&1)===1, a=n-11+i%3, c=Math.floor(i/3); set(a,c,d); set(c,a,d); } }
+  for(let right=n-1,i=0;right>=1;right-=2){ if(right===6) right=5;
+    for(let v=0;v<n;v++) for(let j=0;j<2;j++){ const x=right-j, y=((right+1)&2)===0?n-1-v:v; if(!F[y][x]&&i<all.length*8){ M[y][x]=((all[i>>>3]>>>(7-(i&7)))&1)===1; i++; } } }
+  const MASK=[(x,y)=>(x+y)%2===0,(x,y)=>y%2===0,(x,y)=>x%3===0,(x,y)=>(x+y)%3===0,(x,y)=>(Math.floor(x/3)+Math.floor(y/2))%2===0,
+    (x,y)=>x*y%2+x*y%3===0,(x,y)=>(x*y%2+x*y%3)%2===0,(x,y)=>((x+y)%2+x*y%3)%2===0];
+  const flip=m=>{ for(let y=0;y<n;y++) for(let x=0;x<n;x++) if(!F[y][x]&&MASK[m](x,y)) M[y][x]=!M[y][x]; };
+  const penalty=()=>{ let p=0, dark=0;
+    const line=get=>{ let run=1; for(let i=1;i<=n;i++){ if(i<n&&get(i)===get(i-1)) run++; else { if(run>=5) p+=run-2; run=1; } }
+      const s=[...Array(n)].map((_,i)=>get(i)?1:0).join(""); p+=40*((s.match(/(?=10111010000|00001011101)/g)||[]).length); };
+    for(let k=0;k<n;k++){ line(i=>M[k][i]); line(i=>M[i][k]); }
+    for(let y=0;y<n;y++) for(let x=0;x<n;x++){ if(M[y][x]) dark++; if(x<n-1&&y<n-1&&M[y][x]===M[y][x+1]&&M[y][x]===M[y+1][x]&&M[y][x]===M[y+1][x+1]) p+=3; }
+    return p+10*Math.floor(Math.abs(dark*20-n*n*10)/(n*n)); };
+  let best=0, low=Infinity;
+  for(let m=0;m<8;m++){ flip(m); format(m); const s=penalty(); if(s<low){ low=s; best=m; } flip(m); }
+  flip(best); format(best);
+  let d=""; for(let y=0;y<n;y++) for(let x=0;x<n;x++) if(M[y][x]) d+=`M${x+4} ${y+4}h1v1h-1z`;
+  const s=n+8;
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="qr" viewBox="0 0 ${s} ${s}" width="${s*px}" height="${s*px}" role="img" aria-label="QR code" shape-rendering="crispEdges"><rect width="${s}" height="${s}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+}
+
+/* The pairing link, with Copy and a QR code to scan (hidden until asked for: it works like a key). */
+const pairRow=copyAttr=>`<div class="pairl"><code>${esc(ASK.info.pair)}</code><button type="button" class="btn ghost" ${copyAttr}>${ic("copy",13)}Copy</button><button type="button" class="btn ghost" data-qr aria-expanded="false">${ic("qr",13)}QR code</button></div><div class="pairqr" hidden></div>`;
+function qrToggle(b){ const box=b.parentNode.nextElementSibling, on=box.hidden; box.hidden=!on; b.setAttribute("aria-expanded",String(on));
+  if(on&&!box.innerHTML) box.innerHTML=`${qrSVG(ASK.info.pair,4)}<p>Point your phone's camera at this. On the same Wi-Fi, it opens OpenTicker already paired, with ${TICK}.</p>`; }
+
 const ST={ready:["Ready","ok"],signin:["Not signed in","warn"],off:["Not running","warn"],missing:["Not installed",""]};
 function askAgentsView(){
   const P=ASK.info?.providers||[], local=ASK.info?.local, cur=askProv();
@@ -521,8 +581,9 @@ document.addEventListener("click",async e=>{
 });
 function askPair(m,info){
   const pb=m.querySelector("[data-ask-pair]"); if(pb) pb.onclick=e=>{ e.stopPropagation(); const box=$("#pairBox"); box.hidden=false;
-    box.innerHTML=`<p>Open this link on your phone (same Wi-Fi). It pairs the phone so ${TICK} works there too.</p><div class="pairl"><code>${esc(info.pair)}</code><button class="btn ghost" id="pairCopy">${ic("copy",13)}Copy</button></div><p class="hint">Send it with AirDrop or Messages. Anyone with this link on your Wi-Fi can talk to ${TICK}, so keep it to yourself.</p>`;
-    $("#pairCopy").onclick=ev=>{ ev.stopPropagation(); navigator.clipboard?.writeText(info.pair); $("#pairCopy").innerHTML=ic("check",13)+"Copied"; }; };
+    box.innerHTML=`<p>Open this link on your phone (same Wi-Fi). It pairs the phone so ${TICK} works there too.</p>${pairRow('id="pairCopy"')}<p class="hint">Send it with AirDrop or Messages. Anyone with this link on your Wi-Fi can talk to ${TICK}, so keep it to yourself.</p>`;
+    $("#pairCopy").onclick=ev=>{ ev.stopPropagation(); navigator.clipboard?.writeText(info.pair); $("#pairCopy").innerHTML=ic("check",13)+"Copied"; };
+    box.querySelector("[data-qr]").onclick=ev=>{ ev.stopPropagation(); qrToggle(ev.currentTarget); }; };
 }
 /* the agent menu: who Tick thinks with */
 function askProvMenu(){
