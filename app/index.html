@@ -898,6 +898,37 @@ dialog.imp{width:min(560px,calc(100vw - 32px))}
 .inote{margin:12px 2px 0;font-size:12px}
 .idone{display:flex;gap:10px;align-items:flex-start;margin:18px 2px 4px}.idone .ic{color:var(--up);flex:none;margin-top:1px}
 .idone>div{display:flex;flex-direction:column;gap:4px}.idone b{font:600 14px var(--f-body)}.idone small{font-size:12.5px;color:var(--ink-3);line-height:1.45}
+/* watchlist and positions editors: reuse the Settings sheet */
+dialog.ed{width:min(620px,calc(100vw - 32px))}
+.ed .sbody{padding-top:14px;padding-bottom:16px}
+.ed .elead{margin:0 2px 12px;font-size:13px;line-height:1.5;color:var(--ink-3)}
+.ed input{height:32px;border:1px solid var(--rule);border-radius:8px;background:var(--panel);color:var(--ink);padding:0 9px;font:500 13px var(--f-body);min-width:0;width:100%;font-variant-numeric:tabular-nums}
+.ed input:focus{outline:2px solid var(--accent);outline-offset:-1px}
+.ed input.bad{border-color:var(--down)}
+.eadd{display:flex;gap:8px;margin-bottom:12px}.eadd input{flex:1}
+.elist{background:var(--panel);border:1px solid var(--rule);border-radius:12px;overflow:hidden}
+.ehead,.erow{display:grid;grid-template-columns:84px minmax(0,1fr) minmax(0,1fr) minmax(0,1.15fr) 32px;gap:8px;align-items:center;padding:7px 8px 7px 12px}
+.elist.w .erow{grid-template-columns:72px minmax(0,1fr) auto}
+.ehead{font:600 10.5px/1.2 var(--f-body);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);border-bottom:1px solid var(--grid);padding-top:9px;padding-bottom:8px}
+.erow+.erow{border-top:1px solid var(--grid)}
+.erow .tk{font:600 13px var(--f-mono)}
+.erow .en{font-size:13px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.erow .en small{color:var(--ink-3);font-size:12px;margin-left:6px}
+.erow .ex{width:30px;height:30px;border:0;border-radius:8px;background:none;color:var(--ink-3);display:grid;place-items:center;cursor:pointer}
+.erow .ex:hover{background:var(--grid);color:var(--down)}
+.erow .lnk{padding:0 4px;justify-self:end}
+.erow.gone .tk,.erow.gone .en,.erow.gone input{opacity:.45;text-decoration:line-through}
+.erow.gone input{pointer-events:none}
+.erow.new .tk::after{content:"New";font:600 10px var(--f-body);color:var(--up);margin-left:6px;letter-spacing:.02em}
+.eempty{padding:22px 14px;text-align:center;font-size:13px;color:var(--ink-3)}
+.emore{margin-top:10px;display:inline-flex;align-items:center;gap:6px}
+@media (max-width:560px){
+  .ehead{display:none}
+  .elist.p .erow{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 32px;grid-template-areas:"t t x" "s c c" "d d d";row-gap:6px;padding:10px 8px 12px 12px}
+  .elist.p .erow>:nth-child(1){grid-area:t}.elist.p .erow>:nth-child(2){grid-area:s}.elist.p .erow>:nth-child(3){grid-area:c}.elist.p .erow>:nth-child(4){grid-area:d}.elist.p .erow>:nth-child(5){grid-area:x}
+  .elist.p .erow label{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--ink-3)}
+}
+@media (min-width:561px){.elist.p .erow label>span{display:none}}
 .ifoot{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:12px 18px;border-top:1px solid var(--rule)}
 .ifoot .err{margin-right:auto}
 @media (max-width:600px){
@@ -2154,7 +2185,8 @@ function renderMine(){
   if(!isPseudo(fund)){ el.hidden=true; el.innerHTML=""; return; }
   el.hidden=false;
   if(fund==="Watchlist"){
-    el.innerHTML=`<div class="ph"><div><h2>Your watchlist</h2><div class="hint">${me.watch.length} stocks. Add more with Watch on any stock page, or here.</div></div><form class="frm" id="wForm"><input id="wT" placeholder="Ticker" maxlength="10" style="width:110px"><button class="btn">Add</button><span class="err" id="wErr"></span></form></div>`;
+    el.innerHTML=`<div class="ph"><div><h2>Your watchlist</h2><div class="hint">${me.watch.length} stock${me.watch.length===1?"":"s"}. Add more here or with Watch on any stock page.</div></div><form class="frm" id="wForm"><input id="wT" placeholder="Ticker" maxlength="10" style="width:110px"><button class="btn">Add</button><button class="btn ghost" type="button" id="wEdit">Edit</button><span class="err" id="wErr"></span></form></div>`;
+    $("#wEdit").onclick=()=>openWatchEdit();
     $("#wForm").onsubmit=async e=>{ e.preventDefault(); try{ await api("/api/me/watch",{t:$("#wT").value.trim(),on:true}); }catch(x){ $("#wErr").textContent=x.message; } };
     return;
   }
@@ -2166,7 +2198,7 @@ function renderMine(){
   rows.sort((a,b)=>b.value-a.value);
   const usd=(x,sg)=>x==null?"–":(x=Math.round(x*100)/100,0)||(sg?(x>0?"+":x<0?"−":""):(x<0?"−":""))+"$"+Math.abs(x).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
   const sample=(me.positions||[]).length&&(me.positions||[]).every(p=>p.note==="sample");
-  el.innerHTML=`${sample?`<div class="sbanner"><span><b>This is a sample portfolio.</b> Look around, then bring in your own. Importing or adding a position clears the sample.</span><button class="btn" id="sImp">Import yours</button><button class="btn ghost" id="sClr">Clear sample</button></div>`:""}<div class="ph"><div><h2>${sample?"Sample portfolio":"Your portfolio"}</h2><div class="hint">${rows.length} positions at live prices. Contribution and the charts below treat today's shares as held for the whole period.</div></div><button class="btn ghost" id="pImp" ${sample?"hidden":""} title="Read a positions CSV from Fidelity, Schwab, Vanguard, E*TRADE and others">Import from broker</button></div>
+  el.innerHTML=`${sample?`<div class="sbanner"><span><b>This is a sample portfolio.</b> Look around, then bring in your own. Importing or adding a position clears the sample.</span><button class="btn" id="sImp">Import yours</button><button class="btn ghost" id="sClr">Clear sample</button></div>`:""}<div class="ph"><div><h2>${sample?"Sample portfolio":"Your portfolio"}</h2><div class="hint">${rows.length} positions at live prices. Contribution and the charts below treat today's shares as held for the whole period.</div></div><div class="frm" ${sample?"hidden":""}><button class="btn ghost" id="pImp" title="Read a positions CSV from Fidelity, Schwab, Vanguard, E*TRADE and others">Import from broker</button><button class="btn ghost" id="pEdit" title="Change shares, cost or date, or remove positions">Edit positions</button></div></div>
    <div class="kf mine-k"><div><div class="lbl">Value</div><div class="v">${usd(V)}</div></div>
      <div><div class="lbl">Today</div><div class="v ${cls(D)}">${usd(D,1)}</div><div class="ks ${cls(D)}">${pct(V-D?D/(V-D):null)}</div>${XD!=null?`<div class="ks">${xLab} <span class="num ${cls(XD)}">${usd(XD,1)} · ${pct(V?XD/V:null)}</span></div>`:""}</div>
      <div><div class="lbl">Total gain</div><div class="v ${cls(V-C)}">${usd(V-C,1)}</div><div class="ks ${cls(V-C)}">${pct(C?V/C-1:null)} on ${usd(C)} cost</div></div></div>
@@ -2178,7 +2210,7 @@ function renderMine(){
      ${r.x?`<div class="pc2"><span>${r.x.lab} ${money(r.x.p)}</span><span class="num ${cls(r.xd)}">${usd(r.xd,1)} <small>${pct(r.x.chg,1)}</small></span></div>`:""}
      <div class="pc2"><span>Total gain</span><span class="num ${cls(r.pl)}">${usd(r.pl,1)} <small>${pct(r.plPct,1)}</small></span></div></button>`).join("")}</div>
    <form class="frm" id="pForm" style="margin-top:12px"><b style="font-size:13px">Add a position</b><input id="pT" placeholder="Ticker" maxlength="10" style="width:90px" required><input id="pS" type="number" step="any" min="0" placeholder="Shares" style="width:100px" required><input id="pC" type="number" step="any" min="0" placeholder="Cost per share" style="width:130px" required><input id="pD" type="date" aria-label="Date bought (optional)"><button class="btn">Add</button><span class="err" id="pErr"></span></form>`;
-  $("#pForm").onsubmit=posSubmit("p"); $("#pImp").onclick=pickBrokerFile;
+  $("#pForm").onsubmit=posSubmit("p"); $("#pImp").onclick=pickBrokerFile; $("#pEdit").onclick=()=>openPosEdit();
   if(sample){ $("#sImp").onclick=pickBrokerFile; $("#sClr").onclick=()=>api("/api/me/positions/clear-sample").catch(()=>{}); }
 }
 function posSubmit(px,t0){ return async e=>{ e.preventDefault(); try{ await api("/api/me/position",{t:t0||$("#"+px+"T").value.trim(),shares:$("#"+px+"S").value,cost:$("#"+px+"C").value,opened:$("#"+px+"D").value}); }catch(x){ $("#"+px+"Err").textContent=x.message; } }; }
@@ -2293,6 +2325,69 @@ function openImport(P,name){
   draw(); d.showModal();
 }
 
+/* editors for the watchlist and positions. Changes are staged in the sheet and saved together, so nothing is lost by a stray click. */
+function editSheet(id,label){
+  $("#"+id)?.remove();
+  const d=document.createElement("dialog"); d.className="sets imp ed"; d.id=id; d.setAttribute("aria-label",label);
+  document.body.appendChild(d); d.addEventListener("close",()=>d.remove()); d.addEventListener("click",e=>{ if(e.target===d) d.close(); });
+  return d;
+}
+const splitTickers=v=>[...new Set(String(v).toUpperCase().split(/[\s,;]+/).map(x=>x.trim().replace(/\//g,".")).filter(Boolean))];
+function openWatchEdit(){
+  const d=editSheet("wEd","Edit watchlist");
+  const rows=(me?.watch||[]).map(t=>({t,gone:false,isNew:false}));
+  const changes=()=>({add:rows.filter(r=>r.isNew&&!r.gone).map(r=>r.t),remove:rows.filter(r=>r.gone&&!r.isNew).map(r=>r.t)});
+  const draw=(focus)=>{
+    const c=changes(), n=c.add.length+c.remove.length, left=rows.filter(r=>!r.gone).length;
+    d.innerHTML=`<div class="shead"><div><h2>Edit watchlist</h2><small class="isub">${left} stock${left===1?"":"s"}</small></div><button class="x" id="wEdX" aria-label="Close">${ic("close",16)}</button></div>
+      <div class="sbody"><form class="eadd" id="wEdAdd"><input id="wEdT" placeholder="Add tickers, e.g. AMD TSM" aria-label="Add tickers" autocomplete="off" autocapitalize="characters" spellcheck="false"><button class="btn ghost">Add</button></form>
+      <div class="elist w">${rows.length?rows.map((r,i)=>`<div class="erow ${r.gone?"gone":""} ${r.isNew?"new":""}"><span class="tk">${esc(r.t)}</span><span class="en">${esc(base?nameOf(r.t):"")}</span>${r.gone?`<button type="button" class="lnk" data-undo="${i}">Undo</button>`:`<button type="button" class="ex" data-rm="${i}" aria-label="Remove ${esc(r.t)}" title="Remove">${ic("close",15)}</button>`}</div>`).join(""):`<div class="eempty">Your watchlist is empty. Add a ticker above.</div>`}</div></div>
+      <div class="ifoot"><span class="err" id="wEdErr"></span><button class="btn ghost" id="wEdNo">Cancel</button><button class="btn" id="wEdGo" ${n?"":"disabled"}>${n?`Save ${n} change${n===1?"":"s"}`:"Save"}</button></div>`;
+    $("#wEdX").onclick=$("#wEdNo").onclick=()=>d.close();
+    $("#wEdAdd").onsubmit=e=>{ e.preventDefault(); const have=new Set(rows.map(r=>r.t));
+      splitTickers($("#wEdT").value).forEach(t=>{ const r=rows.find(x=>x.t===t); if(r) r.gone=false; else if(!have.has(t)) rows.unshift({t,gone:false,isNew:true}); });
+      draw("#wEdT"); };
+    d.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{ const i=+b.dataset.rm; if(rows[i].isNew) rows.splice(i,1); else rows[i].gone=true; draw(); });
+    d.querySelectorAll("[data-undo]").forEach(b=>b.onclick=()=>{ rows[+b.dataset.undo].gone=false; draw(); });
+    $("#wEdGo").onclick=async()=>{ const b=$("#wEdGo"); b.disabled=true; b.textContent="Saving…";
+      try{ await api("/api/me/watch/save",changes()); d.close(); }
+      catch(x){ $("#wEdErr").textContent=x.message; b.disabled=false; b.textContent=`Save ${n} change${n===1?"":"s"}`; } };
+    if(focus) $(focus)?.focus();
+  };
+  draw(); d.showModal(); if(!rows.length) $("#wEdT").focus();
+}
+function openPosEdit(only){
+  const d=editSheet("pEd",only?`Edit ${only} position`:"Edit positions");
+  const orig=new Map((me?.positions||[]).map(p=>[p.id,p]));
+  const rows=(me?.positions||[]).filter(p=>!only||p.t===only).map(p=>({id:p.id,t:p.t,shares:String(+(+p.shares).toFixed(6)),cost:String(+(+p.cost).toFixed(4)),opened:p.opened||"",gone:false}));
+  const changed=r=>{ const o=orig.get(r.id); return !o||+r.shares!==+(+o.shares).toFixed(6)||+r.cost!==+(+o.cost).toFixed(4)||(r.opened||"")!==(o.opened||""); };
+  const count=()=>rows.filter(r=>r.id?(r.gone||changed(r)):!r.gone).length;
+  const foot=()=>{ const n=count(), b=$("#pEdGo"); if(!b) return; b.disabled=!n; b.textContent=n?`Save ${n} change${n===1?"":"s"}`:"Save"; };
+  const cell=(i,k,ph,type)=>`<label><span>${ph}</span><input data-i="${i}" data-k="${k}" type="${type}" ${type==="number"?`step="any" min="0" inputmode="decimal"`:""} value="${esc(rows[i][k])}" placeholder="${type==="date"?"":ph}" aria-label="${ph}"></label>`;
+  const draw=(focus)=>{
+    d.innerHTML=`<div class="shead"><div><h2>${only?`Edit your ${esc(only)} position`:"Edit positions"}</h2><small class="isub">Each row is one purchase. The date is optional.</small></div><button class="x" id="pEdX" aria-label="Close">${ic("close",16)}</button></div>
+      <div class="sbody"><div class="elist p">${rows.length?`<div class="ehead"><span>Ticker</span><span>Shares</span><span>Cost per share</span><span>Bought</span><span></span></div>`+rows.map((r,i)=>`<div class="erow ${r.gone?"gone":""} ${r.id?"":"new"}">${r.id||only?`<span class="tk">${esc(r.t)}</span>`:`<label><span>Ticker</span><input data-i="${i}" data-k="t" value="${esc(r.t)}" placeholder="Ticker" aria-label="Ticker" maxlength="10" autocapitalize="characters" spellcheck="false" style="font-family:var(--f-mono);font-weight:600"></label>`}${cell(i,"shares","Shares","number")}${cell(i,"cost","Cost per share","number")}${cell(i,"opened","Bought","date")}${r.gone?`<button type="button" class="lnk" data-undo="${i}">Undo</button>`:`<button type="button" class="ex" data-rm="${i}" aria-label="Remove this row" title="Remove">${ic("close",15)}</button>`}</div>`).join(""):`<div class="eempty">No positions${only?` in ${esc(only)}`:""}. Add one below.</div>`}</div>
+      <button type="button" class="btn ghost emore" id="pEdMore">${ic("plus",14)}${only?"Add a lot":"Add a position"}</button></div>
+      <div class="ifoot"><span class="err" id="pEdErr"></span><button class="btn ghost" id="pEdNo">Cancel</button><button class="btn" id="pEdGo"></button></div>`;
+    foot();
+    $("#pEdX").onclick=$("#pEdNo").onclick=()=>d.close();
+    d.querySelectorAll("input[data-k]").forEach(inp=>inp.oninput=()=>{ const r=rows[+inp.dataset.i]; r[inp.dataset.k]=inp.dataset.k==="t"?inp.value.toUpperCase().trim():inp.value; inp.classList.remove("bad"); foot(); });
+    d.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{ const i=+b.dataset.rm; if(!rows[i].id) rows.splice(i,1); else rows[i].gone=true; draw(); });
+    d.querySelectorAll("[data-undo]").forEach(b=>b.onclick=()=>{ rows[+b.dataset.undo].gone=false; draw(); });
+    $("#pEdMore").onclick=()=>{ const t=only||""; const last=t&&base?lastValid(base.px[t]||[]):null; rows.push({id:null,t,shares:"",cost:last?last.toFixed(2):"",opened:"",gone:false}); const i=rows.length-1; draw(`input[data-i="${i}"][data-k="${t?"shares":"t"}"]`); };
+    $("#pEdGo").onclick=async()=>{
+      const live=rows.filter(r=>!r.gone), bad=[];
+      live.forEach(r=>{ const i=rows.indexOf(r); if(!r.id&&!r.t) bad.push([i,"t"]); if(!(+r.shares>0)) bad.push([i,"shares"]); if(r.cost===""||!(+r.cost>=0)) bad.push([i,"cost"]); });
+      if(bad.length){ bad.forEach(([i,k])=>d.querySelector(`input[data-i="${i}"][data-k="${k}"]`)?.classList.add("bad")); $("#pEdErr").textContent="Fill in the ticker, shares and cost per share."; d.querySelector("input.bad")?.focus(); return; }
+      const b=$("#pEdGo"); b.disabled=true; b.textContent="Saving…"; $("#pEdErr").textContent="";
+      try{ await api("/api/me/positions/save",{lots:live.filter(r=>!r.id||changed(r)).map(r=>({id:r.id||undefined,t:r.t,shares:r.shares,cost:r.cost,opened:r.opened})),delete:rows.filter(r=>r.gone&&r.id).map(r=>r.id)}); d.close(); }
+      catch(x){ $("#pEdErr").textContent=x.message; foot(); }
+    };
+    if(focus) d.querySelector(focus)?.focus();
+  };
+  draw(); d.showModal(); if(!rows.length) $("#pEdMore").click();
+}
+
 /* earnings calendar for the selected fund */
 function reaction(t,date,hour){
   const a=base.px[t], i=base.dates.indexOf(date); if(!a||i<0) return null;
@@ -2323,9 +2418,11 @@ function drawerMine(r){
   sec.hidden=!L.length&&!formOpen;
   box.innerHTML=(L.length?`<div class="stats"><div class="stat"><div class="lbl">Value</div><div class="v">${money(sh*last)}</div><div class="ks">${(+sh.toFixed(4))} shares at ${money(cost/sh)} avg</div></div>
      <div class="stat"><div class="lbl">Total gain</div><div class="v ${cls(sh*last-cost)}">${pct(cost?sh*last/cost-1:null)}</div><div class="ks ${cls(sh*last-cost)}">${(sh*last-cost)>=0?"+":"−"}${money(Math.abs(sh*last-cost))}</div></div></div>
-     <table class="hz lots"><thead><tr><th>Lot</th><th>Shares</th><th>Cost</th><th>Gain</th><th></th></tr></thead><tbody>${L.map(p=>`<tr><td>${esc(p.opened||"–")}</td><td class="num">${+p.shares.toFixed(4)}</td><td class="num">${money(p.cost)}</td><td class="num ${cls(last-p.cost)}">${pct(p.cost?last/p.cost-1:null,1)}</td><td style="width:28px"><button class="lnk" data-pos-del="${p.id}" aria-label="Delete lot">✕</button></td></tr>`).join("")}</tbody></table>`:"")+
+     <table class="hz lots"><thead><tr><th>Bought</th><th>Shares</th><th>Cost</th><th>Gain</th></tr></thead><tbody>${L.map(p=>`<tr><td>${esc(p.opened||"–")}</td><td class="num">${+p.shares.toFixed(4)}</td><td class="num">${money(p.cost)}</td><td class="num ${cls(last-p.cost)}">${pct(p.cost?last/p.cost-1:null,1)}</td></tr>`).join("")}</tbody></table>
+     <button class="lnk" id="drPE" style="margin-top:6px">Edit ${L.length>1?"these lots":"this position"}</button>`:"")+
     `<form class="frm" id="drPF" ${formOpen?"":"hidden"}><input id="dS" type="number" step="any" min="0" placeholder="Shares" style="width:100px" required><input id="dC" type="number" step="any" min="0" placeholder="Cost per share" value="${last?last.toFixed(2):""}" style="width:130px" required><input id="dD" type="date" aria-label="Date bought (optional)"><button class="btn">Add lot</button><span class="err" id="dErr"></span></form>`;
   $("#drPF").onsubmit=posSubmit("d",r.t);
+  $("#drPE")&&($("#drPE").onclick=()=>openPosEdit(r.t));
 }
 async function loadEarnHist(t){
   if(earnHist[t]&&(earnHist[t].loading||Date.now()-earnHist[t].at<6*3600e3)) return;
