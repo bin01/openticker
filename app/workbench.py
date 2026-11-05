@@ -50,7 +50,7 @@ DOMAINS = [
 ]
 
 PROVIDERS = {"claude", "codex"}          # the agents that get a workbench
-state = {"toolbox": "missing", "why": "", "claude_ok": True, "proxy": None,
+state = {"toolbox": "missing", "why": "", "failed_at": 0.0, "claude_ok": True, "claude_off": 0.0, "proxy": None,
          "serve": None}   # (OpenTicker's port, the read-only data commands) that sandboxed code may ask for through the proxy
 _lock = threading.Lock()
 
@@ -96,7 +96,7 @@ def _build():
         state.update(toolbox="ready", why="")
         log(f"Tick's workbench is ready ({', '.join(PACKAGES)})")
     except Exception as e:
-        state.update(toolbox="failed", why=str(e)[:200])
+        state.update(toolbox="failed", why=str(e)[:200], failed_at=time.time())
         log(f"setting up Tick's workbench failed: {e!r}")
 
 
@@ -107,6 +107,17 @@ def ensure():
         d.mkdir(parents=True, exist_ok=True)
     prune()
     start_proxy()
+    build()
+
+
+RETRY_AFTER = 3600      # a failed toolbox install, or a sandbox that didn't start, is tried again after an hour
+
+
+def build():
+    """Make the toolbox in the background unless it's ready or being made. A failed install is tried again after an hour
+    (the Wi-Fi may have been down), when Tick next gets a question."""
+    if state["toolbox"] == "failed" and time.time() - state["failed_at"] < RETRY_AFTER:
+        return
     with _lock:
         if python():
             state["toolbox"] = "ready"
@@ -371,14 +382,40 @@ def codex_args(ws):
     return ["--add-dir", str(TOOLBOX), "--add-dir", str(CACHE)]   # the folder itself is Codex's working folder
 
 
+def claude_ready():
+    """Whether Claude Code gets a workbench. After its sandbox failed to start, it answers without one for an hour, then
+    tries again (Claude Code may have been updated since)."""
+    if not state["claude_ok"] and time.time() - state["claude_off"] > RETRY_AFTER:
+        state["claude_ok"] = True
+    return state["claude_ok"]
+
+
+def claude_failed():
+    state.update(claude_ok=False, claude_off=time.time())
+
+
 def sandbox_failed(text):
     """Whether an agent's error says its sandbox couldn't start, so the answer is retried without the workbench."""
     return bool(re.search(r"sandbox", text or "", re.I)) and bool(re.search(r"unavailable|not available|fail|could ?n.t|unable|error", text or "", re.I))
 
 
+def note():
+    """The workbench note for the prompt. Until the toolbox is ready, code runs on OpenTicker's own Python, which has
+    pandas, numpy and yfinance but not scipy or matplotlib, so the note says so instead of promising them."""
+    if python():
+        return NOTE
+    return NOTE.replace(_TOOLS_LINE, _TOOLS_LINE_EARLY).replace("- To show a chart from code,", "- Once the toolbox is ready, to show a chart from code,")
+
+
+_TOOLS_LINE = ("- `python3` has pandas, numpy, scipy, matplotlib and yfinance; `pip install` more if you need it. Code can download "
+               "from any public website (filings, economic data, CSVs), but nothing on this Mac or its local network.")
+_TOOLS_LINE_EARLY = ("- The Python toolbox is still being set up, so `python3` has only pandas, numpy and yfinance for now: no scipy, "
+                     "no matplotlib and no `pip install`. Charts from code aren't possible yet, so use a ```chart block. Code can "
+                     "download from any public website (filings, economic data, CSVs), but nothing on this Mac or its local network.")
+
 NOTE = """You have a workbench: your current folder belongs to this conversation and keeps its files between questions.
 Use it whenever an answer needs real math (returns, volatility, drawdowns, correlation, beta, a backtest, a what-if on the person's positions): write a short Python script, run it, and read what it prints. Don't do multi-step arithmetic in your head.
-- `python3` has pandas, numpy, scipy, matplotlib and yfinance; `pip install` more if you need it. Code can download from any public website (filings, economic data, CSVs), but nothing on this Mac or its local network.
+""" + _TOOLS_LINE + """
 - `import ot` gives OpenTicker's data without a network call:
   ot.prices(["NVDA", "SPY"])  daily closes, a DataFrame (dates down, tickers across), about two years, for ~1,100 stocks and ETFs; others come from Yahoo
   ot.returns(["NVDA", "SPY"])  daily returns of the same

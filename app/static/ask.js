@@ -696,7 +696,7 @@ async function askDrive(msg,prov,ctl,first){
     r=null;
     if(st.ended||ctl.signal.aborted||!msg.run) break;
     // the connection dropped mid-answer: wait for OpenTicker and read the whole log again
-    if(++tries>45){ msg.error=`Lost touch with OpenTicker. The answer will appear in this conversation when it's done.`; break; }
+    if(++tries>45){ msg.error=`Lost touch with OpenTicker. Open this conversation again in a minute to see the answer, or why it stopped.`; break; }
     msg.status="Reconnecting"; paint();
     await new Promise(f=>setTimeout(f,Math.min(600*tries,2500)));
     if(ctl.signal.aborted) break;

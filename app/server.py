@@ -297,6 +297,7 @@ class State:
         self.stream_since = 0.0
         self.ticks = 0
         self.last_poll = 0.0
+        self.poll_after = 0.0         # no polling before this (the minute bars weren't today's)
         self.history_fetched = 0.0
         self.boot = "Starting up"   # what the first launch is doing, shown on the loading screen
         self.stream_status = "starting"
@@ -476,7 +477,7 @@ class State:
         """The extended-hours prices that matter right now, Yahoo style: pre-market before the open, after hours
         from the close until the next pre-market, nothing during the regular session. Change is from the last close."""
         now = dt.datetime.now(NY)
-        weekday = now.weekday() < 5
+        weekday = X.session_hours(now.date()) is not None    # a trading day
         if weekday and dt.time(9, 30) <= now.time() < dt.time(16, 0) or not self.dates:
             return {}
         pre_now = weekday and dt.time(4, 0) <= now.time() < dt.time(9, 30)
@@ -502,6 +503,7 @@ class State:
                 "ticks": self.ticks,
                 "stream": self.stream_status,
                 "lastPoll": self.last_poll,
+                "open": market_open(),      # the exchange's hours, so a dead feed isn't mistaken for a closed market
                 "now": time.time(),
             }
 
@@ -521,7 +523,7 @@ class State:
 
 def ext_session(when):
     """'pre' or 'post' for a New York time inside those sessions on a weekday, else None."""
-    if when.weekday() >= 5:
+    if not X.session_hours(when.date()):     # weekends and market holidays
         return None
     t = when.time()
     return "pre" if dt.time(4, 0) <= t < dt.time(9, 30) else "post" if dt.time(16, 0) <= t < dt.time(20, 0) else None
@@ -591,7 +593,7 @@ def poll_loop():
         time.sleep(15)
         try:
             now_ny = dt.datetime.now(NY)
-            open_ = now_ny.weekday() < 5 and dt.time(9, 30) <= now_ny.time() <= dt.time(16, 5)
+            open_ = market_open(now_ny)
             if time.time() - S.history_fetched > HISTORY_TTL:
                 old = S.holdings
                 S.holdings = {k: v for k, v in load_holdings().items() if k in FUNDS} or old
@@ -601,10 +603,18 @@ def poll_loop():
             # symbols the stream hasn't priced in five minutes (it can go silent on some while others keep ticking)
             stale = [t for t in S.tickers() if time.time() - S.tick_at.get(t, 0) > 300] \
                 if open_ and not quiet and S.stream_since and time.time() - S.stream_since > 300 else []
-            if open_ and (quiet or len(stale) > 20) and time.time() - S.last_poll > (POLL_FALLBACK if quiet else 180):
+            if open_ and (quiet or len(stale) > 20) and time.time() - S.last_poll > (POLL_FALLBACK if quiet else 180) \
+                    and time.time() > S.poll_after:
                 syms = S.tickers() if quiet else stale
                 df = download_closes(syms, period="1d", interval="1m")
                 day = now_ny.strftime("%Y-%m-%d")
+                # only today's bars count: a day the exchange closed unexpectedly returns the last session's, and
+                # filing those under today would invent a trading day (every change 0.0%, and a close note for it)
+                bar_day = pd.Timestamp(df.index[-1]).tz_convert(NY).strftime("%Y-%m-%d") if len(df.index) else None
+                if bar_day != day:
+                    S.poll_after = time.time() + 600       # look again in ten minutes
+                    log(f"polled, but the latest minute bars are from {bar_day}, not today; not using them")
+                    continue
                 last = df.ffill().iloc[-1]
                 for sym, v in last.items():
                     if v == v:
@@ -988,9 +998,14 @@ def fetch_chart(sym, rng):
     return {"pts": pts, "intraday": interval.endswith("m"), "interval": interval, "prevClose": jsonable(prev), "ma": ma, "day": day}
 
 
-def market_open():
-    now_ny = dt.datetime.now(NY)
-    return now_ny.weekday() < 5 and dt.time(9, 30) <= now_ny.time() <= dt.time(16, 5)
+def market_open(now_ny=None):
+    """Regular hours on a trading day, plus five minutes for the closing prints. Holidays and 1 pm early closes count."""
+    now_ny = now_ny or dt.datetime.now(NY)
+    hours = X.session_hours(now_ny.date())
+    if not hours:
+        return False
+    close = (dt.datetime.combine(now_ny.date(), hours[1]) + dt.timedelta(minutes=5)).time()
+    return hours[0] <= now_ny.time() <= close
 
 
 def chart_ttl(rng):
@@ -1360,7 +1375,9 @@ def close_note_loop():
         try:
             now = dt.datetime.now(NY)
             day = now.strftime("%Y-%m-%d")
-            if now.weekday() < 5 and now.time() >= dt.time(16, 15) and S.dates and S.dates[-1] == day:
+            hours = X.session_hours(now.date())     # None on weekends and market holidays; 1 pm on early-close days
+            after = hours and now >= dt.datetime.combine(now.date(), hours[1], tzinfo=NY) + dt.timedelta(minutes=15)
+            if after and S.dates and S.dates[-1] == day:
                 for uid in personal.users():
                     if personal.settings(uid).get("close_note", "on") == "off" or personal.has_event(uid, f"close|{day}"):
                         continue
@@ -1470,6 +1487,11 @@ def health_report():
                  else "failing just now: " + ", ".join(bad), "ok": not bad})
     if bad:
         problems.append("Yahoo didn't answer for " + ", ".join(bad) + " just now. OpenTicker shows the last good copy where it has one.")
+    wb = workbench.state
+    rows.append({"name": "Tick's workbench", "detail": {"ready": "ready", "building": "setting up its Python toolbox",
+                 "failed": f"its Python toolbox didn't install ({wb['why'] or 'no reason given'}); trying again within the hour"}
+                 .get(wb["toolbox"], "not set up yet") + ("" if wb["claude_ok"] else "; Claude Code answers without it for now, "
+                 "because its sandbox didn't start"), "ok": wb["toolbox"] != "failed" and wb["claude_ok"]})
     return {"ok": not problems, "rows": rows, "problems": problems, "checked": now}
 
 
