@@ -773,6 +773,9 @@ def fetch(cmd, q, autostart=False):
             if autostart and attempt == 0 and INSTALLED and "OPENTICKER_URL" not in os.environ:
                 start(quiet=True)
                 continue
+            if os.environ.get("OT_WORKSPACE"):
+                die("OpenTicker couldn't be reached from inside the workbench's sandbox. Run the openticker command on its own, "
+                    "not chained with other commands.")
             die(f"OpenTicker isn't running at {base()}. Start it with: openticker start")
     return ""
 
