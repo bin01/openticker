@@ -81,26 +81,28 @@ function barChart(labels,series,{h=150,fmt=usdB,axis=shortUsd,note,missing=[],r=
   return `<div class="legend" style="margin-bottom:6px">${series.map(swatch).join("")}${note?`<span class="ks">${note}</span>`:""}</div>`+s;
 }
 /* Revenue with net income drawn inside it: the inner bar is the slice of revenue the company kept,
-   a loss hangs below the line in red. Every quarter carries its revenue, and its growth on a year earlier sits under the date. */
-function revChart(labels,rev,ni,growth,{missing=[],h=196,r=6}={}){
-  const W=paneW(),H=h,L=44,R=r,T=22,B=40, n=labels.length, bottom=H-B;
+   a loss hangs below the line in red. Every quarter carries its revenue, and under its date a pill with the change from
+   the period before (Yahoo keeps only five quarters, so a year-earlier comparison exists for the latest one alone). */
+function revChart(labels,rev,ni,growth,{missing=[],h=204,r=6,yoy=[],prevWord="quarter"}={}){
+  const W=paneW(),H=h,L=44,R=r,T=22,B=48, n=labels.length, bottom=H-B;
   const all=[...rev,...ni].filter(v=>v!=null); if(!all.length) return "";
   const {ticks,Y}=yScale(all,{T,bottom}), gw=(W-L-R)/n, bw=Math.max(8,Math.min(44,gw*.6)), iw=Math.max(4,bw*.42), axl=slotLabels(labels,gw);
   const fitsAll=rev.every(v=>v==null||usdB(v).length*7+6<=gw);
   let s=`<svg class="chart fin-chart" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img">`+gridLines(ticks,Y,L,W,R,shortUsd);
   labels.forEach((lab,i)=>{ const x0=L+gw*i, cx=x0+gw/2, v=rev[i], p=ni[i], g=growth[i], last=i===n-1;
     if(missing[i]) s+=gapBand(x0+3,gw-6,T-8,bottom,"No report");
-    else s+=`<rect class="hov" x="${(x0+2).toFixed(1)}" y="${T-8}" width="${(gw-4).toFixed(1)}" height="${(bottom-T+8).toFixed(1)}" rx="4"><title>${finTip(lab+"\nRevenue: "+(v==null?"not reported":usdB(v))+"\nNet income: "+(p==null?"not reported":usdB(p))+(g!=null?"\nRevenue vs a year earlier: "+pct(g,0):""))}</title></rect>`;
+    else s+=`<rect class="hov" x="${(x0+2).toFixed(1)}" y="${T-8}" width="${(gw-4).toFixed(1)}" height="${(bottom-T+8).toFixed(1)}" rx="4"><title>${finTip(lab+"\nRevenue: "+(v==null?"not reported":usdB(v))+"\nNet income: "+(p==null?"not reported":usdB(p))+(g!=null?`\nRevenue vs the ${prevWord} before: `+pct(g,0):"")+(yoy[i]!=null&&prevWord==="quarter"?"\nRevenue vs a year earlier: "+pct(yoy[i],0):""))}</title></rect>`;
     if(v!=null){ const y=Math.min(Y(v),Y(0)), hh=Math.abs(Y(v)-Y(0));
       s+=`<rect x="${(cx-bw/2).toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(hh,2).toFixed(1)}" rx="${Math.min(4,bw/5)}" fill="var(--accent)" opacity="${hh<2?.9:.45}" pointer-events="none"/>`;
       if(fitsAll||last) s+=`<text x="${cx.toFixed(1)}" y="${(Y(Math.max(v,0))-6).toFixed(1)}" font-size="${last?12:11.5}" text-anchor="middle" class="mono" font-weight="${last?600:400}" fill="${last?"var(--ink)":"var(--ink-2)"}">${usdB(v)}</text>`; }
     if(p!=null){ const y=Math.min(Y(p),Y(0)), hh=Math.abs(Y(p)-Y(0));
       s+=`<rect x="${(cx-iw/2).toFixed(1)}" y="${y.toFixed(1)}" width="${iw.toFixed(1)}" height="${Math.max(hh,1.5).toFixed(1)}" rx="${Math.min(2.5,iw/4)}" fill="${p<0?"var(--down)":"var(--accent)"}" opacity=".95" pointer-events="none"/>`; }
-    s+=`<text x="${cx.toFixed(1)}" y="${H-22}" font-size="12" text-anchor="middle" fill="var(--ink-3)">${esc(axl[i])}</text>`;
-    if(g!=null) s+=`<text x="${cx.toFixed(1)}" y="${H-6}" font-size="11.5" text-anchor="middle" class="mono" fill="${g>=0?"var(--up)":"var(--down)"}">${pct(g,0)}</text>`; });
+    s+=`<text x="${cx.toFixed(1)}" y="${H-29}" font-size="12" text-anchor="middle" fill="var(--ink-3)">${esc(axl[i])}</text>`;
+    if(g!=null){ const t=pct(g,0), pw=Math.min(gw-4,t.length*7.2+14), up=g>=0;
+      s+=`<rect x="${(cx-pw/2).toFixed(1)}" y="${H-21}" width="${pw.toFixed(1)}" height="19" rx="9.5" fill="var(--${up?"up":"down"}-soft)"/><text x="${cx.toFixed(1)}" y="${H-7.5}" font-size="12" font-weight="600" text-anchor="middle" class="mono" fill="var(--${up?"up":"down"})">${t}</text>`; } });
   s+="</svg>";
   const loss=ni.some(v=>v!=null&&v<0);
-  return `<div class="legend" style="margin-bottom:6px"><span><i class="sw" style="background:var(--accent);opacity:.45"></i>Revenue</span><span><i class="sw" style="background:var(--accent)"></i>Profit</span>${loss?`<span><i class="sw" style="background:var(--down)"></i>Loss</span>`:""}${growth.some(g=>g!=null)?`<span class="ks">Under each date: revenue vs a year earlier</span>`:""}</div>`+s;
+  return `<div class="legend" style="margin-bottom:6px"><span><i class="sw" style="background:var(--accent);opacity:.45"></i>Revenue</span><span><i class="sw" style="background:var(--accent)"></i>Profit</span>${loss?`<span><i class="sw" style="background:var(--down)"></i>Loss</span>`:""}${growth.some(g=>g!=null)?`<span class="ks">Under each date: change from the ${prevWord} before</span>`:""}</div>`+s;
 }
 function lineChart(labels,series,{h=140,fmt=v=>pc(v,0),missing=[],r=44}={}){
   const W=paneW(),H=h,L=44,R=r,T=10,B=22, n=labels.length, bottom=H-B, all=series.flatMap(s=>s.values).filter(v=>v!=null); if(!all.length||n<2) return "";
@@ -152,6 +154,8 @@ function finSeries(d,freq=finFreq){
 }
 // growth on the same period a year earlier; a quarter with no revenue (or none to compare with) has no growth
 const yoyAt=(T,arr,i)=>{ const j=yearBefore(T,i); return j>=0&&arr[i]&&arr[j]?arr[i]/arr[j]-1:null; };
+// change from the slot just before, when that slot is the previous period on the grid
+const prevAt=(T,arr,i,step)=>i>0&&Math.abs(T[i]-T[i-1]-step)<=1&&arr[i]&&arr[i-1]?arr[i]/arr[i-1]-1:null;
 const listAnd=a=>a.length<2?a.join(""):a.slice(0,-1).join(", ")+" and "+a[a.length-1];
 function paneFinancials(d){
   const s=finSeries(d), T=s.T, labs=s.labels, n=T.length, ann=finFreq==="annual", unit=ann?"year":"quarter";
@@ -172,8 +176,8 @@ function paneFinancials(d){
   const R=44, anyCf=s.cfOk.some(Boolean), anyBs=s.bsOk.some(Boolean);
   return `<div class="seg sm" style="margin-bottom:12px"><button data-freq="quarterly" aria-pressed="${finFreq==="quarterly"}">Quarterly</button><button data-freq="annual" aria-pressed="${ann}">Annual</button></div>
     ${notes.length?insightList(notes.map(t=>({html:t}))):""}
-    <div class="dr-sec half"><h4>Revenue and profit</h4>${revChart(labs,s.rev,s.ni,growth,{missing:s.incOk.map(x=>!x),r:R})}</div>
-    <div class="dr-sec half"><h4>Margins</h4>${lineChart(labs,[{name:"Gross",values:m(s.gp),color:C2,soft:1},{name:"Operating",values:m(s.op),color:C1},{name:"Net",values:m(s.ni),color:C3}],{missing:s.incOk.map(x=>!x),r:R,h:196})}</div>
+    <div class="dr-sec half"><h4>Revenue and profit</h4>${revChart(labs,s.rev,s.ni,ann?growth:s.rev.map((_,i)=>prevAt(T,s.rev,i,3)),{missing:s.incOk.map(x=>!x),r:R,yoy:growth,prevWord:unit})}</div>
+    <div class="dr-sec half"><h4>Margins</h4>${lineChart(labs,[{name:"Gross",values:m(s.gp),color:C2,soft:1},{name:"Operating",values:m(s.op),color:C1},{name:"Net",values:m(s.ni),color:C3}],{missing:s.incOk.map(x=>!x),r:R,h:204})}</div>
     ${anyCf?`<div class="dr-sec half"><h4>Cash generated and returned</h4>${barChart(labs,[{name:"Free cash flow",values:s.fcf,color:C1},...(s.bb.some(v=>v)?[{name:"Buybacks",values:s.bb,color:C2,soft:1}]:[]),...(s.dv.some(v=>v)?[{name:"Dividends",values:s.dv,color:C3}]:[])],{missing:s.cfOk.map(x=>!x),r:R,h:170})}</div>`:""}
     ${anyBs?`<div class="dr-sec half"><h4>Cash and debt</h4>${barChart(labs,[{name:"Cash and investments",values:s.cash,color:C1},...(s.debt.some(v=>v)?[{name:"Total debt",values:s.debt,color:C3}]:[])],{missing:s.bsOk.map(x=>!x),r:R,h:170})}</div>`:""}
     <details class="dr-sec"><summary><h4 style="display:inline">All figures</h4></summary>${tbl(s.inc)}${tbl(s.cf)}${tbl(s.bs)}</details>`;
