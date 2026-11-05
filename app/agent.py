@@ -1292,7 +1292,18 @@ TOOLS_NOTE = """If you can run shell commands, the `openticker` command returns 
 Use it when the provided data isn't enough (for example, to compare with a peer). Use web search only for news newer than the data."""
 
 
-def build_prompt(q, ctx, skill_obj=None, history=None, tools=True, bench=False):
+def focus_line(scope, t, switched=False):
+    """What the person has in front of them. Told outright, so a question after a switch isn't read as being about the
+    earlier topic ("What's priced in?" after a talk about TXN, asked with the market in view, is about the market)."""
+    what = t if scope == "stock" and t else "their own portfolio and watchlist" if scope == "portfolio" else "the market as a whole"
+    line = f"The person has {what} in view in {APP_NAME} right now."
+    if switched:
+        line += (f" They switched to it since their last question, so this question is about {what} unless it names something "
+                 "else. Don't carry the earlier topic over; use the earlier conversation only where the question plainly refers back to it.")
+    return line
+
+
+def build_prompt(q, ctx, skill_obj=None, history=None, tools=True, bench=False, focus=None):
     parts = [SYSTEM]
     if tools:
         parts.append(TOOLS_NOTE)
@@ -1303,6 +1314,8 @@ def build_prompt(q, ctx, skill_obj=None, history=None, tools=True, bench=False):
     parts.append("<data>\n" + ctx.strip() + "\n</data>")
     for h in (history or [])[-6:]:
         parts.append(f"<earlier_{h.get('role', 'user')}>\n{str(h.get('text', ''))[:4000]}\n</earlier_{h.get('role', 'user')}>")
+    if focus:
+        parts.append("<focus>\n" + focus + "\n</focus>")
     parts.append("<question>\n" + q.strip() + "\n</question>")
     return "\n\n".join(parts)
 

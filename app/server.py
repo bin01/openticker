@@ -1843,6 +1843,14 @@ class Handler(BaseHTTPRequestHandler):
         hist = [h for h in body.get("history") or [] if isinstance(h, dict)][-6:]
         cid = str(body.get("chat") or "")
         cid = cid if re.fullmatch(r"[\w-]{8,40}", cid) else ""
+        switched = False   # did the person change what Tick is looking at since their last question?
+        if cid and hist:
+            try:
+                last = next((m.get("ctx") for m in reversed((personal.chat(uid, cid) or {}).get("messages") or [])
+                             if m.get("role") == "user" and m.get("ctx")), None)
+                switched = bool(last) and (last.get("scope"), last.get("t") or None) != (scope, t or None)
+            except Exception:
+                pass
         if cid:
             try:
                 personal.chat_add(uid, cid, {"role": "user", "text": str(body.get("show") or q)[:4000], "ctx": {"scope": scope, "t": t or None},
@@ -1850,7 +1858,7 @@ class Handler(BaseHTTPRequestHandler):
             except PermissionError:
                 cid = ""
         spec = {"q": q, "skill": sk["name"] if sk else None, "history": hist, "model": body.get("model"), "effort": body.get("effort"),
-                "scope": scope, "t": t or None}
+                "scope": scope, "t": t or None, "switched": switched}
         rid = runs.start(uid, cid, prov, spec, lambda: agent.context_for(scope, t, uid))
         self.follow_run(rid, uid, 0)   # the answer runs on its own: leaving this stream doesn't stop it
 
