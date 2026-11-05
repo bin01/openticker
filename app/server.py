@@ -701,6 +701,11 @@ def stale_age(key):
         return time.time() - hit[0] if hit and key in _stale_keys else None
 
 
+def _absent(e):
+    """Whether Yahoo answered that it has nothing for this symbol, as opposed to failing."""
+    return bool(re.search(r"\b404\b|Not Found|No fundamentals data", str(e)))
+
+
 def cached(key, ttl, fn):
     """Small TTL cache. Yahoo fails now and then for a moment, so a failed fetch is tried once more; if it still
     fails we serve the last good copy, from memory or from the last run (cache/detail.json), when there is one."""
@@ -713,12 +718,15 @@ def cached(key, ttl, fn):
         try:
             val = fn()
         except Exception as e:
+            if _absent(e):
+                raise
             log(f"{key} failed, trying once more: {e!r}")
             time.sleep(1.2)
             val = fn()
     except Exception as e:
         log(f"{key} failed: {e!r}")
-        health(_source(key), False, e)
+        if not _absent(e):          # Yahoo has no such data for this symbol (a fund's analysts, say): not an outage
+            health(_source(key), False, e)
         if not hit:
             with _detail_lock:
                 old = _disk_cache.get(_disk_key(key))
