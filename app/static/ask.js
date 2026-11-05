@@ -410,9 +410,9 @@ function trace(m,i){
   let body=blocks.map((b,bi)=>{
     const fresh=b.j>=seen?" fresh":"";
     if(b.n!=null) return `<div class="trn${b.th?" th":""}${fresh}">${mdToHtml(b.n.trim())}</div>`;
-    const going=live&&bi===last, key=`${i}-g${b.j}`;
+    const going=live&&bi===last, key=`${i}-g${b.j}`, kid=b.g.some(([,j])=>ASK.trOpen[`${i}-s${j}`]);   // a step the person opened keeps its chip open
     const rows=b.g.map(([s,j],x)=>trStep(s,{key:`${i}-s${j}`,now:going&&x===b.g.length-1&&!m.text&&s.x==null,since:s.at,fresh:j>=seen})).join("");
-    return `<details class="trg${fresh}" data-k="${key}"${trIsOpen(key,going)?" open":""}><summary>${ic(STEP_IC[stepKind(b.g[b.g.length-1][0])]||"term",13)}<span>${esc(trGroupLabel(b.g.map(x=>x[0])))}</span>${ic("chevr",12)}</summary><div class="trgl">${rows}</div></details>`;
+    return `<details class="trg${fresh}" data-k="${key}"${trIsOpen(key,going||kid)?" open":""}><summary>${ic(STEP_IC[stepKind(b.g[b.g.length-1][0])]||"term",13)}<span>${esc(trGroupLabel(b.g.map(x=>x[0])))}</span>${ic("chevr",12)}</summary><div class="trgl">${rows}</div></details>`;
   }).join("");
   if(live&&!items.length) body=`<div class="trs now${seen?"":" fresh"}"><i class="sb"></i><span class="sl">${esc(m.status||"Thinking")}</span></div>`;
   const sig=`${items.length}|${live?1:0}|${m.text?1:0}|${items.length?"":esc(m.status||"")}`;

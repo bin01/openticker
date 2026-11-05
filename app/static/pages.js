@@ -434,7 +434,7 @@ function renderScreener(){
 
 /* ======================= events for pages ======================= */
 document.addEventListener("click",e=>{
-  const t=e.target.closest("[data-page],[data-mr],[data-mov],[data-sector],[data-sector-close],[data-industry],[data-ct],[data-cs],[data-scr],[data-star],[data-retry-x]"); if(!t) return;
+  const t=e.target.closest("[data-page]:not(body),[data-mr],[data-mov],[data-sector],[data-sector-close],[data-industry],[data-ct],[data-cs],[data-scr],[data-star],[data-retry-x]"); if(!t) return;
   if(t.dataset.page){ e.preventDefault(); if(t.dataset.cal) { calTab=t.dataset.cal; save("calTab",calTab); } goPage(t.dataset.page); return; }
   if(t.dataset.mr){ mktRange=t.dataset.mr; save("mktRange",mktRange); renderMarket(); return; }
   if(t.dataset.mov){ save("movers",t.dataset.mov); xget("screen",{name:t.dataset.mov}).then(()=>renderMarket()); renderMarket(); return; }
