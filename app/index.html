@@ -678,6 +678,9 @@ html{overflow-y:scroll}
 #drPane:not([hidden]),#drOverview:not([hidden]){animation:rise .25s cubic-bezier(.2,.8,.2,1) both}
 
 /* phone tab bar */
+/* iPhone zooms into any field with text under 16px and stays zoomed after the keyboard closes, which also shifts
+   the tab bar and header off the edges. 16px on touch screens stops that. */
+@media (hover:none) and (pointer:coarse){input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea{font-size:16px!important}}
 .tabbar{display:none}
 @media (max-width:760px){
   .tabbar{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:0;right:0;bottom:0;z-index:20;background:color-mix(in srgb,var(--panel) 90%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--rule);padding:6px 4px max(8px,env(safe-area-inset-bottom,0px))}
