@@ -68,6 +68,20 @@ class Proxy(unittest.TestCase):
         out = via_proxy(f"CONNECT localhost:{self.port} HTTP/1.1\r\nHost: localhost\r\n\r\n".encode())
         self.assertTrue(out.startswith(b"HTTP/1.1 403"), out[:40])
 
+    def test_own_data_only(self):
+        # OpenTicker's read-only data passes through to this Mac; nothing else does
+        with mock.patch.dict(workbench.state, {"serve": (self.port, ("stock", "news"))}):
+            ok = via_proxy(f"GET http://127.0.0.1:{self.port}/api/agent/stock?q=NVDA HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n".encode())
+            self.assertIn(b"hello", ok)
+            for bad in (f"GET http://127.0.0.1:{self.port}/api/agent/edit?q=x HTTP/1.1\r\n\r\n",
+                        f"GET http://127.0.0.1:{self.port}/api/me HTTP/1.1\r\n\r\n",
+                        f"POST http://127.0.0.1:{self.port}/api/agent/stock HTTP/1.1\r\nContent-Length: 0\r\n\r\n",
+                        f"GET http://127.0.0.1:{self.port}/api/agent/stock HTTP/1.1\r\nContent-Length: 5\r\n\r\n",
+                        f"GET http://127.0.0.1:{self.port}/api/agent/stock HTTP/1.1\r\n\r\nGET /api/me HTTP/1.1\r\n\r\n",
+                        f"GET http://127.0.0.1:{self.port + 1}/api/agent/stock HTTP/1.1\r\n\r\n",
+                        f"CONNECT 127.0.0.1:{self.port} HTTP/1.1\r\n\r\n"):
+                self.assertTrue(via_proxy(bad.encode()).startswith(b"HTTP/1.1 403"), bad)
+
     def test_forwards_when_allowed(self):
         # pretend the local test server is a public one, to see the forwarding itself work
         with mock.patch.object(workbench, "public", lambda h, p: [("127.0.0.1", p)]):

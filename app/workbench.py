@@ -50,7 +50,8 @@ DOMAINS = [
 ]
 
 PROVIDERS = {"claude", "codex"}          # the agents that get a workbench
-state = {"toolbox": "missing", "why": "", "claude_ok": True, "proxy": None}
+state = {"toolbox": "missing", "why": "", "claude_ok": True, "proxy": None,
+         "serve": None}   # (OpenTicker's port, the read-only data commands) that sandboxed code may ask for through the proxy
 _lock = threading.Lock()
 
 
@@ -187,6 +188,9 @@ class _Proxy(socketserver.BaseRequestHandler):
                 body = (f"{method} {m.group(3) or '/'} {version}\r\n".encode() + b"\r\n".join(hdrs) + b"\r\n\r\n"
                         + head.split(b"\r\n\r\n", 1)[1])
             host = host.strip("[]")
+            mine = _own_data(method, host, port, target, head)
+            if mine:
+                return _forward_once(c, int(port), mine)
             addrs = public(host, int(port)) if port.isdigit() else None
             if not addrs:
                 why = f"OpenTicker's workbench refused {host[:100]}: it is on this Mac or the local network, or it doesn't resolve. Only public websites are reachable.\n".encode()
@@ -211,6 +215,35 @@ class _Proxy(socketserver.BaseRequestHandler):
 class _Server(socketserver.ThreadingTCPServer):
     daemon_threads = True
     allow_reuse_address = True
+
+
+def _own_data(method, host, port, target, head):
+    """The one exception to "never this Mac": a plain GET for OpenTicker's own read-only data (/api/agent/<cmd> for the
+    commands Tick may run), so `openticker stock NVDA` works inside the sandbox too, in a pipeline or a script.
+    Returns the request to send (one request, connection closed after), or None."""
+    serve = state.get("serve")
+    if not serve or method != "GET" or host not in ("127.0.0.1", "localhost") or port != str(serve[0]):
+        return None
+    m = re.match(r"http://[^/]+(/api/agent/([a-z]+)(?:\?[^\s#]*)?)$", target)
+    hdr, _, extra = head.partition(b"\r\n\r\n")
+    if not m or m.group(2) not in serve[1] or extra or b"\ncontent-length" in hdr.lower() or b"\ntransfer-encoding" in hdr.lower():
+        return None
+    return (f"GET {m.group(1)} HTTP/1.1\r\nHost: 127.0.0.1:{serve[0]}\r\nAccept: text/plain\r\n"
+            "User-Agent: openticker-workbench\r\nConnection: close\r\n\r\n").encode()
+
+
+def _forward_once(c, port, req):
+    """Send one request to OpenTicker and relay only the answer back; nothing else from the client reaches it."""
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=130) as up:
+            up.sendall(req)
+            while True:
+                b = up.recv(65536)
+                if not b:
+                    break
+                c.sendall(b)
+    except OSError:
+        pass
 
 
 def start_proxy():

@@ -737,12 +737,32 @@ def cmd_shot(args):
 
 
 # --------------------------------------------------------------------------- data
+def _via_workbench_proxy(url):
+    """Inside Tick's sandbox this Mac can't be reached directly; the workbench's proxy passes OpenTicker's own
+    read-only data through (app/workbench.py), so ask it explicitly."""
+    p = os.environ.get("http_proxy") or os.environ.get("HTTP_PROXY")
+    if not (p and os.environ.get("OT_WORKSPACE")):
+        return None
+    req = urllib.request.Request(url)
+    req.set_proxy(urllib.parse.urlsplit(p).netloc or p, "http")
+    with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=120) as r:
+        return r.read().decode()
+
+
 def fetch(cmd, q, autostart=False):
     url = f"{base()}/api/agent/{urllib.parse.quote(cmd)}?{urllib.parse.urlencode(q)}"
     for attempt in (0, 1):
         try:
-            with urllib.request.urlopen(url, timeout=120) as r:
-                return r.read().decode()
+            try:
+                with urllib.request.urlopen(url, timeout=120) as r:
+                    return r.read().decode()
+            except urllib.error.URLError as e:
+                if isinstance(e, urllib.error.HTTPError):
+                    raise
+                got = _via_workbench_proxy(url)
+                if got is None:
+                    raise
+                return got
         except urllib.error.HTTPError as e:
             try:
                 msg = json.loads(e.read()).get("error")

@@ -2041,6 +2041,7 @@ def main():
     agent.bind(sys.modules[__name__])
     runs.recover()
     workbench.ensure()
+    workbench.state["serve"] = (PORT, agent.AGENT_CMDS)
     # Serve right away: from the last run's prices if there are any, otherwise a loading screen that says what's
     # happening. Fresh holdings and history download behind it, then the background loops start.
     S.load_cache()
