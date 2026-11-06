@@ -383,6 +383,15 @@ tr:hover .lotb{color:var(--ink-2)}
 .lxf .lxdone{margin-left:auto;color:var(--ink-2)}
 #drMine .lotx{max-width:none;background:none;border:0;padding:4px 0 0}
 .pc3{display:flex;justify-content:flex-end;margin:-2px -6px -4px 0}
+/* linked accounts (links.js): read-only purchases, where a position comes from, the sync line */
+.lxro>span{font-size:13px;font-variant-numeric:tabular-nums;padding:0 10px;color:var(--ink-2)}
+.lxro .lxa{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:normal;color:var(--ink-3);font-size:12.5px}
+.lxnote{display:flex;gap:7px;align-items:flex-start;padding:8px 0 2px;font-size:12px;line-height:1.45;color:var(--ink-3)}.lxnote .ic{flex:none;margin-top:2px}
+.tk .src,.pc1 .src{display:block;margin-top:2px;font:500 11px/1.2 var(--f-body);color:var(--ink-3);letter-spacing:0;white-space:nowrap}
+.pc1 .src{display:inline;margin:0 0 0 8px}
+.phb{display:flex;gap:8px;flex-wrap:wrap}
+.lkline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-4px 0 14px;font-size:12.5px;color:var(--ink-3)}
+.lkline .ic{flex:none}.lkline .lnk{padding:0;font-size:12.5px}.lkline span{margin-right:4px}
 /* the undo toast */
 .toast{position:fixed;left:16px;right:16px;margin:0 auto;width:fit-content;bottom:24px;z-index:90;transform:translateY(12px);opacity:0;pointer-events:none;display:flex;align-items:center;gap:14px;padding:10px 10px 10px 16px;border-radius:12px;background:var(--ink);color:var(--bg);font:500 13px var(--f-body);box-shadow:0 12px 32px rgba(0,0,0,.25);transition:opacity .18s,transform .18s cubic-bezier(.2,.8,.2,1);max-width:calc(100vw - 32px)}
 .toast.on{opacity:1;transform:none;pointer-events:auto}
@@ -1124,7 +1133,27 @@ dialog.imp{width:min(560px,calc(100vw - 32px))}
 .idone>div{display:flex;flex-direction:column;gap:4px}.idone b{font:600 14px var(--f-body)}.idone small{font-size:12.5px;color:var(--ink-3);line-height:1.45}
 .ifoot{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:12px 18px;border-top:1px solid var(--rule)}
 .ifoot .err{margin-right:auto}
+/* linked accounts in Settings and the review sheet */
+.lkrow .sl small.bad,.lkconf small.bad{color:var(--down)}
+.lkic{flex:none;width:32px;height:32px;border-radius:9px;display:grid;place-items:center;background:var(--grid);color:var(--ink-3)}
+.lkic.on{background:var(--accent-soft);color:var(--accent)}
+.lkspin{display:inline-block;width:9px;height:9px;margin:0 7px -1px 0;border-radius:50%;border:1.5px solid var(--rule);border-top-color:var(--accent);animation:lkspin .8s linear infinite}
+@keyframes lkspin{to{transform:rotate(360deg)}}
+.lkconf{border-top:0;padding-top:0}
+.lkadd{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}
+.lkadd .sag>.ic:first-child{color:var(--ink-3)}.lkadd .sag>.ic:last-child{color:var(--ink-3);margin-left:auto}
+.lkadd .sag>span{min-width:0;display:flex;flex-direction:column;gap:2px}
+.btn.danger{background:var(--down);border-color:var(--down);color:#fff}
+.lkaccts{display:flex;flex-direction:column;margin:0 0 12px;background:var(--panel);border:1px solid var(--rule);border-radius:12px}
+.lkacc{display:flex;align-items:center;gap:10px;padding:8px 12px;border-top:1px solid var(--grid);font-size:13px;cursor:pointer}
+.lkacc:first-child{border-top:0}.lkacc input{flex:none;accent-color:var(--accent);width:15px;height:15px;margin:0}
+.lkacc span{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}.lkacc small{font-size:11.5px;color:var(--ink-3)}
+.lkacc em{font-style:normal;font-variant-numeric:tabular-nums;color:var(--ink-3);font-size:12.5px}
+.itbl .lkn{display:block;font:500 11px var(--f-body);color:var(--ink-3)}
+.lkdup{display:flex;gap:10px;align-items:flex-start;margin:12px 2px 0;font-size:13px;line-height:1.45;color:var(--ink-2);cursor:pointer}
+.lkdup input{flex:none;accent-color:var(--accent);width:15px;height:15px;margin:2px 0 0}
 @media (max-width:600px){
+  .lkadd{grid-template-columns:minmax(0,1fr)}
   dialog.sets{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;border:0}
   .srow{flex-wrap:wrap;gap:10px}.srow .sc{flex-basis:100%}.srow:has(.tgl) .sc{flex-basis:auto}
   .sags{grid-template-columns:1fr}
@@ -2470,20 +2499,26 @@ function renderMine(){
   rows.sort((a,b)=>b.value-a.value);
   const usd=(x,sg)=>x==null?"–":(x=Math.round(x*100)/100,0)||(sg?(x>0?"+":x<0?"−":""):(x<0?"−":""))+"$"+Math.abs(x).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
   const sample=(me.positions||[]).length&&(me.positions||[]).every(p=>p.note==="sample");
-  el.innerHTML=`${sample?`<div class="sbanner"><span><b>This is a sample portfolio.</b> Look around, then bring in your own. Importing or adding a position clears the sample.</span><button class="btn" id="sImp">Import yours</button><button class="btn ghost" id="sClr">Clear sample</button></div>`:""}<div class="ph"><div><h2>${ic("mine")}${sample?"Sample portfolio":"Your portfolio"}</h2><div class="hint">${rows.length} positions at live prices. Contribution and the charts below treat today's shares as held for the whole period.</div></div><button class="btn ghost" id="pImp" ${sample?"hidden":""} title="Read a positions CSV from Fidelity, Schwab, Vanguard, E*TRADE and others">Import from broker</button></div>
+  el.innerHTML=`${sample?`<div class="sbanner"><span><b>This is a sample portfolio.</b> Look around, then bring in your own. Importing or adding a position clears the sample.</span><button class="btn" id="sImp">Import yours</button><button class="btn ghost" id="sClr">Clear sample</button></div>`:""}<div class="ph"><div><h2>${ic("mine")}${sample?"Sample portfolio":"Your portfolio"}</h2><div class="hint">${rows.length} positions at live prices. Contribution and the charts below treat today's shares as held for the whole period.</div></div><div class="phb" ${sample?"hidden":""}>${(me.links||[]).length?"":`<button class="btn ghost" id="pLink" title="Monarch, Interactive Brokers, Robinhood or another MCP server">${ic("link",14)}Link a brokerage</button>`}<button class="btn ghost" id="pImp" title="Read a positions CSV from Fidelity, Schwab, Vanguard, E*TRADE and others">Import a file</button></div></div>${sample?"":linksLine()}
    <div class="kf mine-k"><div><div class="lbl">Value</div><div class="v">${usd(V)}</div></div>
      <div><div class="lbl">Today</div><div class="v ${cls(D)}">${usd(D,1)}</div><div class="ks ${cls(D)}">${pct(V-D?D/(V-D):null)}</div>${XD!=null?`<div class="ks">${xLab} <span class="num ${cls(XD)}">${usd(XD,1)} · ${pct(V?XD/V:null)}</span></div>`:""}</div>
      <div><div class="lbl">Total gain</div><div class="v ${cls(V-C)}">${usd(V-C,1)}</div><div class="ks ${cls(V-C)}">${pct(C?V/C-1:null)} on ${usd(C)} cost</div></div></div>
    <div class="tbl-wrap mine-tw"><table class="hold mine-t"><thead><tr><th class="l">Ticker</th><th>Shares</th><th>Avg cost</th><th>Price</th><th>Value</th><th>Weight</th><th>Today</th><th>Total gain</th><th><span class="vh">Edit</span></th></tr></thead><tbody>${rows.map(r=>`<tr data-sel="${esc(r.t)}" class="${lotOpen.has(r.t)?"lot-on":""}">
-     <td class="l tk">${esc(r.t)}</td><td class="num">${(+r.shares.toFixed(4)).toLocaleString("en-US")}</td><td class="num">${money(r.avg)}</td><td class="num ${flashes[r.t]||""}">${money(r.last)}</td><td class="num">${usd(r.value)}</td><td class="num">${V?(r.value/V*100).toFixed(1):"–"}%</td>
+     <td class="l tk">${esc(r.t)}${srcTag(r.t)}</td><td class="num">${(+r.shares.toFixed(4)).toLocaleString("en-US")}</td><td class="num">${money(r.avg)}</td><td class="num ${flashes[r.t]||""}">${money(r.last)}</td><td class="num">${usd(r.value)}</td><td class="num">${V?(r.value/V*100).toFixed(1):"–"}%</td>
      <td class="num ${cls(r.day)}">${usd(r.day,1)} <small>${pct(r.dayPct,1)}</small>${r.x?`<span class="xh" title="${r.x.lab} ${money(r.x.p)} at ${extTime(r.x.ts)}">${r.x.lab} <span class="${cls(r.x.chg)}">${pct(r.x.chg,1)}</span></span>`:""}</td><td class="num ${cls(r.pl)}">${usd(r.pl,1)} <small>${pct(r.plPct,1)}</small></td><td class="num ed-c">${lotBtn(r)}</td></tr>${lotOpen.has(r.t)?`<tr class="lotx-row"><td colspan="9">${lotEditor(r.t,"p")}</td></tr>`:""}`).join("")}</tbody></table></div>
-   <div class="pcards">${rows.map(r=>`<div class="pcard ${lotOpen.has(r.t)?"open":""}"><button type="button" class="pcmain" data-sel="${esc(r.t)}"><div class="pc1"><b>${esc(r.t)}</b><span class="num">${usd(r.value)}</span></div>
+   <div class="pcards">${rows.map(r=>`<div class="pcard ${lotOpen.has(r.t)?"open":""}"><button type="button" class="pcmain" data-sel="${esc(r.t)}"><div class="pc1"><b>${esc(r.t)}${srcTag(r.t)}</b><span class="num">${usd(r.value)}</span></div>
      <div class="pc2"><span class="num">${(+r.shares.toFixed(4)).toLocaleString("en-US")} shares at ${money(r.last)}</span><span class="num ${cls(r.day)}">${usd(r.day,1)} today</span></div>
      ${r.x?`<div class="pc2"><span>${r.x.lab} ${money(r.x.p)}</span><span class="num ${cls(r.xd)}">${usd(r.xd,1)} <small>${pct(r.x.chg,1)}</small></span></div>`:""}
      <div class="pc2"><span>Total gain</span><span class="num ${cls(r.pl)}">${usd(r.pl,1)} <small>${pct(r.plPct,1)}</small></span></div></button>${lotOpen.has(r.t)?lotEditor(r.t,"c"):`<div class="pc3">${lotBtn(r)}</div>`}</div>`).join("")}</div>
    <form class="frm" id="pForm" style="margin-top:12px"><b style="font-size:13px">Add a position</b><input id="pT" placeholder="Ticker" maxlength="10" style="width:90px" required><input id="pS" type="number" step="any" min="0" placeholder="Shares" style="width:100px" required><input id="pC" type="number" step="any" min="0" placeholder="Cost per share" style="width:130px" required><input id="pD" type="date" aria-label="Date bought (optional)"><button class="btn">Add</button><span class="err" id="pErr"></span></form>`;
-  $("#pForm").onsubmit=posSubmit("p"); $("#pImp").onclick=pickBrokerFile;
+  $("#pForm").onsubmit=posSubmit("p"); $("#pImp").onclick=pickBrokerFile; $("#pLink")&&($("#pLink").onclick=()=>openSettings("accounts")); bindLinksLine();
   if(sample){ $("#sImp").onclick=pickBrokerFile; $("#sClr").onclick=()=>api("/api/me/positions/clear-sample").catch(()=>{}); }
+}
+/* where a position comes from, once any account is linked: "Monarch", or "Monarch + yours" */
+function srcTag(t){
+  if(!(me?.links||[]).length) return "";
+  const S=[...new Set(lots(t).map(p=>p.source||""))], n=S.filter(Boolean).map(linkName);
+  return n.length?`<small class="src">${esc(n.join(" + ")+(S.includes("")?" + yours":""))}</small>`:"";
 }
 function posSubmit(px,t0){ return async e=>{ e.preventDefault(); try{ await api("/api/me/position",{t:t0||$("#"+px+"T").value.trim(),shares:$("#"+px+"S").value,cost:$("#"+px+"C").value,opened:$("#"+px+"D").value}); }catch(x){ $("#"+px+"Err").textContent=x.message; } }; }
 const SAMPLE=[["AAPL",20,150],["MSFT",10,310],["NVDA",30,48],["AMZN",15,135],["GOOGL",12,125],["JPM",10,150],["JNJ",8,155],["COST",3,610],["XOM",12,105],["VOO",10,410]];
@@ -2502,6 +2537,7 @@ function renderEmptyMine(){
    :`<section class="panel empty" id="emptyMine"><h2>Add your portfolio</h2>
    <p class="hint lead">See your value and gains, how you're doing against the S&amp;P 500, a daily brief of what changed for your stocks, and an X-ray of your sector mix, overlap with SPY and QQQ, risk and dividend income. It all stays on this Mac.</p>
    <div class="starts">
+     <button type="button" class="start" id="eLink"><span class="si">${ic("link",18)}</span><span><b>Link your brokerage</b><small>Monarch, Interactive Brokers or Robinhood. Your positions stay in sync, and OpenTicker can only read them.</small></span></button>
      <button type="button" class="start" id="eImp"><span class="si">${ic("upload",18)}</span><span><b>Import from your broker</b><small>Download the positions file (CSV) from Fidelity, Schwab, Vanguard, E*TRADE or most others, then pick it here.</small></span></button>
      <button type="button" class="start" id="eSample"><span class="si">${ic("funds",18)}</span><span><b>Try a sample portfolio</b><small>Ten well-known stocks and funds, so you can look around first. Clear it whenever you like.</small></span></button>
    </div>
@@ -2516,7 +2552,7 @@ function renderEmptyMine(){
     return;
   }
   $("#eForm").onsubmit=posSubmit("e");
-  $("#eImp").onclick=pickBrokerFile;
+  $("#eImp").onclick=pickBrokerFile; $("#eLink").onclick=()=>openSettings("accounts");
   $("#eSample").onclick=async()=>{ const b=$("#eSample"); b.disabled=true; b.querySelector("b").textContent="Setting up the sample…";
     try{ await api("/api/me/positions/import",{rows:SAMPLE.map(([t,shares,cost])=>({t,shares,cost})),sample:true}); }
     catch(x){ b.disabled=false; b.querySelector("b").textContent="Try a sample portfolio"; $("#eErr").textContent=x.message; } };
@@ -2614,10 +2650,14 @@ function lotBtn(r){ const open=lotOpen.has(r.t); return `<button type="button" c
 function lotEditor(t,ctx){
   const L=lots(t), last=lastValid(base?.px[t]||[]), d=lotDraft[t];
   const dateIn=(id,v)=>`<input data-lot-f="opened" data-fk="${ctx}:${id}:opened" type="${v?"date":"text"}" value="${esc(v||"")}" placeholder="Add date" aria-label="Date bought">`;
-  const row=(id,p)=>`<div class="lx" data-lot="${id}"><input data-lot-f="shares" data-fk="${ctx}:${id}:shares" inputmode="decimal" value="${esc(numTxt(p.shares))}" placeholder="Shares" aria-label="Shares" autocomplete="off"><input data-lot-f="cost" data-fk="${ctx}:${id}:cost" inputmode="decimal" value="${esc(numTxt(p.cost))}" placeholder="Cost per share" aria-label="Cost per share" autocomplete="off">${dateIn(id,p.opened)}
+  const ro=p=>`<div class="lx lxro"><span class="num">${esc(numTxt(p.shares))}</span><span class="num">${money(p.cost)}</span><span class="lxa" title="${esc(p.account)}">${esc(p.account||linkName(p.source))}</span>
+     <span class="lxg ${cls(last-p.cost)}">${pct(p.cost&&last?last/p.cost-1:null,1)}</span><span></span></div>`;
+  const linked=[...new Set(L.filter(p=>p.source).map(p=>linkName(p.source)))];
+  const row=(id,p)=>p.source?ro(p):`<div class="lx" data-lot="${id}"><input data-lot-f="shares" data-fk="${ctx}:${id}:shares" inputmode="decimal" value="${esc(numTxt(p.shares))}" placeholder="Shares" aria-label="Shares" autocomplete="off"><input data-lot-f="cost" data-fk="${ctx}:${id}:cost" inputmode="decimal" value="${esc(numTxt(p.cost))}" placeholder="Cost per share" aria-label="Cost per share" autocomplete="off">${dateIn(id,p.opened)}
      <span class="lxg ${id==="new"?"":cls(last-p.cost)}">${id==="new"?"":pct(p.cost&&last?last/p.cost-1:null,1)}</span><button type="button" class="lxx" data-lot-del="${id}" aria-label="${id==="new"?"Cancel this purchase":"Remove this purchase"}" title="${id==="new"?"Cancel":"Remove"}">${ic("close",14)}</button></div>`;
   return `<div class="lotx" data-lot-t="${esc(t)}"><div class="lx lxh"><span>Shares</span><span>Cost per share</span><span>Bought</span><span>Gain</span><span></span></div>
     ${L.map(p=>row(p.id,p)).join("")}${d?row("new",d):""}
+    ${linked.length?`<div class="lxnote">${ic("link",12)}<span>From ${esc(linked.join(" and "))}, synced each trading day. Change ${linked.length>1?"those":"it"} there, or add your own purchases below.</span></div>`:""}
     <div class="lxf"><button type="button" class="lnk" data-lot-add="${esc(t)}" ${d?"hidden":""}>${ic("plus",13)}Add a purchase</button><span class="lxm" data-lot-msg></span>${ctx==="c"?`<button type="button" class="lnk lxdone" data-lot-open="${esc(t)}">Done</button>`:""}</div></div>`;
 }
 let toastT;
@@ -2809,5 +2849,6 @@ poll(); setInterval(poll,3000); setInterval(loadMe,30000);
 <script src="/static/ux.js"></script>
 <script src="/static/ask.js"></script>
 <script src="/static/settings.js"></script>
+<script src="/static/links.js"></script>
 </body>
 </html>

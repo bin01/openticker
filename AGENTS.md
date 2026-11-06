@@ -37,7 +37,9 @@ The person can start you here with `openticker edit "what they want"`, or from *
 | `app/yahoo_extra.py` | Research data from Yahoo behind `/api/x/<name>`: analysts, financials, ownership, options, events, macro, sectors, screens, levels |
 | `app/signals.py` | Momentum signals on the Screener: the AlphaLens 3-layer score (gates, core signals, boosters, combos). The scan and `/api/signals` are `signals_scan`/`signals_payload` in server.py |
 | `app/levels.py` | Support and resistance from swing highs and lows (`key_levels`, `nearest`), shared by the Levels page and Tick's technicals |
-| `app/personal.py` | SQLite: watchlist, positions, alert rules and history, settings, Tick's saved conversations |
+| `app/personal.py` | SQLite: watchlist, positions, alert rules and history, settings, Tick's saved conversations, linked accounts |
+| `app/links.py` | Linked accounts: Monarch, Interactive Brokers, Robinhood (`PRESETS`) or any MCP server. Sign-in, reading holdings from any reasonable reply (`normalize`), choosing only tools that read (`pick_tools`), mirroring into positions, the daily sync |
+| `app/mcp_client.py` | A small MCP client (Streamable HTTP) with OAuth sign-in: PKCE, dynamic registration, token refresh. Standard library only |
 | `app/agent.py` | Tick: the data as Markdown (`/api/agent/<cmd>`, same as the CLI), skills, the agent providers, the streamed answers, Tick's persona (`SYSTEM`) |
 | `app/runs.py` | Tick's answers as durable logs: reattach after a reload, resume the agent's session after a restart |
 | `app/workbench.py` | Tick's workbench: a folder per conversation where the agent writes and runs code, its Python toolbox, the sandbox settings and the public-internet-only proxy. `app/sdk/ot.py` is `import ot` for that code |
@@ -50,11 +52,12 @@ The person can start you here with `openticker edit "what they want"`, or from *
 | `app/static/ux.js` | ⌘K command menu (`COMMANDS`) and the phone tab bar |
 | `app/static/ask.js` | Tick's panel: layout, the face, menus, streaming, Markdown and charts |
 | `app/static/settings.js` | The Settings sheet (gear in the header, ⌘,) |
+| `app/static/links.js` | Settings, Accounts (linking a brokerage), the review sheet, the portfolio's sync line |
 | `bin/openticker` | The CLI: service, setup, update, data commands, `edit`/`check`/`shot`, and the stdio MCP server |
 | `skills/*/SKILL.md` | Tick's playbooks (also installed for outside agents). `skills/openticker` is the hidden core skill |
 | `mac/OpenTicker.swift` | The Mac app: a WKWebView window. Rebuilt by `openticker setup` and `openticker update` |
 
-The scripts are classic `<script>` tags sharing globals, loaded in this order: the inline script in `index.html`, then `stock-tabs.js`, `insights.js`, `pages.js`, `levels.js`, `ux.js`, `ask.js`, `settings.js`. A later file can use anything an earlier one defines. Useful globals: `base` (holdings and prices from `/api/base`), `me` (the person's data from `/api/me`), `page`, `fund`, `hz` (time range), `render()`, `load(k)`/`save(k,v)` (localStorage, prefixed `idx.`), `$`, `esc`, `ic(name,size)` with icons in `IC`, `api(path, body)` for `/api/me/...` posts.
+The scripts are classic `<script>` tags sharing globals, loaded in this order: the inline script in `index.html`, then `stock-tabs.js`, `insights.js`, `pages.js`, `levels.js`, `ux.js`, `ask.js`, `settings.js`, `links.js`. A later file can use anything an earlier one defines. Useful globals: `base` (holdings and prices from `/api/base`), `me` (the person's data from `/api/me`), `page`, `fund`, `hz` (time range), `render()`, `load(k)`/`save(k,v)` (localStorage, prefixed `idx.`), `$`, `esc`, `ic(name,size)` with icons in `IC`, `api(path, body)` for `/api/me/...` posts.
 
 ## Recipes
 
@@ -84,13 +87,15 @@ The scripts are classic `<script>` tags sharing globals, loaded in this order: t
 
 **Change the momentum score.** Points and thresholds live in `score()` in `app/signals.py`; the Screener view is `renderSignals()` in `pages.js`. Which funds get scanned is `SIGNAL_FUNDS` in `server.py`. Restart, then open Screener → Momentum signals.
 
+**Add a brokerage preset.** Add it to `PRESETS` in `app/links.py`: `name`, the MCP server's `url`, its read-only `scope` (look at `/.well-known/oauth-protected-resource` on the server; `""` if it has none, and then set `full_access`), a `blurb`, and optionally the holdings `tool` and fixed `args`. If its reply uses field names `normalize()` doesn't know, add them to the key lists there and a case to `tests/test_links.py`. Linked positions mirror the provider: a sync replaces that link's positions, and the person's own are never touched.
+
 **Change Market page sections.** `renderMarket()` in `pages.js`; macro tickers and sector ETFs are `MACRO` and `SECTOR_ETFS` in `yahoo_extra.py`.
 
 ## House rules
 
 - **No new dependencies.** The server is the standard library plus yfinance and pandas. No frameworks, no npm, no build step. Tick's workbench has its own Python toolbox (`PACKAGES` in `app/workbench.py`), made on first start; that's the agent's, not the server's.
 - **`bin/openticker` runs on macOS's Python 3.9** as well as the venv: no `match`, no `X | Y` types there. `openticker check` catches this.
-- **Security.** `/api/ask`, and the person's own data (`/api/me*`, `/api/brief`, `/api/agent/*`, via `private_ok` in server.py), answer only this Mac or a paired phone (`X-Ask-Token`; the page sends it with `meHeaders()`), and `agent.host_ok` rejects foreign Host and Origin headers. Anything that runs an agent or a command must keep both checks (see `/api/app/terminal`). Commands come from fixed lists, never from the request. Tick's agents may run only the read-only `openticker` data commands (`AGENT_CMDS` in `agent.py`); code they write runs in Claude Code's macOS sandbox, confined to the conversation's workbench, and reaches the internet only through the workbench proxy, which refuses this Mac and the local network.
+- **Security.** `/api/ask`, and the person's own data (`/api/me*`, `/api/brief`, `/api/agent/*`, via `private_ok` in server.py), answer only this Mac or a paired phone (`X-Ask-Token`; the page sends it with `meHeaders()`), and `agent.host_ok` rejects foreign Host and Origin headers. Anything that runs an agent or a command must keep both checks (see `/api/app/terminal`). Commands come from fixed lists, never from the request. Linked accounts (`links.py`) ask providers for the read-only scope, call only tools that read, keep tokens in the macOS Keychain (never the database, logs or page), and connect or disconnect only from this Mac; the sign-in callback must carry a state the server just made. Tick's agents may run only the read-only `openticker` data commands (`AGENT_CMDS` in `agent.py`); code they write runs in Claude Code's macOS sandbox, confined to the conversation's workbench, and reaches the internet only through the workbench proxy, which refuses this Mac and the local network.
 - **Billing.** Tick never uses an API key by default (`agent.PLAN_ONLY`), so people aren't charged twice. Keep it that way.
 - **Icons.** Thin line icons from [Lucide](https://lucide.dev) (ISC), inlined in `IC` with `ic(name,size)`; no icon font or CDN. They mark places (pages, tabs, section titles, group labels, date rows), never numbers, tickers or table rows. Copy a new one's paths from lucide.dev into `IC`.
 - **Words.** UI copy is plain English for people who aren't traders: say what a number means, avoid jargon, no exclamation marks. Numbers use tabular figures; prose doesn't.

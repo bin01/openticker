@@ -17,6 +17,8 @@ App
   openticker setup [--lan]           first-run setup: background service, Mac app, agent skills
   openticker update                  pull the latest version and restart
   openticker doctor                  check Python, the service, the Mac app and your AI agents
+  openticker accounts                linked brokerages (Monarch, IBKR, Robinhood) and when they last synced
+  openticker sync                    sync linked brokerages now (they also sync each trading day after the close)
 
 Data, as Markdown (for you or any agent)
   openticker stock NVDA              company, price and trend, analysts, earnings, insiders, options, news
@@ -925,10 +927,57 @@ def cmd_mcp(args):
     return 0
 
 
+# --------------------------------------------------------------------------- linked accounts
+def _links_call(path, body=None, timeout=20):
+    req = urllib.request.Request(base() + path, data=None if body is None else json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"} if body is not None else {})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        try:
+            die(json.loads(e.read()).get("error") or str(e))
+        except ValueError:
+            die(str(e))
+    except OSError:
+        die("OpenTicker isn't running. Start it with: openticker start")
+
+
+def _ago(ts):
+    if not ts:
+        return "never"
+    m = (time.time() - ts) / 60
+    return "just now" if m < 1 else f"{m:.0f} minutes ago" if m < 90 else f"{m / 60:.0f} hours ago" if m < 2880 else f"{m / 1440:.0f} days ago"
+
+
+def cmd_accounts(args):
+    """Linked brokerages and finance apps, with how many positions each brings in."""
+    ls = _links_call("/api/me/links").get("links") or []
+    if not ls:
+        print("No linked accounts. Link one in the app: Settings, Accounts (Monarch, Interactive Brokers, Robinhood).")
+        return 0
+    for l in ls:
+        state = {"ok": f"{l['count']} positions, synced {_ago(l.get('synced'))}", "auth": "sign-in expired: open Settings, Accounts",
+                 "review": "waiting for you to review in the app", "signin": "waiting for sign-in", "fetching": "reading holdings"}.get(l["status"], l.get("error") or l["status"])
+        (warn if l["status"] in ("auth", "error") or l.get("error") else ok)(f"{l['name']}: {state}" + (f" ({l['error']})" if l.get("error") and l["status"] == "ok" else ""))
+    return 0
+
+
+def cmd_sync(args):
+    """Sync every linked account now."""
+    if not any(l["status"] == "ok" for l in _links_call("/api/me/links").get("links") or []):
+        print("No linked accounts to sync. Link one in the app: Settings, Accounts.")
+        return 0
+    r = _links_call("/api/me/links/sync", {}, timeout=180)
+    ok(f"Synced {r.get('count', 0)} positions")
+    return 0
+
+
 # --------------------------------------------------------------------------- main
 COMMANDS = {"start": cmd_start, "stop": lambda a: stop(), "restart": cmd_restart, "status": cmd_status,
             "open": cmd_open, "logs": cmd_logs, "pair": cmd_pair, "setup": cmd_setup, "update": cmd_update,
-            "doctor": cmd_doctor, "skills": cmd_skills, "mcp": cmd_mcp, "edit": cmd_edit, "check": cmd_check, "test": cmd_test, "shot": cmd_shot}
+            "doctor": cmd_doctor, "skills": cmd_skills, "mcp": cmd_mcp, "edit": cmd_edit, "check": cmd_check, "test": cmd_test, "shot": cmd_shot,
+            "accounts": cmd_accounts, "sync": cmd_sync}
 
 
 def main(argv):

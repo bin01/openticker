@@ -43,6 +43,8 @@ create table if not exists runs(id text primary key, user_id text, chat_id text,
     status text, started real, ended real, resumes integer default 0);
 create index if not exists runs_status on runs(status);
 create table if not exists run_events(run_id text, seq integer, kind text, body text, primary key(run_id, seq));
+create table if not exists links(id text primary key, user_id text, provider text, name text, url text, auth integer,
+    status text, error text, off text, synced real, count integer, created real);
 """
 
 # Alert kinds. "scope" rules apply to a group of tickers; "t" rules to one ticker.
@@ -82,6 +84,10 @@ def _exec(sql, args=()):
 def init():
     with _lock:
         _conn.executescript(SCHEMA)
+        cols = {r[1] for r in _conn.execute("pragma table_info(positions)")}
+        for c in ("source", "account"):   # linked accounts (links.py): which link a position mirrors, and its account there
+            if c not in cols:
+                _conn.execute(f"alter table positions add column {c} text default ''")
         _conn.commit()
     ensure_user(DEFAULT_USER, "Me")
 
@@ -101,7 +107,8 @@ def watchlist(uid):
 
 
 def positions(uid):
-    return _q("select id, t, shares, cost, opened, note from positions where user_id=? order by t, opened, id", (uid,))
+    return _q("select id, t, shares, cost, opened, note, coalesce(source, '') as source, coalesce(account, '') as account "
+              "from positions where user_id=? order by t, opened, id", (uid,))
 
 
 def alerts(uid):
@@ -163,8 +170,8 @@ def import_positions(uid, rows, replace=False, note="imported"):
     """Positions from a broker's file: rows of (ticker, shares, cost per share). replace clears the old ones first.
     Real positions also clear the sample portfolio, which is marked with note "sample"."""
     with _lock:
-        if replace:
-            _conn.execute("delete from positions where user_id=?", (uid,))
+        if replace:   # your own positions; linked accounts stay as their provider reports them
+            _conn.execute("delete from positions where user_id=? and coalesce(source, '')=''", (uid,))
         elif note != "sample":
             _conn.execute("delete from positions where user_id=? and note='sample'", (uid,))
         _conn.executemany("insert into positions(user_id, t, shares, cost, opened, note, created) values(?,?,?,?,?,?,?)",
@@ -184,8 +191,8 @@ def save_positions(uid, update=(), add=(), delete=()):
     """Apply the positions editor in one go. update: (id, shares, cost, opened); add: (t, shares, cost, opened);
     delete: ids. Only this user's rows are touched."""
     with _lock:
-        _conn.executemany("delete from positions where id=? and user_id=?", [(int(i), uid) for i in delete])
-        _conn.executemany("update positions set shares=?, cost=?, opened=? where id=? and user_id=?",
+        _conn.executemany("delete from positions where id=? and user_id=? and coalesce(source, '')=''", [(int(i), uid) for i in delete])
+        _conn.executemany("update positions set shares=?, cost=?, opened=? where id=? and user_id=? and coalesce(source, '')=''",
                           [(float(sh), float(c), o or "", int(i), uid) for i, sh, c, o in update])
         _conn.executemany("insert into positions(user_id, t, shares, cost, opened, note, created) values(?,?,?,?,?,?,?)",
                           [(uid, t, float(sh), float(c), o or "", "", time.time()) for t, sh, c, o in add])
@@ -197,12 +204,69 @@ def clear_sample(uid):
 
 
 def update_position(uid, pid, shares, cost, opened=""):
-    _exec("update positions set shares=?, cost=?, opened=? where id=? and user_id=?",
+    _exec("update positions set shares=?, cost=?, opened=? where id=? and user_id=? and coalesce(source, '')=''",
           (float(shares), float(cost), opened or "", int(pid), uid))
 
 
 def delete_position(uid, pid):
-    _exec("delete from positions where id=? and user_id=?", (int(pid), uid))
+    _exec("delete from positions where id=? and user_id=? and coalesce(source, '')=''", (int(pid), uid))
+
+
+# ---------------------------------------------------------------- linked accounts (links.py)
+def _link_row(r):
+    if not r:
+        return None
+    try:
+        off = json.loads(r.get("off") or "[]")
+    except ValueError:
+        off = []
+    return {**r, "auth": bool(r["auth"]), "off": off if isinstance(off, list) else [], "error": r.get("error") or "",
+            "synced": r.get("synced"), "count": r.get("count") or 0}
+
+
+def links(uid):
+    return [_link_row(r) for r in _q("select * from links where user_id=? order by created", (uid,))]
+
+
+def link(uid, lid):
+    return _link_row(_q("select * from links where user_id=? and id=?", (uid, str(lid)), one=True))
+
+
+def add_link(uid, lid, provider, name, url, auth=True, status="fetching"):
+    _exec("insert into links(id, user_id, provider, name, url, auth, status, error, off, synced, count, created) "
+          "values(?,?,?,?,?,?,?,?,?,?,?,?)", (lid, uid, provider, name, url, int(auth), status, "", "[]", None, 0, time.time()))
+
+
+def update_link(uid, lid, **kw):
+    sets, args = [], []
+    for k, v in kw.items():
+        if k not in ("status", "error", "off", "synced", "count", "name", "url"):
+            raise ValueError(k)
+        sets.append(f"{k}=?")
+        args.append(json.dumps(v) if k == "off" else v)
+    _exec(f"update links set {', '.join(sets)} where user_id=? and id=?", (*args, uid, str(lid)))
+
+
+def remove_link(uid, lid, keep_positions=False):
+    with _lock:
+        if keep_positions:
+            _conn.execute("update positions set source='', note='' where user_id=? and source=?", (uid, str(lid)))
+        else:
+            _conn.execute("delete from positions where user_id=? and source=?", (uid, str(lid)))
+        _conn.execute("delete from links where user_id=? and id=?", (uid, str(lid)))
+        _conn.commit()
+
+
+def mirror_link(uid, lid, rows, drop_mine=False):
+    """Replace a link's positions with what its provider reports now: rows of (ticker, shares, cost, account).
+    Like an import, real positions clear the sample portfolio."""
+    with _lock:
+        _conn.execute("delete from positions where user_id=? and (source=? or note='sample')", (uid, str(lid)))
+        if drop_mine:
+            _conn.executemany("delete from positions where user_id=? and coalesce(source, '')='' and t=?", [(uid, t) for t in {r[0] for r in rows}])
+        _conn.executemany("insert into positions(user_id, t, shares, cost, opened, note, created, source, account) values(?,?,?,?,?,?,?,?,?)",
+                          [(uid, t, float(sh), float(c), "", "linked", time.time(), str(lid), acct) for t, sh, c, acct in rows])
+        _conn.commit()
 
 
 def add_alert(uid, kind, t=None, scope=None, value=None):
