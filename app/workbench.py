@@ -10,7 +10,8 @@ settings below: it can read its workbench, the toolbox and the price history but
 and write only to its workbench and the toolbox. Its network goes through the small proxy below, which lets code
 reach any public website but nothing on this Mac or its local network (so not OpenTicker's own server either).
 The read-only `openticker` data commands run outside the sandbox, as before. Codex uses its own workspace-write
-sandbox with the workbench as its folder and network on.
+sandbox with the workbench as its folder and the network off: Codex's sandbox can read the whole disk and, with network,
+the Keychain and OpenTicker's own server too, so its code works offline from `import ot`.
 """
 from __future__ import annotations
 
@@ -399,12 +400,17 @@ def sandbox_failed(text):
     return bool(re.search(r"sandbox", text or "", re.I)) and bool(re.search(r"unavailable|not available|fail|could ?n.t|unable|error", text or "", re.I))
 
 
-def note():
+def note(offline=False):
     """The workbench note for the prompt. Until the toolbox is ready, code runs on OpenTicker's own Python, which has
-    pandas, numpy and yfinance but not scipy or matplotlib, so the note says so instead of promising them."""
-    if python():
-        return NOTE
-    return NOTE.replace(_TOOLS_LINE, _TOOLS_LINE_EARLY).replace("- To show a chart from code,", "- Once the toolbox is ready, to show a chart from code,")
+    pandas, numpy and yfinance but not scipy or matplotlib, so the note says so instead of promising them. Offline (Codex,
+    whose sandbox has no network) it says code can't download anything or install packages."""
+    out = NOTE if python() else NOTE.replace(_TOOLS_LINE, _TOOLS_LINE_EARLY).replace(
+        "- To show a chart from code,", "- Once the toolbox is ready, to show a chart from code,")
+    if offline:
+        out = out.replace(_TOOLS_LINE, _TOOLS_LINE_OFFLINE).replace(_TOOLS_LINE_EARLY, _TOOLS_LINE_OFFLINE)
+        out = "\n".join(ln for ln in out.split("\n") if not ln.startswith("- Some sites refuse scripts"))
+        out = out.replace("  For anything else, use the `openticker` commands or yfinance.", "  Prices for other tickers aren't available offline.")
+    return out
 
 
 _TOOLS_LINE = ("- `python3` has pandas, numpy, scipy, matplotlib and yfinance; `pip install` more if you need it. Code can download "
@@ -412,6 +418,9 @@ _TOOLS_LINE = ("- `python3` has pandas, numpy, scipy, matplotlib and yfinance; `
 _TOOLS_LINE_EARLY = ("- The Python toolbox is still being set up, so `python3` has only pandas, numpy and yfinance for now: no scipy, "
                      "no matplotlib and no `pip install`. Charts from code aren't possible yet, so use a ```chart block. Code can "
                      "download from any public website (filings, economic data, CSVs), but nothing on this Mac or its local network.")
+
+_TOOLS_LINE_OFFLINE = ("- `python3` has pandas, numpy and, once the toolbox is ready, scipy and matplotlib. Your sandbox has no network: "
+                       "code can't download anything or install packages, so work from `import ot` and the data above.")
 
 NOTE = """You have a workbench: your current folder belongs to this conversation and keeps its files between questions.
 Use it whenever an answer needs real math (returns, volatility, drawdowns, correlation, beta, a backtest, a what-if on the person's positions): write a short Python script, run it, and read what it prints. Don't do multi-step arithmetic in your head.
