@@ -1765,8 +1765,8 @@ function renderRotation(){
   const box=$("#rotation"); if(!box) return;
   const vs=isPseudo(fund)?"your "+fund.toLowerCase():fund, cfg=rrgCfg(hz), bars=cfg.step===1?"daily":"weekly";
   const tailN=Math.min(cfg.tail,5), tailWords=tailN===1?"day":tailN+" "+(cfg.step===1?"trading days":"weeks");   // traders keep tails short: the last few bars show direction, longer ones turn to scribble
-  $("#rotTitle").textContent=`Relative rotation · ${hz}`;
-  $("#rotHint").innerHTML=`The relative rotation graph traders use, on ${bars} prices against ${esc(vs)}. Across is relative strength: past 100 means stronger than ${esc(vs)}. Up is momentum: above 100 means gaining on it. Stocks tend to move clockwise, from Improving to Leading to Weakening to Lagging. Point at a dot to see its path over the last ${tailWords}.`;
+  $("#rotTitle").textContent=`Relative rotation · ${bars} bars`;
+  $("#rotHint").innerHTML=`The relative rotation graph traders use, on ${bars} prices against ${esc(vs)}. Across is relative strength: past 100 means stronger than ${esc(vs)}. Up is momentum: above 100 means gaining on it. Stocks tend to move clockwise, from Improving to Leading to Weakening to Lagging. Positions reflect roughly the last ${cfg.step===1?"month":"few months"} of trading, not the ${hz==="YTD"?"year to date":hz+" return"}. Point at a dot for its ${hz} return and its path over the last ${tailWords}.`;
   const B=base.px[fund]; if(!B){ box.innerHTML=""; return; }
   let pts=model.rows.filter(r=>!r.other&&base.px[r.t]).sort((a,b)=>b.w-a.w).slice(0,fund==="SPY"?60:40)
     .map(r=>({...r,path:rrgPath(base.px[r.t],B,cfg.step,tailN)})).filter(r=>r.path);
