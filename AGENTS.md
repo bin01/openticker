@@ -73,7 +73,7 @@ The scripts are classic `<script>` tags sharing globals, loaded in this order: t
 
 **Tick's charts.** Tick writes a fenced ```` ```chart ```` block of JSON (`type` line or bar, `title`, `unit`, `x`, `series`) and `ask.js` draws it (`chartSpec`, `chartSVG`). The format is described to Tick in `SYSTEM`. A new chart type means both places.
 
-**Add a page.** Add `[key, "Label"]` to `PAGES` in `pages.js`, a `renderKey()` that fills `#app` with an element that has an id, route it in `renderPage()`, and add that id to the `built` map in `render()` in `index.html`. Add an icon named after the key to `IC` for the phone tab bar.
+**Add a page.** Add `[key, "Label"]` to `PAGES` in `pages.js`, a `renderKey()` that fills `#app` with an element that has an id, route it in `renderPage()`, and add that id to the `built` map in `render()` in `index.html`. Add an icon named after the key to `IC`. The phone tab bar has five slots: the pages in `TAB_PAGES` (`ux.js`) and More, which lists the rest. `NAV_GROUP` in `pages.js` marks where the header draws a divider between groups of pages.
 
 **Add a setting.** Add a row in `renderSettings()` and its handler in `bindSettings()` (`app/static/settings.js`). Browser-only preferences use `save`/`load`; anything the server needs goes through `/api/me/settings` and `personal.set_setting`.
 

@@ -8,8 +8,8 @@ let drTab="overview";
 const isEtf=t=>(detailCache[t]?.info?.quoteType||"")==="ETF"||FUND_LIST.includes(t);
 function tabsFor(t){
   return isEtf(t)
-    ? [["overview","Overview"],["holdings","Holdings"],["events","Distributions"]]
-    : [["overview","Overview"],["analysts","Analysts"],["financials","Financials"],["ownership","Ownership"],["options","Options"],["events","Dividends"]];
+    ? [["overview","Overview"],["levels","Levels"],["holdings","Holdings"],["events","Distributions"]]
+    : [["overview","Overview"],["levels","Levels"],["analysts","Analysts"],["financials","Financials"],["ownership","Ownership"],["options","Options"],["events","Dividends"]];
 }
 const TAB_SRC={analysts:"analysts",financials:"financials",ownership:"ownership",options:"options",events:"events",holdings:"etf"};
 function prefetchStock(t){
@@ -27,6 +27,7 @@ function renderTabs(){
 function setTab(k){ drTab=k; renderTabs(); const d=$("#drawer"); const top=$("#drTabs"); if(top&&d.scrollTop>top.offsetTop) d.scrollTop=top.offsetTop-8; }
 function renderTab(){
   const el=$("#drPane"); if(!el||drTab==="overview") return;
+  if(drTab==="levels") return paneLevels(el,sel);   // levels.js: its data depends on the bar size, not just the ticker
   const src=TAB_SRC[drTab], c=xpeek(src,{t:sel});
   if(!c||c.loading&&!c.data){ el.innerHTML=sk(380); xget(src,{t:sel}).then(()=>{ if(drawerOpen) renderTab(); }); return; }
   if(c.error){ el.innerHTML=errBox(c.error,src,{t:sel}); return; }

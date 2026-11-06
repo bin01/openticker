@@ -107,7 +107,9 @@ header.bar{position:sticky;top:0;z-index:15;background:color-mix(in srgb,var(--b
 .sw{display:inline-block;width:16px;height:3px;border-radius:2px}
 
 /* section nav + tape */
-.subnav{position:sticky;top:var(--hdr,57px);z-index:12;display:flex;gap:4px;padding:8px 0;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);margin-top:-6px}
+.subnav{position:sticky;top:var(--hdr,57px);z-index:12;display:flex;align-items:center;gap:4px 12px;padding:8px 0;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);margin-top:-6px}
+.sublinks{display:flex;gap:4px;min-width:0;flex:1 1 auto;overflow-x:auto;scrollbar-width:none}.sublinks::-webkit-scrollbar{display:none}
+.subnav #horizons{flex:none;margin-left:auto}
 .subnav a{font:600 12.5px/1 var(--f-body);color:var(--ink-3);text-decoration:none;padding:7px 11px;border-radius:999px;transition:color .15s,background .15s}
 .subnav a:hover{color:var(--ink)}
 .subnav a.on{color:var(--ink);background:var(--panel);box-shadow:inset 0 0 0 1px var(--rule)}
@@ -443,7 +445,7 @@ tr:hover .lotb{color:var(--ink-2)}
 .loading{padding:120px 0;text-align:center;color:var(--ink-2)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}.tape-in{flex-wrap:wrap;white-space:normal}}
 @media (max-width:1100px){.row,.row.even,.hero{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(3,minmax(0,1fr));row-gap:14px}.kpis>div:nth-child(4){border-left:0;padding-left:4px}}
-@media (max-width:760px){.pulse{grid-template-columns:1fr 1fr}.kpis{grid-template-columns:1fr 1fr}.kpis>div{border-left:0;padding-left:4px}.map{height:380px}.hero{padding:20px}.hchart{min-height:0}.subnav{overflow-x:auto}.brand span{display:none}}
+@media (max-width:760px){.pulse{grid-template-columns:1fr 1fr}.kpis{grid-template-columns:1fr 1fr}.kpis>div{border-left:0;padding-left:4px}.map{height:380px}.hero{padding:20px}.hchart{min-height:0}.subnav{flex-wrap:wrap}.subnav #horizons{order:-1;width:100%;margin-left:0}.subnav #horizons button{flex:1}.brand span{display:none}}
 @media (max-width:480px){.pulse,.pulse.n2{grid-template-columns:1fr}.kpis{grid-template-columns:1fr}}
 
 /* ===== v7: app navigation, pages, stock tabs ===== */
@@ -452,13 +454,15 @@ tr:hover .lotb{color:var(--ink-2)}
 .mainnav a{font:600 13.5px/1 var(--f-body);color:var(--ink-2);text-decoration:none;padding:9px 12px;border-radius:9px;white-space:nowrap;transition:color .15s,background .15s}
 .mainnav a:hover{color:var(--ink);background:var(--grid)}
 .mainnav a.on{color:var(--ink);background:var(--panel);box-shadow:inset 0 0 0 1px var(--rule),0 1px 2px rgba(0,0,0,.04)}
+/* a faint divider where the next pair of pages starts (NAV_GROUP in pages.js) */
+.mainnav a.gs{margin-left:13px;position:relative}
+.mainnav a.gs::before{content:"";position:absolute;left:-8px;top:50%;width:1px;height:14px;margin-top:-7px;background:var(--rule);pointer-events:none}
 .srch{display:flex;align-items:center}
 .skbd{position:absolute;right:8px;pointer-events:none}
 #ts:focus+.skbd,#ts:not(:placeholder-shown)+.skbd{display:none}
 #ts{width:320px;height:34px;border-radius:10px;padding:0 44px 0 12px;font-size:14px}
 .toolbar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding-block:0 10px}
 .toolbar[hidden]{display:none}
-.toolbar #horizons{margin-left:auto}
 .pulse.n2{grid-template-columns:repeat(2,minmax(0,1fr))}.pulse.n1{grid-template-columns:minmax(0,1fr)}
 
 .page{display:flex;flex-direction:column;gap:16px;margin-top:20px}
@@ -522,6 +526,16 @@ tr:hover .lotb{color:var(--ink-2)}
 .lvside>.lbl{padding-left:8px}
 #lvLad{position:relative;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;margin-right:-8px;padding-right:8px;scrollbar-width:thin}
 .lvlad{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+/* the Levels tab in a stock's drawer */
+.dlvhead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.dlvbars .sh{display:none}
+.dlvsum{grid-template-columns:1fr;gap:12px;margin:12px 0 14px}
+.dlvbody{display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+.dlvbody.two{grid-template-columns:minmax(0,1fr) 300px;align-items:start}
+.dlvchart svg{display:block;width:100%;height:auto}
+.dlvside{display:flex;flex-direction:column;gap:8px;min-width:0}.dlvside>.lbl{padding-left:8px}
+.dlvbody.two .dlvside{border-left:1px solid var(--rule);padding-left:18px}
+@media (max-width:600px){.dlvbars .lg{display:none}.dlvbars .sh{display:inline}}
 .lvlad li{display:grid;grid-template-columns:60px minmax(0,1fr) auto 20px;column-gap:8px;align-items:center;padding:7px 8px;border-bottom:1px solid var(--grid)}
 .lvlad li:last-child{border-bottom:0}
 .lvlad .lt{display:flex;align-items:center;gap:6px;font:700 12px/1.3 var(--f-body);color:var(--ink-3);white-space:nowrap}
@@ -587,6 +601,10 @@ input[type=date]::-webkit-calendar-picker-indicator{opacity:.5}
 .mtile .tv{font:600 17px/1.2 var(--f-mono);margin-top:5px;letter-spacing:-.01em}
 .mtile .tc{font:500 12px/1.3 var(--f-mono);white-space:nowrap}.mtile .tc small{font:500 11px var(--f-body);color:var(--ink-3);margin-left:2px}
 .mtile .tsp svg{display:block;width:100%;height:30px;margin-top:4px}
+button.mtile{display:block;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;transition:border-color .15s}
+button.mtile:hover{border-color:color-mix(in srgb,var(--ink) 30%,var(--rule))}
+button.mtile:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mtile .tlv{min-height:22px;margin:3px 0 5px}.mtile .tlv .lvtag{font-size:11px;padding:4px 8px 4px 7px;gap:5px;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .sbars{display:grid;gap:1px}
 .sbar{display:grid;grid-template-columns:minmax(150px,230px) minmax(0,1fr) 68px;gap:14px;align-items:center;border:0;background:none;padding:7px 10px;border-radius:9px;cursor:pointer;text-align:left;color:var(--ink);width:100%}
 .sbar:hover{background:var(--grid)}.sbar.on{background:var(--accent-soft)}
@@ -772,9 +790,15 @@ html{overflow-y:scroll}
 @media (hover:none) and (pointer:coarse){input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea{font-size:16px!important}}
 .tabbar{display:none}
 @media (max-width:760px){
-  .tabbar{display:grid;grid-template-columns:repeat(6,1fr);position:fixed;left:0;right:0;bottom:0;z-index:20;background:color-mix(in srgb,var(--panel) 90%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--rule);padding:6px 4px max(8px,env(safe-area-inset-bottom,0px))}
+  .tabbar{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:0;right:0;bottom:0;z-index:20;background:color-mix(in srgb,var(--panel) 90%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--rule);padding:6px 4px max(8px,env(safe-area-inset-bottom,0px))}
   .tabbar a{display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px 0;color:var(--ink-3);text-decoration:none;font:600 10.5px/1.1 var(--f-body)}
-  .tabbar a.on{color:var(--ink)}.tabbar a.on .ic{color:var(--accent)}
+  .tabbar>a,.tabbar>button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px 0;color:var(--ink-3);text-decoration:none;font:600 10.5px/1.1 var(--f-body);border:0;background:none;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .tabbar>a.on,.tabbar>button.on{color:var(--ink)}.tabbar>a.on .ic,.tabbar>button.on .ic{color:var(--accent)}
+  .tbmenu{position:absolute;right:max(8px,env(safe-area-inset-right,0px));bottom:calc(100% + 8px);min-width:190px;display:flex;flex-direction:column;padding:6px;background:var(--panel);border:1px solid var(--rule);border-radius:14px;box-shadow:var(--shadow)}
+  .tbmenu button{display:flex;align-items:center;gap:12px;padding:11px 12px;border:0;background:none;border-radius:9px;font:600 15px/1 var(--f-body);color:var(--ink);text-align:left;cursor:pointer}
+  .tbmenu button .ic{color:var(--ink-3)}
+  .tbmenu button.on{background:var(--grid)}.tbmenu button.on .ic{color:var(--accent)}
+  .tbmenu button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
   body{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px))}
   .mainnav{display:none}
   .xray{grid-template-columns:1fr}.xray .kf{grid-template-columns:1fr 1fr}
@@ -1293,7 +1317,7 @@ body[data-page="mine"] section.keys{display:none}
 .drawer.full #drKf{grid-template-columns:repeat(4,minmax(0,1fr))}
 @media (max-width:520px){#drKf{grid-template-columns:1fr 1fr}#drKf .v{font-size:14px}}
 .stats>.stat:last-child:nth-child(odd){grid-column:1/-1}   /* an odd card spans the row instead of leaving a hole */
-.mx-wrap.more-right,.subnav.more-right,.dtabs.more-right,.snav.more-right,.scr-list.more-right{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 36px),transparent)}
+.mx-wrap.more-right,.sublinks.more-right,.dtabs.more-right,.snav.more-right,.scr-list.more-right{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 36px),transparent)}
 @media (max-width:600px){
   .hold.qt{min-width:0;width:100%}.qt td.l{max-width:0;width:100%}.qt td.l .qn{max-width:none}
   #tbl th:nth-child(2),#tbl td:nth-child(2),#tbl th:nth-child(3),#tbl td:nth-child(3),#tbl th:nth-child(8),#tbl td:nth-child(8),
@@ -1319,7 +1343,7 @@ body[data-page="mine"] section.keys{display:none}
   <div class="live" title="Price feed status"><span class="dot" id="dot"></span><span id="status">Connecting…</span></div>
   <button class="theme bell iconbtn" id="bell" aria-label="Alerts"><svg class="ic" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></button>
   <button class="theme iconbtn" id="theme" title="Switch theme" aria-label="Switch theme"></button>
-</div><div class="wrap toolbar" id="toolbar" hidden><div class="seg" id="funds" role="group" aria-label="Fund"></div><div class="seg" id="horizons" role="group" aria-label="Time range"></div></div><div class="tape" id="tape" hidden></div></header>
+</div><div class="wrap toolbar" id="toolbar" hidden><div class="seg" id="funds" role="group" aria-label="Your stocks"></div></div><div class="tape" id="tape" hidden></div></header>
 
 <main class="wrap" id="app"><div class="skel" aria-label="Loading"><p class="hint" style="text-align:center;margin:28px auto 22px;max-width:46ch;line-height:1.55"><b id="bootStep" style="font-weight:600;color:var(--ink)">Loading…</b><br>The very first start downloads a year of prices and takes about a minute. After that, OpenTicker opens straight away.</p><i style="height:120px"></i><i style="height:300px"></i><i style="height:480px"></i></div></main>
 
@@ -1473,13 +1497,13 @@ function series(a,i0,maxPts=80){ if(!a) return []; const s=firstValid(a,i0); if(
 /* ======================= render: shell ======================= */
 function renderControls(){
   $("#funds").innerHTML=(PAGE_FUNDS[page]||[]).filter(k=>base?.funds[k]).map((k,i)=>`<button aria-pressed="${k===fund}" data-f="${k}" title="${esc(base.funds[k].name)} (key ${i+1})">${k}</button>`).join("");
-  $("#horizons").innerHTML=HZ.map(k=>`<button aria-pressed="${k===hz}" data-h="${k}">${k}</button>`).join("");
+  if($("#horizons")) $("#horizons").innerHTML=HZ.map(k=>`<button aria-pressed="${k===hz}" data-h="${k}">${k}</button>`).join("");
 }
 function buildShell(){
   const mine=page==="mine";
   $("#app").innerHTML=`
   <section class="pulse" id="pulse"></section>
-  <nav class="subnav" id="subnav">${mine?`<a href="#s-brief" class="on">Brief</a><a href="#s-mine">Positions</a><a href="#s-xray">X-ray</a><a href="#s-overview">Performance</a>`:`<a href="#s-overview" class="on">Overview</a>`}<a href="#s-map">Map &amp; drivers</a><a href="#s-earn">Earnings</a>${mine?"":`<a href="#s-leaders">Leadership</a>`}<a href="#s-holdings">Holdings</a></nav>
+  <nav class="subnav" id="subnav"><div class="sublinks">${mine?`<a href="#s-brief" class="on">Brief</a><a href="#s-mine">Positions</a><a href="#s-xray">X-ray</a><a href="#s-overview">Performance</a>`:`<a href="#s-overview" class="on">Overview</a>`}<a href="#s-map">Map &amp; drivers</a><a href="#s-earn">Earnings</a>${mine?"":`<a href="#s-leaders">Leadership</a>`}<a href="#s-holdings">Holdings</a></div><div class="seg sm" id="horizons" role="group" aria-label="Time range"></div></nav>
   <section class="panel" id="s-brief" hidden></section>
   <section class="panel" id="s-mine" hidden></section>
   <section class="panel" id="s-xray" hidden></section>
@@ -2213,8 +2237,8 @@ document.addEventListener("keydown",e=>{
 document.addEventListener("input",e=>{ if(e.target.type==="date") e.target.classList.toggle("has",!!e.target.value); });
 /* tables that scroll inside the page fade at the bottom while more rows sit below */
 function fmtAsOf(s){ s=String(s||""); const d=new Date(/^\d{4}-\d{2}-\d{2}$/.test(s)?s+"T12:00:00":s.replace(/^(\d{2})-([A-Za-z]{3})-(\d{4})$/,"$2 $1, $3")); return isNaN(d)?(s||""):d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}); }
-function fadeTables(){ document.querySelectorAll(".tbl-wrap,.scr-list").forEach(w=>w.classList.toggle("more-below",w.scrollHeight-w.clientHeight-w.scrollTop>4)); document.querySelectorAll(".mx-wrap,.subnav,.dtabs,.snav,.scr-list").forEach(w=>w.classList.toggle("more-right",w.scrollWidth-w.clientWidth-w.scrollLeft>4)); }
-document.addEventListener("scroll",e=>{ if(e.target.matches?.(".tbl-wrap,.mx-wrap,.subnav,.dtabs,.snav,.scr-list")) fadeTables(); },true);
+function fadeTables(){ document.querySelectorAll(".tbl-wrap,.scr-list").forEach(w=>w.classList.toggle("more-below",w.scrollHeight-w.clientHeight-w.scrollTop>4)); document.querySelectorAll(".mx-wrap,.sublinks,.dtabs,.snav,.scr-list").forEach(w=>w.classList.toggle("more-right",w.scrollWidth-w.clientWidth-w.scrollLeft>4)); }
+document.addEventListener("scroll",e=>{ if(e.target.matches?.(".tbl-wrap,.mx-wrap,.sublinks,.dtabs,.snav,.scr-list")) fadeTables(); },true);
 new MutationObserver(()=>{ cancelAnimationFrame(fadeTables.r); fadeTables.r=requestAnimationFrame(fadeTables); }).observe(document.body,{childList:true,subtree:true});
 addEventListener("resize",()=>requestAnimationFrame(fadeTables));
 let rt; addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(()=>{ if(!model) return; renderMap(); if($("#bars")) renderBars(); if($("#rotation")) renderRotation(); },120);});

@@ -2,7 +2,10 @@
    Shares globals with the main script in index.html: base, me, model, fund, hz, $, esc, pct, cls, money, big, etc. */
 
 /* ======================= router ======================= */
-const PAGES=[["market","Market"],["levels","Levels"],["funds","Funds"],["mine","My stocks"],["calendar","Calendar"],["screener","Screener"]];
+/* three pairs, in the order a day goes: read the day (Market, My stocks), go deeper on the indexes (Funds, Levels),
+   look ahead and find (Calendar, Screener). NAV_GROUP marks where a new pair starts; the header draws a faint divider there. */
+const PAGES=[["market","Market"],["mine","My stocks"],["funds","Funds"],["levels","Levels"],["calendar","Calendar"],["screener","Screener"]];
+const NAV_GROUP=new Set(["funds","calendar"]);
 const PAGE_FUNDS={funds:FUND_LIST,mine:["Watchlist","Portfolio"]};
 let page=load("page","market"); if(!PAGES.some(p=>p[0]===page)) page="market";
 const fundFor={funds:PAGE_FUNDS.funds.includes(load("fund","SPY"))?load("fund","SPY"):"SPY",mine:["Watchlist","Portfolio"].includes(load("fundMine",""))?load("fundMine",""):"Portfolio"};
@@ -35,8 +38,8 @@ addEventListener("popstate",()=>{
   if(t){ if(t!==sel||!drawerOpen) openDrawer(t); } else if(drawerOpen) closeDrawer();
 });
 function renderNav(){
-  $("#mainnav").innerHTML=PAGES.map(([k,l])=>`<a href="#${k}" data-page="${k}" class="${k===page?"on":""}" ${k===page?'aria-current="page"':""}>${l}</a>`).join("");
-  $("#toolbar").hidden=!isDash(); $("#tape").hidden=!isDash()||$("#tape").dataset.empty==="1";
+  $("#mainnav").innerHTML=PAGES.map(([k,l])=>`<a href="#${k}" data-page="${k}" class="${[k===page?"on":"",NAV_GROUP.has(k)?"gs":""].join(" ").trim()}" ${k===page?'aria-current="page"':""}>${l}</a>`).join("");
+  $("#toolbar").hidden=page!=="mine";   // Funds picks its fund with the cards; My stocks keeps Watchlist / Portfolio here, since an empty one has no card $("#tape").hidden=!isDash()||$("#tape").dataset.empty==="1";
   if(typeof renderTabbar==="function") renderTabbar();
 }
 function setFund(k){ fund=k; if(PAGE_FUNDS.funds.includes(k)){ fundFor.funds=k; save("fund",k); } else { fundFor.mine=k; save("fundMine",k); } }
@@ -194,6 +197,14 @@ function marketInsights(v){
   return ins;
 }
 const MAJOR_EV=/CPI|PPI|payroll|unemployment rate|GDP|FOMC|fed funds|retail sales|PCE|ISM (manufacturing|n-mfg|services) PMI|jobless claims|consumer confidence|sentiment|JOLTS|ADP|durable goods|housing starts/i;
+/* the stock indexes get a one-line read from the Levels page ("Near support"); the tile opens Levels on that index */
+const MKT_LEVELS=["^GSPC","^IXIC","^DJI","^RUT"];
+function mktLevels(){
+  MKT_LEVELS.forEach(s=>{ const el=document.querySelector(`[data-tlv="${CSS.escape(s)}"]`); if(!el) return;
+    const fill=()=>{ const c=xpeek("levels",lvQ(s)), x=document.querySelector(`[data-tlv="${CSS.escape(s)}"]`); if(!x) return;
+      x.innerHTML=c?.data?lvTag(lvVerdict(s,c.data,lvLast(s,c.data))):""; };   // the same price the Levels page reads, so the two always agree
+    const c=xpeek("levels",lvQ(s)); fill(); if(!c?.data&&!c?.error) xget("levels",lvQ(s)).then(fill); });
+}
 const TILE_GROUPS=[["Stocks",["^GSPC","^IXIC","^DJI","^RUT","ES=F","NQ=F"]],["Rates, volatility and the dollar",["^TNX","^FVX","^IRX","^VIX","DX-Y.NYB"]],["Commodities and crypto",["CL=F","GC=F","BTC-USD"]]];
 function tileValue(sym,v){
   const kind=v?.names?.[sym]?.[1], x=v.q[sym];
@@ -231,7 +242,9 @@ function renderMarket(){
      ${(()=>{ const b=briefItems().filter(x=>x.kind!=="move"); return b.length?`<div class="lbl" style="margin-top:16px">From your brief</div>${briefRows(b.slice(0,3))}<a class="lnk" href="#mine" data-page="mine" style="margin-top:6px">Open your brief ›</a>`:""; })()}`;
   // tiles
   $("#mTiles").innerHTML=TILE_GROUPS.map(([g,syms])=>`<div class="tgrp" style="--n:${syms.filter(s=>v.q[s]).length}"><div class="lbl">${g}</div><div class="tiles">${syms.filter(s=>v.q[s]).map(s=>{ const t=tileValue(s,v), col=t.c==null?"var(--ink-3)":t.c>=0?"var(--up)":"var(--down)";
-      return `<div class="mtile"><div class="tn">${esc(v.names[s]?.[0]||s)}</div><div class="tv num">${t.val}</div><div class="tc num ${t.c==null?"":t.c>=0?"up":"down"}">${t.chg}</div><div class="tsp">${miniSpark(v.q[s].spark,140,30,col)}</div></div>`; }).join("")}</div></div>`).join("");
+      const inner=`<div class="tn">${esc(v.names[s]?.[0]||s)}</div><div class="tv num">${t.val}</div><div class="tc num ${t.c==null?"":t.c>=0?"up":"down"}">${t.chg}</div><div class="tsp">${miniSpark(v.q[s].spark,140,30,col)}</div>`;
+      return MKT_LEVELS.includes(s)?`<button type="button" class="mtile lv" data-levels="${s}" title="Support and resistance for ${esc(v.names[s]?.[0]||s)}">${inner}<div class="tlv" data-tlv="${s}"></div></button>`:`<div class="mtile">${inner}</div>`; }).join("")}</div></div>`).join("");
+  mktLevels();
   // sectors
   $("#mRng").innerHTML=MKT_RANGES.map(k=>`<button data-mr="${k}" aria-pressed="${k===mktRange}">${k}</button>`).join("");
   const secs=(v.sectors||[]).map(([s,n,key])=>({s,n,key,r:v.q[s]?.rets[mktRange],r1:v.q[s]?.rets["1D"]})).filter(x=>x.r!=null).sort((a,b)=>b.r-a.r);
