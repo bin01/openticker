@@ -170,9 +170,9 @@ class Links(unittest.TestCase):
         personal._conn, paths.DATA = self.old_conn, self.old_data
         self.tmp.cleanup()
 
-    def sign_in(self):
-        """Connect, follow the provider's sign-in like a browser would, and land on the callback."""
-        out = links.connect("me", "other", self.url, "Fake Broker")
+    def sign_in(self, out=None):
+        """Connect (or sign in again), follow the provider's sign-in like a browser would, and land on the callback."""
+        out = out or links.connect("me", "other", self.url, "Fake Broker")
         q = urllib.parse.parse_qs(urllib.parse.urlsplit(out["auth_url"]).query)
         self.assertEqual(q["scope"], ["mcp.read"])                       # read-only, never orders
         self.assertEqual(q["code_challenge_method"], ["S256"])
@@ -187,11 +187,72 @@ class Links(unittest.TestCase):
         self.assertTrue(back.startswith("http://127.0.0.1:8765/api/links/callback?"))
         ok, msg = links.callback(urllib.parse.parse_qs(urllib.parse.urlsplit(back).query))
         self.assertTrue(ok, msg)
-        for _ in range(100):   # the first fetch runs in the background
-            if personal.link("me", out["id"])["status"] != "fetching":
+        self.settle(out["id"])
+        return out["id"]
+
+    def settle(self, lid):
+        for _ in range(100):   # reads run in the background
+            if personal.link("me", lid)["status"] != "fetching":
                 break
             threading.Event().wait(0.05)
-        return out["id"]
+
+    def linked(self):
+        lid = self.sign_in()
+        links.apply("me", lid)
+        return lid
+
+    def restart(self):
+        links.PENDING.clear()
+        links.PREVIEW.clear()
+        links._after_restart()
+
+    def test_restart_during_review_reads_again(self):
+        lid = self.sign_in()
+        self.restart()
+        self.assertEqual(personal.link("me", lid)["status"], "fetching")   # not a Review button with nothing behind it
+        links._read_again()
+        self.settle(lid)
+        self.assertEqual(personal.link("me", lid)["status"], "review")
+        self.assertIsNotNone(links.preview("me", lid))
+
+    def test_lost_review_can_be_read_again(self):
+        lid = self.sign_in()
+        links.PREVIEW.clear()
+        links.retry("me", lid)
+        self.settle(lid)
+        self.assertIsNotNone(links.preview("me", lid))
+
+    def test_restart_during_sign_in_asks_again(self):
+        out = links.connect("me", "other", self.url, "Fake Broker")
+        self.restart()
+        self.assertEqual(personal.link("me", out["id"])["status"], "auth")
+        links.cancel("me", out["id"])                                    # a link that never synced can still go
+        self.assertIsNone(personal.link("me", out["id"]))
+
+    def test_sign_in_again_syncs_straight_away(self):
+        lid = self.linked()
+        personal.update_link("me", lid, status="auth", error="The sign-in expired. Connect again.")
+        self.sign_in(links.reconnect("me", lid))
+        link = personal.link("me", lid)
+        self.assertEqual((link["status"], link["error"]), ("ok", ""))      # no second review
+        self.assertFalse(link["id"] in links.PREVIEW)
+
+    def test_cancel_sign_in_again_keeps_the_link(self):
+        lid = self.linked()
+        personal.update_link("me", lid, status="auth")
+        links.reconnect("me", lid)
+        links.cancel("me", lid)
+        self.assertEqual(personal.link("me", lid)["status"], "auth")       # back where it was, Sign in again still there
+        self.assertFalse(any(v["lid"] == lid for v in links.PENDING.values()))
+        self.assertTrue(any(p["source"] == lid for p in personal.positions("me")))
+
+    def test_saying_no_to_sign_in_again_keeps_the_link(self):
+        lid = self.linked()
+        out = links.reconnect("me", lid)
+        state = urllib.parse.parse_qs(urllib.parse.urlsplit(out["auth_url"]).query)["state"][0]
+        ok, _ = links.callback({"state": [state], "error": ["access_denied"]})
+        self.assertFalse(ok)
+        self.assertEqual(personal.link("me", lid)["status"], "auth")
 
     def test_try_again_after_a_failed_first_read(self):
         lid = self.sign_in()

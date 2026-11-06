@@ -52,6 +52,26 @@ ALIASES = {"ibkr": ["interactive brokers", "ibkr"], "robinhood": ["robinhood"]}
 def bind(server_module):
     global srv
     srv = server_module
+    _after_restart()
+
+
+def _after_restart():
+    """A restart forgets sign-ins in progress, reads under way and holdings waiting for review: they lived in memory.
+    Put each link where its row tells the truth: a lost sign-in asks for a new one, and a lost read or review is read
+    again once prices are loaded (loop() starts those)."""
+    for uid in personal.users():
+        for link in personal.links(uid):
+            if link["status"] == "signin":
+                personal.update_link(uid, link["id"], status="auth", error="The sign-in didn't finish. Sign in again.")
+            elif link["status"] in ("fetching", "review"):
+                personal.update_link(uid, link["id"], status="fetching", error="")
+
+
+def _read_again():
+    for uid in personal.users():
+        for link in personal.links(uid):
+            if link["status"] == "fetching" and link["id"] not in _reading:
+                _refresh_async(uid, link["id"])
 
 
 def log(msg):
@@ -280,8 +300,20 @@ def _session(link, sec):
         return M.Session(link["url"], sec["token"]["access_token"]).open()
 
 
+_fetch_locks = {}
+
+
 def fetch(link):
-    """Holdings from a link's server: {"rows": [...], "skipped": {...}, "accounts": {name: count}}."""
+    """Holdings from a link's server: {"rows": [...], "skipped": {...}, "accounts": {name: count}}.
+    One read per link at a time: two at once would both refresh the token, and a provider that rotates refresh
+    tokens would then turn the second one down and ask for a new sign-in."""
+    with _lock:
+        lk = _fetch_locks.setdefault(link["id"], threading.Lock())
+    with lk:
+        return _fetch(link)
+
+
+def _fetch(link):
     sec = get_secret(link["id"])
     if link.get("auth") and not sec:
         raise M.AuthNeeded()
@@ -373,6 +405,7 @@ def clean_rows(rows, skipped):
 # ---------------------------------------------------------------- connecting (only on this Mac)
 PENDING = {}            # state -> sign-in in progress
 PREVIEW = {}            # link id -> what the last fetch found, waiting for review
+_reading = set()        # link ids with a read under way in this process
 _lock = threading.Lock()
 
 
@@ -430,17 +463,18 @@ def callback(qs):
     link = personal.link(p["uid"], p["lid"])
     if not link:
         return False, "That link was removed. Go back to OpenTicker and connect again."
+    failed = "auth" if link["synced"] else "error"   # a link that synced before keeps its positions and asks again
     if (qs.get("error") or [""])[0]:
         msg = "You didn't allow access." if qs["error"][0] == "access_denied" else "The provider didn't finish signing in."
-        personal.update_link(p["uid"], p["lid"], status="error", error=msg)
+        personal.update_link(p["uid"], p["lid"], status=failed, error=msg)
         return False, msg
     try:
         tok = M.exchange(p["meta"], p["client"], (qs.get("code") or [""])[0], p["verifier"], _redirect())
         put_secret(p["lid"], {"meta": p["meta"], "client": p["client"], "token": tok})
     except Exception as e:
-        personal.update_link(p["uid"], p["lid"], status="error", error=_msg(e))
+        personal.update_link(p["uid"], p["lid"], status=failed, error=_msg(e))
         return False, _msg(e)
-    _fetch_async(p["uid"], p["lid"])
+    _refresh_async(p["uid"], p["lid"])
     return True, f"OpenTicker is linked to {link['name']}."
 
 
@@ -453,18 +487,58 @@ def _msg(e):
     return "Something went wrong talking to the provider."
 
 
+def _refresh_async(uid, lid):
+    """Read a link in the background. A new link stops at the review; one that synced before (a new sign-in, or a
+    read lost to a restart) syncs straight away with the accounts already chosen."""
+    link = personal.link(uid, lid)
+    if link and link["synced"]:
+        _sync_async(uid, lid)
+    else:
+        _fetch_async(uid, lid)
+
+
 def _fetch_async(uid, lid):
     personal.update_link(uid, lid, status="fetching", error="")
+    with _lock:
+        _reading.add(lid)
 
     def run():
-        link = personal.link(uid, lid)
         try:
+            link = personal.link(uid, lid)
+            if not link:
+                return
             got = fetch(link)
+            if not personal.link(uid, lid):   # disconnected while reading
+                return
             with _lock:
                 PREVIEW[lid] = got
             personal.update_link(uid, lid, status="review", error="")
         except Exception as e:
-            personal.update_link(uid, lid, status="auth" if isinstance(e, M.AuthNeeded) else "error", error=_msg(e))
+            if personal.link(uid, lid):
+                personal.update_link(uid, lid, status="auth" if isinstance(e, M.AuthNeeded) else "error", error=_msg(e))
+        finally:
+            with _lock:
+                _reading.discard(lid)
+    threading.Thread(target=run, daemon=True).start()
+
+
+def _sync_async(uid, lid):
+    personal.update_link(uid, lid, status="fetching", error="")
+    with _lock:
+        _reading.add(lid)
+
+    def run():
+        try:
+            n = sync(uid, lid)
+            log(f"synced {lid}: {n} positions")
+        except ValueError as e:   # sync() has already put the link back to ok (with the error) or auth
+            log(f"sync {lid} failed: {e}")
+        except Exception as e:
+            if personal.link(uid, lid):
+                personal.update_link(uid, lid, status="ok", error=_msg(e))
+        finally:
+            with _lock:
+                _reading.discard(lid)
     threading.Thread(target=run, daemon=True).start()
 
 
@@ -507,8 +581,9 @@ def sync(uid, lid):
     try:
         got = fetch(link)
     except Exception as e:
-        personal.update_link(uid, lid, status="auth" if isinstance(e, M.AuthNeeded) else "ok" if link["synced"] else "error",
-                             error=_msg(e))
+        if personal.link(uid, lid):
+            personal.update_link(uid, lid, status="auth" if isinstance(e, M.AuthNeeded) else "ok" if link["synced"] else "error",
+                                 error=_msg(e))
         raise ValueError(_msg(e))
     with _lock:
         PREVIEW[lid] = got
@@ -516,13 +591,15 @@ def sync(uid, lid):
 
 
 def retry(uid, lid):
-    """Read a link's holdings again after its first read failed, then show the review."""
+    """Read a link's holdings again: after its first read failed, or when the review it was waiting on is gone."""
     link = personal.link(uid, lid)
     if not link:
         raise ValueError("That link is gone.")
-    if link["status"] != "error":
+    with _lock:
+        lost = link["status"] == "review" and lid not in PREVIEW
+    if link["status"] != "error" and not lost:
         raise ValueError("This account isn't waiting to be tried again.")
-    _fetch_async(uid, lid)
+    _refresh_async(uid, lid)
 
 
 def reconnect(uid, lid):
@@ -538,8 +615,10 @@ def reconnect(uid, lid):
     verifier, challenge = M.pkce()
     state = secrets.token_urlsafe(24)
     with _lock:
+        for k in [k for k, v in PENDING.items() if v["at"] < time.time() - 900 or v["lid"] == lid]:
+            PENDING.pop(k)
         PENDING[state] = {"uid": uid, "lid": lid, "meta": meta, "client": client, "verifier": verifier, "at": time.time()}
-    personal.update_link(uid, lid, status="signin")
+    personal.update_link(uid, lid, status="signin", error="")
     return {"id": lid, "auth_url": M.authorize_url(meta, client, _redirect(), scope, state, challenge)}
 
 
@@ -562,10 +641,22 @@ def disconnect(uid, lid, keep=False):
 
 
 def cancel(uid, lid):
-    """Give up on a link that never finished connecting."""
+    """Give up on what a link is waiting for. One that never synced is removed; one that did goes back to syncing
+    as before (or to asking for a sign-in, when that's what it was waiting on), with its positions untouched."""
     link = personal.link(uid, lid)
-    if link and not link["synced"]:
+    if not link:
+        return
+    if not link["synced"]:
         disconnect(uid, lid)
+        return
+    with _lock:
+        for k in [k for k, v in PENDING.items() if v["lid"] == lid]:
+            PENDING.pop(k)
+        PREVIEW.pop(lid, None)
+    if link["status"] == "signin":
+        personal.update_link(uid, lid, status="auth", error="")
+    elif link["status"] in ("fetching", "review", "error"):
+        personal.update_link(uid, lid, status="ok", error="")
 
 
 def _bump():
@@ -599,6 +690,7 @@ _tried = {}
 
 
 def loop():
+    _read_again()   # reads a restart cut short; prices are loaded by now, which clean_rows needs
     time.sleep(90)
     while True:
         try:
