@@ -35,6 +35,7 @@ The person can start you here with `openticker edit "what they want"`, or from *
 | --- | --- |
 | `app/server.py` | The HTTP server (stdlib `ThreadingHTTPServer`): fund holdings, price history, the live price stream, alerts, the brief, and every `/api/...` route |
 | `app/yahoo_extra.py` | Research data from Yahoo behind `/api/x/<name>`: analysts, financials, ownership, options, events, macro, sectors, screens, levels |
+| `app/signals.py` | Momentum signals on the Screener: the AlphaLens 3-layer score (gates, core signals, boosters, combos). The scan and `/api/signals` are `signals_scan`/`signals_payload` in server.py |
 | `app/levels.py` | Support and resistance from swing highs and lows (`key_levels`, `nearest`), shared by the Levels page and Tick's technicals |
 | `app/personal.py` | SQLite: watchlist, positions, alert rules and history, settings, Tick's saved conversations, linked accounts |
 | `app/links.py` | Linked accounts: Monarch, Interactive Brokers, Robinhood (`PRESETS`) or any MCP server. Sign-in, reading holdings from any reasonable reply (`normalize`), choosing only tools that read (`pick_tools`), mirroring into positions, the daily sync |
@@ -83,6 +84,8 @@ The scripts are classic `<script>` tags sharing globals, loaded in this order: t
 **Change colors or type.** The tokens are at the top of the `<style>` in `index.html`: `:root` for light, repeated for dark under `prefers-color-scheme` and `[data-theme="dark"]`. Change all three.
 
 **Add an alert kind.** Add it to `KINDS` in `app/personal.py` (the text shown in the UI) and evaluate it in `alerts_loop()` in `app/server.py`.
+
+**Change the momentum score.** Points and thresholds live in `score()` in `app/signals.py`; the Screener view is `renderSignals()` in `pages.js`. Which funds get scanned is `SIGNAL_FUNDS` in `server.py`. Restart, then open Screener → Momentum signals.
 
 **Add a brokerage preset.** Add it to `PRESETS` in `app/links.py`: `name`, the MCP server's `url`, its read-only `scope` (look at `/.well-known/oauth-protected-resource` on the server; `""` if it has none, and then set `full_access`), a `blurb`, and optionally the holdings `tool` and fixed `args`. If its reply uses field names `normalize()` doesn't know, add them to the key lists there and a case to `tests/test_links.py`. Linked positions mirror the provider: a sync replaces that link's positions, and the person's own are never touched.
 

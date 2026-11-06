@@ -48,6 +48,7 @@ import links  # noqa: E402
 import paths  # noqa: E402
 import personal  # noqa: E402
 import runs  # noqa: E402
+import signals  # noqa: E402
 import workbench  # noqa: E402
 import yahoo_extra as X  # noqa: E402
 
@@ -1096,6 +1097,121 @@ def _earnings_watch_list():
         hs = sorted((S.holdings.get(f) or {}).get("holdings", []), key=lambda h: -h["w"])[:15]
         syms |= {h["t"] for h in hs}
     return sorted(syms)
+
+
+# ---------------------------------------------------------------- momentum signals (Screener)
+SIGNALS_PATH = CACHE / "signals.json"
+SIGNAL_FUNDS = ("SPY", "QQQ", "SMH")   # the S&P 500, the Nasdaq-100 and chip stocks; small caps would double the scan
+SIG = {"running": False, "done": 0, "total": 0, "at": 0.0, "asOf": None, "rows": [], "error": None, "whileOpen": False}
+_sig_lock = threading.Lock()
+
+
+def _load_signals():
+    try:
+        SIG.update(json.loads(SIGNALS_PATH.read_text()), running=False)
+    except Exception:
+        pass
+
+
+def _signal_ohlc(syms, start, done=None):
+    """Daily bars for many symbols, in batches like download_closes. Returns {sym: DataFrame}."""
+    out, todo = {}, list(syms)
+    for attempt in range(2):
+        missing = []
+        for i in range(0, len(todo), 50):
+            batch = todo[i:i + 50]
+            try:
+                df = yf.download(batch, start=start, auto_adjust=True, progress=False, threads=4, group_by="ticker")
+                for t in batch:
+                    try:
+                        f = df[t] if isinstance(df.columns, pd.MultiIndex) else df
+                        f = f.dropna(subset=["Close"])
+                    except Exception:
+                        f = None
+                    if f is not None and len(f) > 200:
+                        out[t] = f
+                    else:
+                        missing.append(t)
+            except Exception as e:
+                log(f"signal bars batch failed: {e!r}")
+                missing += batch
+            if done:
+                done(len(out))
+        todo = missing
+        if not todo:
+            break
+        time.sleep(3)
+    return out
+
+
+def signals_scan():
+    """Score every stock in the big funds plus the person's own with the AlphaLens method. About a minute."""
+    with S.lock:
+        chips = {h["t"] for h in S.holdings.get("SMH", {}).get("holdings", [])}
+        fund = {h["t"]: h.get("n") for f in SIGNAL_FUNDS for h in S.holdings.get(f, {}).get("holdings", [])}
+        names, sectors = dict(S.names), dict(S.sectors)
+    own = [t for t in personal.all_symbols() if t not in fund]
+    etf_of = {k: (e, n) for e, n, k in X.SECTOR_ETFS}
+    universe = [t for t in list(fund) + own if VALID.fullmatch(t) and t not in FUNDS and t not in etf_of]
+    bench = ["SPY", "SMH"] + [e for e, _, _ in X.SECTOR_ETFS]
+    SIG.update(running=True, done=0, total=len(universe))
+    start = (dt.date.today() - dt.timedelta(days=430)).isoformat()
+    try:
+        _yf_fresh()
+        b = _signal_ohlc(bench, start)
+        if "SPY" not in b:
+            raise RuntimeError("no S&P 500 prices")
+        bars = _signal_ohlc(universe, start, done=lambda n: SIG.update(done=n))
+        now_ny = dt.datetime.now(NY)
+        today = now_ny.strftime("%Y-%m-%d")
+        live = market_open(now_ny)
+        trim = (lambda f: f[f.index.strftime("%Y-%m-%d") < today]) if live else (lambda f: f)   # score finished sessions only
+        spy = trim(b["SPY"])["Close"]
+        rows = []
+        for t in universe:
+            f = bars.get(t)
+            if f is None:
+                continue
+            f = trim(f)
+            if t in chips:
+                sec = ("SMH", "Chip stocks (SMH)")
+            else:
+                sec = etf_of.get(str(sectors.get(t) or "").lower().replace(" ", "-"))
+                sec = sec and (sec[0], f"{sec[1]} ({sec[0]})")
+            sc = sec and b.get(sec[0])
+            try:
+                r = signals.score(f, spy, trim(sc)["Close"] if sc is not None else None, sec[1] if sec else None)
+            except Exception as e:
+                log(f"signals {t} failed: {e!r}")
+                continue
+            if r:
+                rows.append({"t": t, "n": fund.get(t) or names.get(t) or t, "fund": t in fund,
+                             "sector": sectors.get(t), "vs": sec[0] if sec else None, **r})
+        rows.sort(key=lambda r: (signals.ORDER.index(r["rating"]), -r["score"]))
+        as_of = spy.index[-1].strftime("%Y-%m-%d")
+        partial = sum(1 for r in rows if r["vs"]) < 0.8 * len(rows)   # sectors still being looked up on a first launch
+        SIG.update(rows=jsonable(rows), asOf=as_of, at=time.time(), whileOpen=live, partial=partial, running=False, error=None)
+        SIGNALS_PATH.write_text(json.dumps({k: SIG[k] for k in ("rows", "asOf", "at", "whileOpen", "partial")}, separators=(",", ":")))
+        log(f"signals: scored {len(rows)}/{len(universe)} stocks as of {as_of}")
+    except Exception as e:
+        log(f"signals scan failed: {e!r}")
+        SIG.update(running=False, failAt=time.time(), error="Yahoo didn't send price history just now. Trying again shortly.")
+    finally:
+        SIG["running"] = False
+
+
+def signals_payload(private):
+    """The latest scores; starts a fresh scan in the background when a new close is out (or every six hours)."""
+    age = time.time() - SIG["at"]
+    stale = not SIG["rows"] or age > 6 * 3600 or SIG["whileOpen"] and not market_open() or SIG.get("partial") and age > 900
+    stale = stale and bool(S.holdings.get("SPY"))   # the first launch is still fetching what the funds hold
+    with _sig_lock:
+        if stale and not SIG["running"] and time.time() - SIG.get("failAt", 0) > 300:
+            SIG["running"] = True
+            threading.Thread(target=signals_scan, daemon=True).start()
+    rows = SIG["rows"] if private else [r for r in SIG["rows"] if r.get("fund")]
+    return {"rows": rows, "asOf": SIG["asOf"], "at": SIG["at"] or None, "running": SIG["running"],
+            "done": SIG["done"], "total": SIG["total"], "error": SIG["error"], "funds": list(SIGNAL_FUNDS)}
 
 
 def earnings_loop():
@@ -2150,6 +2266,8 @@ main{{max-width:360px;padding:24px;text-align:center}}b{{display:block;font-size
             self.send(200, json.dumps(me_payload(user_for(self))).encode(), "application/json")
         elif path == "/api/me/close-note":
             self.send(200, json.dumps(jsonable(close_note(user_for(self)) or {})).encode(), "application/json")
+        elif path == "/api/signals":
+            self.send(200, json.dumps(signals_payload(agent.may_ask(self)), separators=(",", ":")).encode(), "application/json")
         elif path == "/api/earnings":
             with S.lock:
                 syms = set(S.px)
@@ -2209,6 +2327,7 @@ def main():
     # Serve right away: from the last run's prices if there are any, otherwise a loading screen that says what's
     # happening. Fresh holdings and history download behind it, then the background loops start.
     S.load_cache()
+    _load_signals()
     load_disk_cache()
     threading.Thread(target=disk_cache_loop, daemon=True).start()
 
