@@ -430,8 +430,10 @@ function renderScreener(){
   const isF=k=>/fund|bond|anchor|etf/.test(k), stocks=L.filter(s=>!isF(s.key)), funds=L.filter(s=>isF(s.key));
   const item=s=>`<button class="scr-it ${s.key===scrSel?"on":""}" data-scr="${s.key}"><b>${esc(s.name)}</b><span>${esc(SCR_DESC[s.key]||"")}</span></button>`;
   $("#scrList").innerHTML=`<button class="scr-it build ${scrSel==="custom"?"on":""}" data-scr="custom"><b>Build your own</b><span>Size, valuation, growth, yield, momentum, sector</span></button>
+    <div class="lbl" style="margin:14px 4px 6px">Signals</div><button class="scr-it ${scrSel==="signals"?"on":""}" data-scr="signals"><b>Momentum signals</b><span>Trend, strength and volume scored the AlphaLens way</span></button>
     <div class="lbl" style="margin:14px 4px 6px">Stock ideas</div>${stocks.map(item).join("")||sk(200)}${funds.length?`<div class="lbl" style="margin:14px 4px 6px">Fund ideas</div>${funds.map(item).join("")}`:""}`;
   const main=$("#scrMain");
+  if(scrSel==="signals") return renderSignals(main);
   let c, head, rq=["screen",{name:scrSel}];
   if(scrSel==="custom"){
     const f=scrForm, inp=(k,ph,w=90)=>`<label><span>${ph}</span><input data-sf="${k}" value="${esc(f[k])}" type="number" step="any" style="width:${w}px"></label>`;
@@ -460,6 +462,93 @@ function renderScreener(){
   if(form){ form.onsubmit=e=>{ e.preventDefault(); form.querySelectorAll("[data-sf]").forEach(i=>scrForm[i.dataset.sf]=i.value.trim()); save("scrForm",JSON.stringify(scrForm)); renderScreener(); }; }
   main.querySelectorAll(".qt th").forEach((th,i)=>{ const key=["t","price","chg","cap","pe","yr","yield","rating","add"][i]; if(["price","chg","cap","pe","yr","yield"].includes(key)){ th.classList.add("sortable"); th.onclick=()=>{ scrSort={k:key,dir:scrSort.k===key?-scrSort.dir:-1}; renderScreener(); }; if(scrSort.k===key) th.textContent+=scrSort.dir>0?" ↑":" ↓"; } });
 }
+
+
+/* ---- Momentum signals: the AlphaLens 3-layer score, computed by the server (app/signals.py) ---- */
+let SIG=null, sigWait=null, sigOpen=null, sigRating=load("sigRating","all"), sigScope=load("sigScope","all"), sigSort={k:"score",dir:-1};
+const SIG_RATINGS=[["Strong Buy","sb"],["Buy","b"],["Accumulate","a"],["Hold","h"],["Avoid","x"]];
+const sigCls=r=>"rt rt-"+(SIG_RATINGS.find(x=>x[0]===r)||["","h"])[1];
+const pts=x=>x>0?`+${x.toFixed(2)}`:x<0?`−${(-x).toFixed(2)}`:"0";
+async function loadSignals(){
+  try{ const r=await fetch("/api/signals",{headers:typeof meHeaders==="function"?meHeaders():{}}); SIG=await r.json(); }catch(e){ SIG=SIG||{error:"OpenTicker's server didn't answer."}; }
+  clearTimeout(sigWait); if(SIG?.running) sigWait=setTimeout(()=>{ if(page==="screener"&&scrSel==="signals") loadSignals().then(()=>renderScreener()); },3000);
+}
+function sigDay(d){ if(!d) return ""; const x=new Date(d+"T12:00:00"); return x.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}); }
+function renderSignals(main){
+  if(!SIG){ main.innerHTML=sk(420); loadSignals().then(()=>page==="screener"&&scrSel==="signals"&&renderScreener()); return; }
+  const all=SIG.rows||[], mine=new Set([...(me?.watch||[]),...((me?.positions||[]).map(p=>p.t))]);
+  const scoped=sigScope==="mine"?all.filter(r=>mine.has(r.t)):all;
+  const n=k=>scoped.filter(r=>r.rating===k).length;
+  let rows=sigRating==="all"?scoped:scoped.filter(r=>r.rating===sigRating);
+  const G={score:r=>r.score,price:r=>r.price,adx:r=>r.adx,rs6:r=>r.rs6,fromHigh:r=>r.fromHigh,rating:r=>-SIG_RATINGS.findIndex(x=>x[0]===r.rating)*100+r.score}[sigSort.k];
+  rows=[...rows].sort((a,b)=>{const x=G(a),y=G(b); if(x==null) return 1; if(y==null) return -1; return (x-y)*sigSort.dir;});
+  const funds=(SIG.funds||["SPY","QQQ","SMH"]).join(", ");
+  const head=`<div class="ph" style="margin:0"><div><h2>Momentum signals</h2>
+    <div class="hint">Every stock in ${funds}, plus your own, scored with <a class="sig-src" href="https://alphalens-signals.vercel.app" target="_blank" rel="noopener">AlphaLens</a>'s method: two trend checks, thirteen price and volume signals, and a bonus when several line up. It measures momentum, not value, and isn't advice.</div></div>
+    <div class="sig-asof">${SIG.asOf?`As of the close on ${sigDay(SIG.asOf)}`:""}${SIG.running&&all.length?` · <span class="sig-busy">refreshing</span>`:""}</div></div>`;
+  let body;
+  if(!all.length&&SIG.running){
+    const f=SIG.total?Math.round(100*SIG.done/SIG.total):0;
+    body=`<div class="sig-load"><b>Scoring ${SIG.total||"the"} stocks</b><span>Downloading a year of daily prices and volume for each, about a minute the first time.</span>
+      <div class="sig-bar"><i style="width:${Math.max(4,f)}%"></i></div><span class="mono">${SIG.done||0} of ${SIG.total||"…"}</span></div>`;
+  } else if(!all.length){
+    body=SIG.error?`<div class="err">${esc(SIG.error)} <button class="btn" data-sig-retry>Try again</button></div>`:`<div class="sig-load"><b>Getting ready</b><span>OpenTicker is still fetching what the funds hold. Scores follow in a minute or two.</span></div>`;
+    if(!SIG.running&&!SIG.error){ clearTimeout(sigWait); sigWait=setTimeout(()=>{ if(page==="screener"&&scrSel==="signals") loadSignals().then(()=>renderScreener()); },5000); }
+  } else {
+    const chip=(k,label,cnt,c="")=>`<button class="chip-t sig-f ${sigRating===k?"on":""}" data-sig-r="${esc(k)}" aria-pressed="${sigRating===k}" title="${sigRating===k?"Show every rating":"Show only "+k}">${c?`<i class="dot ${c}"></i>`:""}${label}<span>${cnt}</span></button>`;
+    const filt=`<div class="sig-bar-row"><div class="seg sig-scope">${[["all","All stocks"],["mine","My stocks"]].map(([k,l])=>`<button aria-pressed="${sigScope===k}" data-sig-s="${k}">${l}</button>`).join("")}</div>
+      <div class="chips" style="margin:0">${SIG_RATINGS.map(([k,c])=>chip(k,k,n(k),"rt-"+c)).join("")}</div></div>
+      ${dist(scoped)}`;
+    const th=(k,l,c="")=>`<th class="${c} ${G&&sigSort.k===k?"on":""} ${k?"sortable":""}" ${k?`data-sig-k="${k}"`:""} ${k&&k!=="rating"?`data-c="${k}"`:""}>${l}${sigSort.k===k?(sigSort.dir>0?" ↑":" ↓"):""}</th>`;
+    const tr=r=>{ const on=me?.watch?.includes(r.t), open=sigOpen===r.t;
+      return `<tr class="sig-row ${open?"open":""}" data-sig-t="${esc(r.t)}" aria-expanded="${open}">
+        <td class="l"><a href="#" class="mono sig-t" data-sel="${esc(r.t)}" title="Open ${esc(r.t)}"><b>${esc(r.t)}</b></a><span class="qn">${esc(niceName(r.n||""))}</span></td>
+        <td class="l sig-rt"><span class="${sigCls(r.rating)}">${r.rating}</span>${r.raw?`<span class="sig-cap" title="Scored ${r.raw}; a trend check held it back">${ic("chev",11)}</span>`:""}</td>
+        <td class="num sig-score">${r.score.toFixed(2)}</td>
+        <td class="num" data-c="price">${money(r.price)}</td>
+        <td class="num" data-c="adx">${r.adx==null?"–":r.adx.toFixed(0)}</td>
+        <td class="num ${cls(r.rs6)}" data-c="rs6">${r.rs6==null?"–":pct(r.rs6/100,1)}</td>
+        <td class="num" data-c="fromHigh">${r.fromHigh==null?"–":r.fromHigh>=-0.05?"at high":pct(r.fromHigh/100,1)}</td>
+        <td class="num" data-c="stop">${money(r.stop)}</td><td class="num" data-c="target">${money(r.target)}</td>
+        <td><button class="star ${on?"on":""}" data-star="${esc(r.t)}" aria-label="${on?"Remove from":"Add to"} watchlist" title="${on?"On your watchlist":"Add to watchlist"}">${ic("star",16,on)}</button></td></tr>
+        ${open?`<tr class="sig-why"><td colspan="10">${why(r)}</td></tr>`:""}`; };
+    const table=rows.length?`<div class="tbl-wrap sig-tbl"><table class="hold qt sig"><thead><tr>${th("","Stock","l")}${th("rating","Rating","l")}${th("score","Score")}${th("price","Price")}<th data-c="adx" class="sortable ${sigSort.k==="adx"?"on":""}" data-sig-k="adx" title="Average Directional Index: how strong the trend is. Under 20 is no trend.">Trend${sigSort.k==="adx"?(sigSort.dir>0?" ↑":" ↓"):""}</th>${th("rs6","vs S&P, 6 mo")}${th("fromHigh","From high")}<th data-c="stop">Stop</th><th data-c="target">Target</th><th></th></tr></thead>
+      <tbody>${rows.map(tr).join("")}</tbody></table></div>`:`<p class="hint" style="margin:14px 0">${sigScope==="mine"&&!scoped.length?"None of your stocks are scored yet. Add some to your watchlist or portfolio.":"No stocks have this rating today."}</p>`;
+    body=filt+`<p class="hint" style="margin:10px 0 0">${rows.length} stocks. Click a row to see why it scored what it did; click the ticker to open the stock.</p>`+table+method();
+  }
+  main.innerHTML=head+`<div id="scrRes">${body}</div>`;
+}
+function dist(rows){
+  if(!rows.length) return "";
+  const t=rows.length;
+  return `<div class="sig-dist" aria-hidden="true">${SIG_RATINGS.map(([k,c])=>{ const n=rows.filter(r=>r.rating===k).length; return n?`<i class="rt-${c}" style="flex:${n}" title="${k}: ${n}"></i>`:""; }).join("")}</div>`;
+}
+function why(r){
+  const line=s=>`<li><span class="sgw-n">${esc(s.name)}</span><span class="sgw-w">${esc(s.why)}</span><b class="mono ${s.points>0?"up":s.points<0?"down":"flat"}">${pts(s.points)}</b></li>`;
+  const group=(title,sub,list,total)=>`<div class="sgw-g"><div class="lbl">${title}<span class="mono">${sub??pts(total)}</span></div><ul>${list.map(line).join("")}</ul></div>`;
+  const g=r.signals||{core:[],boost:[],combo:[]};
+  const gates=`<div class="sgw-g"><div class="lbl">Trend checks</div><ul>${(r.gates||[]).map(x=>`<li><span class="sgw-n">${esc(x.name)}</span><span class="sgw-w">${esc(x.why)}</span><b class="${x.pass?"up":"down"}">${x.pass?"Pass":"Fail"}</b></li>`).join("")}</ul></div>`;
+  const risk=r.stop&&r.target?`<div class="sgw-risk"><span>A plan in this method's terms: in near ${money(r.entry)}, out below ${money(r.stop)}, aiming for ${money(r.target)}. That is 2.5 times the risk, with the stop at two days' typical range or just under the 200-day average, whichever is closer.</span></div>`:"";
+  return `<div class="sgw">${gates}${group("Core signals",null,g.core,r.core)}${group("Boosters",null,g.boost,r.boost)}${g.combo.length?group("Combos",null,g.combo,r.combo):""}</div>
+    <div class="sgw-tot">Score ${pts(r.score)} → <span class="${sigCls(r.rating)}">${r.rating}</span>${r.raw?` <span class="hint">(would be ${r.raw} without the trend check)</span>`:""}</div>${risk}`;
+}
+function method(){
+  return `<details class="sig-how"><summary><span class="lbl">How the score works</span></summary><div class="sig-how-b">
+    <p><b>Trend checks.</b> A stock needs a real trend before it can rate well. If trend strength (ADX) is under 20 the best it can get is Hold; if the weekly RSI is under 40, the bigger trend is down and the best is Accumulate.</p>
+    <p><b>Core signals</b> carry most of the score: beating the S&P 500 and its sector over 6 and 12 months (up to +2.5), the 50-day average against the 200-day (+2.5 for a fresh golden cross, −3 for a death cross), MACD momentum (up to +2), whether volume is heavier on up days than down days (up to +2), how close it is to its 52-week high (up to +2), and whether its sector is beating the market (±1).</p>
+    <p><b>Boosters</b> fine-tune it: RSI divergence, a Bollinger squeeze, a volume breakout, a stochastic pullback in an uptrend, tightening pullbacks (VCP) and the 8 and 21-day averages crossing. <b>Combos</b> add up to +1.5 when signals line up, or take 2 away when several roll over together.</p>
+    <p><b>Ratings.</b> Strong Buy at 10 or more, Buy at 7, Accumulate at 4, Hold at 1, Avoid below that. Scores use finished trading days, so they change after each close.</p>
+    <p class="hint">Two differences from AlphaLens: the sector benchmark is the SPDR sector fund (chip stocks use SMH) where AlphaLens hand-picks industry funds, and earnings acceleration isn't scored, which AlphaLens doesn't do yet either.</p></div></details>`;
+}
+document.addEventListener("click",e=>{
+  const t=e.target.closest("[data-sig-r],[data-sig-s],[data-sig-k],[data-sig-retry],tr[data-sig-t]"); if(!t||e.target.closest("a[data-sel],[data-star]")) return;
+  if(t.dataset.sigR){ sigRating=sigRating===t.dataset.sigR?"all":t.dataset.sigR; save("sigRating",sigRating); sigOpen=null; }
+  else if(t.dataset.sigS){ sigScope=t.dataset.sigS; save("sigScope",sigScope); sigOpen=null; }
+  else if(t.dataset.sigK){ const k=t.dataset.sigK; sigSort={k,dir:sigSort.k===k?-sigSort.dir:-1}; }
+  else if(t.dataset.sigRetry!==undefined){ SIG=null; }
+  else if(t.dataset.sigT){ sigOpen=sigOpen===t.dataset.sigT?null:t.dataset.sigT; }
+  renderScreener();
+});
 
 /* ======================= events for pages ======================= */
 document.addEventListener("click",e=>{

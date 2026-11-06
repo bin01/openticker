@@ -35,6 +35,7 @@ The person can start you here with `openticker edit "what they want"`, or from *
 | --- | --- |
 | `app/server.py` | The HTTP server (stdlib `ThreadingHTTPServer`): fund holdings, price history, the live price stream, alerts, the brief, and every `/api/...` route |
 | `app/yahoo_extra.py` | Research data from Yahoo behind `/api/x/<name>`: analysts, financials, ownership, options, events, macro, sectors, screens, levels |
+| `app/signals.py` | Momentum signals on the Screener: the AlphaLens 3-layer score (gates, core signals, boosters, combos). The scan and `/api/signals` are `signals_scan`/`signals_payload` in server.py |
 | `app/levels.py` | Support and resistance from swing highs and lows (`key_levels`, `nearest`), shared by the Levels page and Tick's technicals |
 | `app/personal.py` | SQLite: watchlist, positions, alert rules and history, settings, Tick's saved conversations |
 | `app/agent.py` | Tick: the data as Markdown (`/api/agent/<cmd>`, same as the CLI), skills, the agent providers, the streamed answers, Tick's persona (`SYSTEM`) |
@@ -80,6 +81,8 @@ The scripts are classic `<script>` tags sharing globals, loaded in this order: t
 **Change colors or type.** The tokens are at the top of the `<style>` in `index.html`: `:root` for light, repeated for dark under `prefers-color-scheme` and `[data-theme="dark"]`. Change all three.
 
 **Add an alert kind.** Add it to `KINDS` in `app/personal.py` (the text shown in the UI) and evaluate it in `alerts_loop()` in `app/server.py`.
+
+**Change the momentum score.** Points and thresholds live in `score()` in `app/signals.py`; the Screener view is `renderSignals()` in `pages.js`. Which funds get scanned is `SIGNAL_FUNDS` in `server.py`. Restart, then open Screener → Momentum signals.
 
 **Change Market page sections.** `renderMarket()` in `pages.js`; macro tickers and sector ETFs are `MACRO` and `SECTOR_ETFS` in `yahoo_extra.py`.
 
