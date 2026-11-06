@@ -38,7 +38,7 @@ addEventListener("popstate",()=>{
   if(t){ if(t!==sel||!drawerOpen) openDrawer(t); } else if(drawerOpen) closeDrawer();
 });
 function renderNav(){
-  $("#mainnav").innerHTML=PAGES.map(([k,l])=>`<a href="#${k}" data-page="${k}" class="${[k===page?"on":"",NAV_GROUP.has(k)?"gs":""].join(" ").trim()}" ${k===page?'aria-current="page"':""}>${l}</a>`).join("");
+  $("#mainnav").innerHTML=PAGES.map(([k,l])=>`<a href="#${k}" data-page="${k}" class="${[k===page?"on":"",NAV_GROUP.has(k)?"gs":""].join(" ").trim()}" ${k===page?'aria-current="page"':""}>${ic(k,16)}<span>${l}</span></a>`).join("");
   $("#toolbar").hidden=page!=="mine";   // Funds picks its fund with the cards; My stocks keeps Watchlist / Portfolio here, since an empty one has no card $("#tape").hidden=!isDash()||$("#tape").dataset.empty==="1";
   if(typeof renderTabbar==="function") renderTabbar();
 }
@@ -205,7 +205,7 @@ function mktLevels(){
       x.innerHTML=c?.data?lvTag(lvVerdict(s,c.data,lvLast(s,c.data))):""; };   // the same price the Levels page reads, so the two always agree
     const c=xpeek("levels",lvQ(s)); fill(); if(!c?.data&&!c?.error) xget("levels",lvQ(s)).then(fill); });
 }
-const TILE_GROUPS=[["Stocks",["^GSPC","^IXIC","^DJI","^RUT","ES=F","NQ=F"]],["Rates, volatility and the dollar",["^TNX","^FVX","^IRX","^VIX","DX-Y.NYB"]],["Commodities and crypto",["CL=F","GC=F","BTC-USD"]]];
+const TILE_GROUPS=[["Stocks",["^GSPC","^IXIC","^DJI","^RUT","ES=F","NQ=F"],"trend"],["Rates, volatility and the dollar",["^TNX","^FVX","^IRX","^VIX","DX-Y.NYB"],"percent"],["Commodities and crypto",["CL=F","GC=F","BTC-USD"],"coins"]];
 function tileValue(sym,v){
   const kind=v?.names?.[sym]?.[1], x=v.q[sym];
   if(kind==="rate"){ const y=rateVal(x.last), p=rateVal(x.prev); const bp=p!=null?Math.round((y-p)*100):null; return {val:y.toFixed(2)+"%",chg:bp==null?"":`${bp>=0?"+":"−"}${Math.abs(bp)} bp`,c:bp}; }
@@ -221,9 +221,9 @@ function renderMarket(){
       <section class="hero mhero"><div><div class="eyebrow" id="mEyebrow">Market today</div><h1 class="ptitle" id="mTitle">Reading the tape…</h1><div id="mIns">${sk(150)}</div></div>
         <div class="mside"><div class="lbl">Your stocks today</div><div id="mMine">${sk(160)}</div></div></section>
       <section id="mTiles"></section>
-      <section class="panel"><div class="ph"><div><h2>Sectors</h2><div class="hint">The 11 S&amp;P sector funds. Pick one to see its industries and biggest companies.</div></div><div class="seg sm" id="mRng"></div></div><div id="mSectors">${sk(260)}</div><div id="mSector"></div></section>
-      <section class="row even"><div class="panel"><div class="ph"><div><h2>Movers</h2><div class="hint">US stocks with the biggest moves and the most trading today.</div></div><div class="seg sm" id="mMovSeg"></div></div><div id="mMovers">${sk(300)}</div></div>
-        <div class="panel"><div class="ph"><div><h2>Economic calendar</h2><div class="hint">US data releases. Times are New York.</div></div><a class="lnk" href="#calendar" data-page="calendar" data-cal="econ">Full calendar ›</a></div><div id="mEcon">${sk(300)}</div></div></section></div>`;
+      <section class="panel"><div class="ph"><div><h2>${ic("layers")}Sectors</h2><div class="hint">The 11 S&amp;P sector funds. Pick one to see its industries and biggest companies.</div></div><div class="seg sm" id="mRng"></div></div><div id="mSectors">${sk(260)}</div><div id="mSector"></div></section>
+      <section class="row even"><div class="panel"><div class="ph"><div><h2>${ic("updown")}Movers</h2><div class="hint">US stocks with the biggest moves and the most trading today.</div></div><div class="seg sm" id="mMovSeg"></div></div><div id="mMovers">${sk(300)}</div></div>
+        <div class="panel"><div class="ph"><div><h2>${ic("landmark")}Economic calendar</h2><div class="hint">US data releases. Times are New York.</div></div><a class="lnk" href="#calendar" data-page="calendar" data-cal="econ">Full calendar ›</a></div><div id="mEcon">${sk(300)}</div></div></section></div>`;
     loadMarket();
   }
   const v=macroView(), err=xpeek("macro")?.error;
@@ -241,7 +241,7 @@ function renderMarket(){
      <ul class="mlist">${my.moves.slice(0,5).map(x=>`<li data-sel="${x.t}"><b class="mono">${x.t}</b><span class="num">${money(x.last)}</span><span class="num ${cls(x.chg)}">${pct(x.chg,1)}${x.x?`<span class="xh" title="${x.x.lab} ${money(x.x.p)} at ${extTime(x.x.ts)}">${ic(x.x.s==="pre"?"sun":"moon",10)} <span class="${cls(x.x.chg)}">${pct(x.x.chg,1)}</span></span>`:""}</span></li>`).join("")}</ul>
      ${(()=>{ const b=briefItems().filter(x=>x.kind!=="move"); return b.length?`<div class="lbl" style="margin-top:16px">From your brief</div>${briefRows(b.slice(0,3))}<a class="lnk" href="#mine" data-page="mine" style="margin-top:6px">Open your brief ›</a>`:""; })()}`;
   // tiles
-  $("#mTiles").innerHTML=TILE_GROUPS.map(([g,syms])=>`<div class="tgrp" style="--n:${syms.filter(s=>v.q[s]).length}"><div class="lbl">${g}</div><div class="tiles">${syms.filter(s=>v.q[s]).map(s=>{ const t=tileValue(s,v), col=t.c==null?"var(--ink-3)":t.c>=0?"var(--up)":"var(--down)";
+  $("#mTiles").innerHTML=TILE_GROUPS.map(([g,syms,icn])=>`<div class="tgrp" style="--n:${syms.filter(s=>v.q[s]).length}"><div class="lbl">${ic(icn,12)}${g}</div><div class="tiles">${syms.filter(s=>v.q[s]).map(s=>{ const t=tileValue(s,v), col=t.c==null?"var(--ink-3)":t.c>=0?"var(--up)":"var(--down)";
       const inner=`<div class="tn">${esc(v.names[s]?.[0]||s)}</div><div class="tv num">${t.val}</div><div class="tc num ${t.c==null?"":t.c>=0?"up":"down"}">${t.chg}</div><div class="tsp">${miniSpark(v.q[s].spark,140,30,col)}</div>`;
       return MKT_LEVELS.includes(s)?`<button type="button" class="mtile lv" data-levels="${s}" title="Support and resistance for ${esc(v.names[s]?.[0]||s)}">${inner}<div class="tlv" data-tlv="${s}"></div></button>`:`<div class="mtile">${inner}</div>`; }).join("")}</div></div>`).join("");
   mktLevels();
@@ -348,12 +348,12 @@ function econList(rows,compact){
 
 /* ======================= CALENDAR ======================= */
 let calTab=load("calTab","earn"), calScope=load("calScope","mine"), calDay=null;
-const CAL_TABS=[["earn","Earnings"],["econ","Economy"],["ipo","IPOs"],["splits","Splits"]];
+const CAL_TABS=[["earn","Earnings","earnings"],["econ","Economy","landmark"],["ipo","IPOs","rocket"],["splits","Splits","split"]];
 function renderCalendar(){
   if(!$("#cal")){
     $("#app").innerHTML=`<div id="cal" class="page"><div class="phead"><div><h1 class="ptitle">Calendar</h1><p class="hint" id="calSub"></p></div><div class="seg" id="calTabs"></div></div><div id="calBody"></div></div>`;
   }
-  $("#calTabs").innerHTML=CAL_TABS.map(([k,l])=>`<button data-ct="${k}" aria-pressed="${k===calTab}">${l}</button>`).join("");
+  $("#calTabs").innerHTML=CAL_TABS.map(([k,l,i])=>`<button class="wi" data-ct="${k}" aria-pressed="${k===calTab}">${ic(i,14)}${l}</button>`).join("");
   const body=$("#calBody");
   if(calTab==="earn"){
     loadEarnings();
