@@ -135,10 +135,13 @@ function myToday(){
   const pos=positionsAgg(); let V=0,D=0,XD=null,xLab=null; const moves=[];
   pos.forEach(p=>{ const F=facts(p.t); const last=lastValid(base.px[p.t]||[]); if(last==null) return; V+=last*p.shares; if(F?.chg!=null){ const prev=last/(1+F.chg); D+=(last-prev)*p.shares; }
     const x=extOf(p.t); if(x){ XD=(XD||0)+(x.p-last)*p.shares; xLab=x.lab; } });
-  const syms=[...new Set([...me.watch,...pos.map(p=>p.t)])];
-  syms.forEach(t=>{ const F=facts(t); if(F?.chg!=null) moves.push({t,chg:F.chg,last:F.last,x:extOf(t)}); });
-  moves.sort((a,b)=>Math.abs(b.chg)-Math.abs(a.chg));
-  return {V,D,dayPct:V-D?D/(V-D):null,moves,hasPos:pos.length>0,count:syms.length,XD,xLab};
+  // what you own and what you only watch stay apart: the total is your positions, and each list shows its three biggest moves today
+  const owned=new Set(pos.map(p=>p.t)), watched=me.watch.filter(t=>!owned.has(t));
+  const movesOf=ts=>ts.map(t=>{ const F=facts(t); return F?.chg!=null?{t,chg:F.chg,last:F.last,x:extOf(t)}:null; }).filter(Boolean).sort((a,b)=>Math.abs(b.chg)-Math.abs(a.chg));
+  return {V,D,dayPct:V-D?D/(V-D):null,own:movesOf([...owned]),watch:movesOf(watched),hasPos:pos.length>0,count:owned.size+watched.length,XD,xLab};
+}
+function myRows(xs){
+  return `<ul class="mlist">${xs.map(x=>`<li data-sel="${x.t}"><b class="mono">${x.t}</b><span class="num">${money(x.last)}</span><span class="num ${cls(x.chg)}">${pct(x.chg,1)}${x.x?`<span class="xh" title="${x.x.lab} ${money(x.x.p)} at ${extTime(x.x.ts)}">${ic(x.x.s==="pre"?"sun":"moon",10)} <span class="${cls(x.x.chg)}">${pct(x.x.chg,1)}</span></span>`:""}</span></li>`).join("")}</ul>`;
 }
 function overnightInsight(v){
   const ov=xpeek("macro")?.data?.overnight; if(!ov?.q||v.status?.status==="open") return null;
@@ -186,7 +189,7 @@ function marketInsights(v){
   const oil=q["CL=F"], gold=q["GC=F"], btc=q["BTC-USD"];
   if(oil&&gold) ins.push({tone:"",html:`Oil ${pct(oil.rets["1D"],1)}, gold ${pct(gold.rets["1D"],1)}${btc?`, bitcoin ${pct(btc.rets["1D"],1)}`:""}. The dollar index ${q["DX-Y.NYB"]?pct(q["DX-Y.NYB"].rets["1D"],1):"–"}.`});
   const my=myToday();
-  if(my?.hasPos) ins.push({tone:cls(my.D),html:`<b>Your portfolio ${verb} ${pct(my.dayPct)} today</b> (${my.D>=0?"+":"−"}${money(Math.abs(my.D))})${my.moves[0]?`, with <a href="#" data-sel="${my.moves[0].t}">${my.moves[0].t}</a> moving most (${pct(my.moves[0].chg,1)})`:""}.`});
+  if(my?.hasPos) ins.push({tone:cls(my.D),html:`<b>Your portfolio ${verb} ${pct(my.dayPct)} today</b> (${my.D>=0?"+":"−"}${money(Math.abs(my.D))})${my.own[0]?`, with <a href="#" data-sel="${my.own[0].t}">${my.own[0].t}</a> moving most (${pct(my.own[0].chg,1)})`:""}.`});
   // what's next
   const ev=xpeek("econ")?.data||[], today=nyToday();
   const nextEv=ev.filter(e=>e.date>=today&&e.actual==null&&MAJOR_EV.test(e.event)).slice(0,3);
@@ -238,7 +241,8 @@ function renderMarket(){
   $("#mMine").innerHTML=!my||!my.count?`<p class="hint">Add stocks to your watchlist or portfolio to see them here.</p><button class="btn ghost" data-page="mine">Go to My stocks</button>`:
     `${my.hasPos?`<div class="mval"><b>${money(my.V)}</b><span class="${cls(my.D)}">${my.D>=0?"+":"−"}${money(Math.abs(my.D))} · ${pct(my.dayPct)}</span></div>`:""}
      ${my.hasPos&&my.XD!=null?`<div class="mxh">${ic(my.xLab==="Pre-market"?"sun":"moon",12)}${my.xLab} <span class="num ${cls(my.XD)}">${my.XD>=0?"+":"−"}${money(Math.abs(my.XD))} · ${pct(my.V?my.XD/my.V:null)}</span></div>`:""}
-     <ul class="mlist">${my.moves.slice(0,5).map(x=>`<li data-sel="${x.t}"><b class="mono">${x.t}</b><span class="num">${money(x.last)}</span><span class="num ${cls(x.chg)}">${pct(x.chg,1)}${x.x?`<span class="xh" title="${x.x.lab} ${money(x.x.p)} at ${extTime(x.x.ts)}">${ic(x.x.s==="pre"?"sun":"moon",10)} <span class="${cls(x.x.chg)}">${pct(x.x.chg,1)}</span></span>`:""}</span></li>`).join("")}</ul>
+     ${my.own.length?`${my.watch.length?`<div class="mgrp">You own</div>`:""}${myRows(my.own.slice(0,3))}`:""}
+     ${my.watch.length?`<div class="mgrp">Watching</div>${myRows(my.watch.slice(0,3))}`:""}
      ${(()=>{ const b=briefItems().filter(x=>x.kind!=="move"); return b.length?`<div class="lbl" style="margin-top:16px">From your brief</div>${briefRows(b.slice(0,3))}<a class="lnk" href="#mine" data-page="mine" style="margin-top:6px">Open your brief ›</a>`:""; })()}`;
   // tiles
   $("#mTiles").innerHTML=TILE_GROUPS.map(([g,syms,icn])=>`<div class="tgrp" style="--n:${syms.filter(s=>v.q[s]).length}"><div class="lbl">${ic(icn,12)}${g}</div><div class="tiles">${syms.filter(s=>v.q[s]).map(s=>{ const t=tileValue(s,v), col=t.c==null?"var(--ink-3)":t.c>=0?"var(--up)":"var(--down)";

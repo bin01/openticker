@@ -359,9 +359,11 @@ function noticings(c){
     const e=EARN?.[t]; if(e&&e.date&&e.reported==null&&e.date>=today&&e.date<=soon) out.push({dir:"ev",text:`Reports earnings ${day(e.date)}.`,act:"Preview it",go:{scope:"stock",t,skill:"earnings-preview"}});
     return out;
   }
-  const mine=[...new Set([...(me?.positions||[]).map(p=>p.t),...(me?.watch||[])])];
-  const movers=mine.map(t=>({t,r:r1(t)})).filter(x=>x.r!=null&&Math.abs(x.r)>=.015).sort((a,b)=>Math.abs(b.r)-Math.abs(a.r));
-  if(movers[0]){ const m=movers[0]; out.push({dir:cls(m.r),text:`<b>${esc(m.t)}</b> is ${m.r>0?"up":"down"} <b class="${cls(m.r)}">${pct(m.r,1).replace(/^[+−]/,"")}</b> today${movers[1]?`, the biggest move in your stocks`:""}.`,act:"Want the why?",go:{scope:"stock",t:m.t,skill:"explain-move"}}); }
+  // what you own comes first; a watched stock is named as one, so the two never blur
+  const own=[...new Set((me?.positions||[]).map(p=>p.t))], watched=(me?.watch||[]).filter(t=>!own.includes(t));
+  const big=ts=>ts.map(t=>({t,r:r1(t)})).filter(x=>x.r!=null&&Math.abs(x.r)>=.015).sort((a,b)=>Math.abs(b.r)-Math.abs(a.r));
+  const mo=big(own), mw=big(watched), movers=mo.length?mo:mw, where=mo.length?"among the stocks you own":"on your watchlist";
+  if(movers[0]){ const m=movers[0]; out.push({dir:cls(m.r),text:`<b>${esc(m.t)}</b>${mo.length?"":" (watching)"} is ${m.r>0?"up":"down"} <b class="${cls(m.r)}">${pct(m.r,1).replace(/^[+−]/,"")}</b> today${movers[1]?`, the biggest move ${where}`:""}.`,act:"Want the why?",go:{scope:"stock",t:m.t,skill:"explain-move"}}); }
   const spy=r1("SPY"); if(spy!=null){
     const hold=base.funds?.SPY?.holdings||[]; let up=0,n=0; for(const h of hold){ const r=r1(h.t); if(r!=null){ n++; if(r>0) up++; } }
     const breadth=n?up/n:null, narrow=breadth!=null&&((spy>0&&breadth<.45)||(spy<0&&breadth>.55));
