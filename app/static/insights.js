@@ -51,8 +51,10 @@ function briefItems(){
 }
 function whenLabel(x){ const today=nyToday(); if(x.future) return dayLabel(x.date); if(x.date===today) return "Today"; return dayLabel(x.date); }
 const minus=t=>String(t??"").replace(/(^|[\s(,])-(?=\$?\d)/g,"$1−");   // a real minus sign in server-written text
+/* a stock you watch but don't own: the brief covers both, so it says which */
+function watchOnly(t){ return !!me?.watch?.includes(t)&&!(me?.positions||[]).some(p=>p.t===t); }
 function briefRows(items){
-  return `<ul class="brief">${items.map(x=>`<li class="${x.tone||""}"><button class="bl" data-open="${esc(x.t)}" data-open-tab="${esc(x.tab||"")}"><i aria-hidden="true"></i><b class="btk">${esc(x.t)}</b><span class="bt"><b>${esc(minus(x.head))}</b>${x.text?` <span>${esc(minus(x.text))}</span>`:""}</span><span class="bw">${esc(whenLabel(x))}</span></button></li>`).join("")}</ul>`;
+  return `<ul class="brief">${items.map(x=>`<li class="${x.tone||""}"><button class="bl" data-open="${esc(x.t)}" data-open-tab="${esc(x.tab||"")}"><i aria-hidden="true"></i><b class="btk">${esc(x.t)}${watchOnly(x.t)?`<small>Watching</small>`:""}</b><span class="bt"><b>${esc(minus(x.head))}</b>${x.text?` <span>${esc(minus(x.text))}</span>`:""}</span><span class="bw">${esc(whenLabel(x))}</span></button></li>`).join("")}</ul>`;
 }
 function renderBrief(){
   const el=$("#s-brief"); if(!el) return;
