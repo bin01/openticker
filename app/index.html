@@ -1764,12 +1764,12 @@ function rrgPath(a,b,step,tail){
 function renderRotation(){
   const box=$("#rotation"); if(!box) return;
   const vs=isPseudo(fund)?"your "+fund.toLowerCase():fund, cfg=rrgCfg(hz), bars=cfg.step===1?"daily":"weekly";
-  const AGO={"1D":"At the previous close","1W":"A week ago","1M":"A month ago","3M":"3 months ago","6M":"6 months ago","YTD":"At the start of the year","1Y":"A year ago"};
+  const tailN=Math.min(cfg.tail,5), tailWords=tailN===1?"day":tailN+" "+(cfg.step===1?"trading days":"weeks");   // traders keep tails short: the last few bars show direction, longer ones turn to scribble
   $("#rotTitle").textContent=`Relative rotation · ${hz}`;
-  $("#rotHint").innerHTML=`The relative rotation graph traders use, on ${bars} prices against ${esc(vs)}. Across is relative strength: past 100 means stronger than ${esc(vs)}. Up is momentum: above 100 means gaining on it. Stocks tend to move clockwise, from Improving to Leading to Weakening to Lagging. Tails trace ${hz==="1D"?"the move since the previous close":hzWords(hz)}; point at any dot to see its own.`;
+  $("#rotHint").innerHTML=`The relative rotation graph traders use, on ${bars} prices against ${esc(vs)}. Across is relative strength: past 100 means stronger than ${esc(vs)}. Up is momentum: above 100 means gaining on it. Stocks tend to move clockwise, from Improving to Leading to Weakening to Lagging. Point at a dot to see its path over the last ${tailWords}.`;
   const B=base.px[fund]; if(!B){ box.innerHTML=""; return; }
   let pts=model.rows.filter(r=>!r.other&&base.px[r.t]).sort((a,b)=>b.w-a.w).slice(0,fund==="SPY"?60:40)
-    .map(r=>({...r,path:rrgPath(base.px[r.t],B,cfg.step,cfg.tail)})).filter(r=>r.path);
+    .map(r=>({...r,path:rrgPath(base.px[r.t],B,cfg.step,tailN)})).filter(r=>r.path);
   if(!pts.length){ box.innerHTML=`<p class="hint">Not enough price history for this range yet.</p>`; return; }
   const W=Math.round(Math.min(560,Math.max(320,box.clientWidth||520))),H=Math.round(W*0.77),L=56,R=12,T=12,B2=40;
   const all=pts.flatMap(r=>r.path), xm=Math.max(1,...all.map(p=>Math.abs(p[0]-100)))*1.12, ym=Math.max(1,...all.map(p=>Math.abs(p[1]-100)))*1.15, fs=W<420?12:11, ts=W<420?11.5:10.5;
@@ -1785,14 +1785,14 @@ function renderRotation(){
   niceTicks(100-ym,100+ym,4).forEach(t=>{s+=`<text x="${L-6}" y="${Y(t)+4}" font-size="${ts}" text-anchor="end" class="mono" fill="var(--ink-3)">${fmt(t)}</text>`;});
   s+=`<line x1="${X(100)}" x2="${X(100)}" y1="${T}" y2="${H-B2}" stroke="var(--ink-3)"/><line x1="${L}" x2="${W-R}" y1="${Y(100)}" y2="${Y(100)}" stroke="var(--ink-3)"/>`;
   s+=`<text x="${(L+W-R)/2}" y="${H-4}" font-size="${ts}" text-anchor="middle" fill="var(--ink-3)">Relative strength vs ${esc(vs)} (RS-Ratio) →</text><text transform="rotate(-90)" x="${-(T+(H-T-B2)/2)}" y="12" font-size="${ts}" text-anchor="middle" fill="var(--ink-3)">Momentum (RS-Momentum) →</text>`;
-  const tailed=new Set(pts.slice(0,cfg.tail>13?3:5).map(r=>r.t)); if(sel) tailed.add(sel);
+  const tailed=new Set(sel?[sel]:[]);
   [...pts].reverse().forEach(r=>{ const on=r.t===sel, h=head(r), c=quadColor(h);
     const P=r.path;
     const line=P.map(p=>`${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" ");
     const tail=`<g class="tail${tailed.has(r.t)?" on":""}"><polyline points="${line}" fill="none" stroke="${c}" stroke-width="1.5" stroke-opacity=".7" stroke-linejoin="round"/>${P.slice(0,-1).map(p=>`<circle cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="1.8" fill="${c}" fill-opacity=".7"/>`).join("")}</g>`;
     const was=r.path[0];
     const QN={"var(--up)":"Leading","var(--warn)":"Weakening","var(--accent)":"Improving","var(--down)":"Lagging"};
-    s+=`<g data-sel="${esc(r.t)}" data-tip="${esc(`<b>${r.t}</b> · ${r.n}<br><b>${QN[c]}</b> · strength ${h[0].toFixed(1)}, momentum ${h[1].toFixed(1)}<br>${AGO[hz]}: ${QN[quadColor(was)].toLowerCase()}<br>Weight ${r.w.toFixed(2)}%`)}">${tail}<circle class="hd" cx="${X(h[0]).toFixed(1)}" cy="${Y(h[1]).toFixed(1)}" r="${rad(r.w).toFixed(1)}" fill="${c}" fill-opacity="${on?.95:.6}" stroke="${on?"var(--ink)":"var(--panel)"}" stroke-width="${on?2:1.2}"/></g>`; });
+    s+=`<g data-sel="${esc(r.t)}" data-tip="${esc(`<b>${r.t}</b> · ${r.n}<br><b>${QN[c]}</b> · strength ${h[0].toFixed(1)}, momentum ${h[1].toFixed(1)}<br>${tailN===1?"A day":tailWords[0].toUpperCase()+tailWords.slice(1)} ago: ${QN[quadColor(was)].toLowerCase()}<br>Weight ${r.w.toFixed(2)}%`)}">${tail}<circle class="hd" cx="${X(h[0]).toFixed(1)}" cy="${Y(h[1]).toFixed(1)}" r="${rad(r.w).toFixed(1)}" fill="${c}" fill-opacity="${on?.95:.6}" stroke="${on?"var(--ink)":"var(--panel)"}" stroke-width="${on?2:1.2}"/></g>`; });
   // labels: biggest names first, each where it overlaps no dot, label or quadrant name; skipped if nowhere fits
   const dots=pts.map(r=>{ const k=rad(r.w)+1, h=head(r); return {t:r.t,b:[X(h[0])-k,Y(h[1])-k,2*k,2*k]}; });
   const over=(b,o)=>b[0]<o[0]+o[2]&&b[0]+b[2]>o[0]&&b[1]<o[1]+o[3]&&b[1]+b[3]>o[1];
@@ -1803,7 +1803,7 @@ function renderRotation(){
   const hit=(b,t)=>boxes.some(o=>over(b,o))||dots.some(d=>d.t!==t&&over(b,d.b))||b[0]<L||b[0]+b[2]>W-R||b[1]<T||b[1]+b[3]>H-B2;
   const order=[...pts.slice(0,14)]; if(sel&&!order.some(r=>r.t===sel)){ const r=pts.find(p=>p.t===sel); if(r) order.unshift(r); }
   let labs=""; const lh=fs+3;
-  order.forEach(r=>{ const h=head(r), cx=X(h[0]), cy=Y(h[1]), rr=rad(r.w), w=r.t.length*fs*.64+2;
+  order.forEach(r=>{ const h=head(r), cx=X(h[0]), cy=Y(h[1]), rr=rad(r.w), w=r.t.length*fs*.72+4;
     const opts=[[cx+rr+3,cy-lh/2],[cx-rr-3-w,cy-lh/2],[cx-w/2,cy-rr-lh-2],[cx-w/2,cy+rr+2],[cx+rr*.7+2,cy-rr*.7-lh+2],[cx-rr*.7-2-w,cy-rr*.7-lh+2],[cx+rr*.7+2,cy+rr*.7-2],[cx-rr*.7-2-w,cy+rr*.7-2]];
     const ok=opts.find(([x,y])=>!hit([x,y,w,lh],r.t)); if(!ok&&r.t!==sel) return; const [x,y]=ok||opts[0];
     boxes.push([x,y,w,lh]); labs+=`<text x="${x.toFixed(1)}" y="${(y+fs).toFixed(1)}" font-size="${fs}" class="mono" font-weight="600" fill="var(--ink)" stroke="var(--panel)" stroke-width="3" paint-order="stroke" pointer-events="none">${esc(r.t)}</text>`; });
