@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import io
+import html
 import json
 import math
 import mimetypes
@@ -43,6 +44,7 @@ import pandas as pd  # noqa: E402
 import yfinance as yf  # noqa: E402
 
 import agent  # noqa: E402
+import links  # noqa: E402
 import paths  # noqa: E402
 import personal  # noqa: E402
 import runs  # noqa: E402
@@ -1399,6 +1401,7 @@ def me_payload(uid):
     out = personal.snapshot(uid)
     syms = set(out["watch"]) | {p["t"] for p in out["positions"]}
     out["earnings"] = earnings_for(syms)
+    out["links"] = [links.public(l) for l in personal.links(uid)]
     return out
 
 
@@ -1743,6 +1746,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(415, b"json only", "text/plain")
         if self.path.split("?")[0].startswith("/api/me/") and not self.private_ok():
             return
+        if self.path.split("?")[0].startswith("/api/me/links/"):
+            return self.links_post(self.path.split("?")[0][14:])
         if self.path.split("?")[0] == "/api/ask":
             return self.ask()
         if self.path.split("?")[0] == "/api/ask/stop":
@@ -1917,6 +1922,62 @@ class Handler(BaseHTTPRequestHandler):
             S.version += 1   # pages refetch base, so new tickers show up with prices
         self.send(200, json.dumps(me_payload(uid)).encode(), "application/json")
 
+    # ------------------------------------------------------------ linked accounts (links.py)
+    def links_post(self, action):
+        """Connect, review, sync and disconnect brokerages. Adding or removing a sign-in answers only this Mac."""
+        if action in ("connect", "reconnect", "disconnect", "cancel") and not (agent.is_local(self) and agent.host_ok(self)):
+            return self.send(403, json.dumps({"error": "Connect and disconnect accounts on the Mac that runs OpenTicker."}).encode(), "application/json")
+        try:
+            body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 20_000)) or b"{}")
+        except Exception:
+            return self.send(400, b"bad json", "text/plain")
+        uid, lid = user_for(self), str(body.get("id") or "")
+        try:
+            if action in ("connect", "reconnect"):
+                out = links.connect(uid, str(body.get("provider") or ""), body.get("url"), body.get("name")) if action == "connect" \
+                    else links.reconnect(uid, lid)
+                out["opened"] = bool(out.get("auth_url")) and links.open_browser(out["auth_url"])
+            elif action == "apply":
+                off = body.get("off")
+                out = {"count": links.apply(uid, lid, off if isinstance(off, list) else None, drop_mine=bool(body.get("drop_mine")))}
+            elif action == "sync":
+                ids = [lid] if lid else [l["id"] for l in personal.links(uid) if l["status"] == "ok"]
+                out, errs = {"count": 0}, []
+                for i in ids:   # one account failing doesn't stop the others
+                    try:
+                        out["count"] += links.sync(uid, i)
+                    except ValueError as e:
+                        errs.append(str(e))
+                if errs and len(errs) == len(ids):
+                    raise ValueError(errs[0])
+                out["errors"] = errs
+            elif action == "disconnect":
+                links.disconnect(uid, lid, keep=bool(body.get("keep")))
+                out = {}
+            elif action == "cancel":
+                links.cancel(uid, lid)
+                out = {}
+            else:
+                return self.send(404, b"not found", "text/plain")
+        except (ValueError, links.M.MCPError, RuntimeError) as e:
+            return self.send(400, json.dumps({"error": links._msg(e)}).encode(), "application/json")
+        out["me"] = me_payload(uid)
+        self.send(200, json.dumps(jsonable(out)).encode(), "application/json")
+
+    def links_callback(self):
+        """The browser comes back here from Monarch's, IBKR's or Robinhood's sign-in page, on this Mac only."""
+        if not (agent.is_local(self) and agent.host_ok(self)):
+            return self.send(403, b"Only on the Mac that runs OpenTicker.", "text/plain")
+        ok, msg = links.callback(parse_qs(urlsplit(self.path).query))
+        page = f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenTicker</title><style>:root{{color-scheme:light dark;--bg:#fafaf9;--fg:#1c1917;--mut:#78716c;--ok:#15803d;--bad:#b91c1c}}
+@media (prefers-color-scheme:dark){{:root{{--bg:#0c0a09;--fg:#f5f5f4;--mut:#a8a29e;--ok:#4ade80;--bad:#f87171}}}}
+body{{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,system-ui,sans-serif}}
+main{{max-width:360px;padding:24px;text-align:center}}b{{display:block;font-size:18px;margin-bottom:6px;color:var({"--ok" if ok else "--bad"})}}p{{margin:0;color:var(--mut)}}</style>
+<main><b>{"Connected" if ok else "Not connected"}</b><p>{html.escape(msg)} {"Go back to OpenTicker to choose what to add. You can close this tab." if ok else ""}</p></main>
+<script>setTimeout(()=>window.close(),{2500 if ok else 60000})</script>"""
+        self.send(200, page.encode(), "text/html; charset=utf-8")
+
     # ------------------------------------------------------------ ask an agent (streams Server-Sent Events)
     def ask(self):
         if not agent.may_ask(self):
@@ -1974,8 +2035,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?")[0]
-        if (path in ("/api/me", "/api/me/close-note", "/api/brief") or path.startswith("/api/agent/")) and not self.private_ok():
+        if (path in ("/api/me", "/api/me/close-note", "/api/brief", "/api/me/links") or path.startswith("/api/agent/")) and not self.private_ok():
             return
+        if path == "/api/links/callback":
+            return self.links_callback()
+        if path == "/api/me/links":
+            uid, qs = user_for(self), parse_qs(urlsplit(self.path).query)
+            lid = (qs.get("preview") or [""])[0]
+            body = {"links": [links.public(l) for l in personal.links(uid)], "presets": links.presets(),
+                    "local": agent.is_local(self) and agent.host_ok(self)}
+            if lid:
+                body["preview"] = links.preview(uid, lid)
+            return self.send(200, json.dumps(jsonable(body)).encode(), "application/json")
         if path in ("/", "/index.html"):
             self.send(200, (HERE / "index.html").read_bytes(), "text/html; charset=utf-8")
         elif path == "/api/base":
@@ -2128,6 +2199,7 @@ def main():
     PORT, HOST = args.port, args.host
     personal.init()
     agent.bind(sys.modules[__name__])
+    links.bind(sys.modules[__name__])
     runs.recover()
     workbench.ensure()
     workbench.state["serve"] = (PORT, agent.AGENT_CMDS)
@@ -2159,6 +2231,7 @@ def main():
         threading.Thread(target=poll_loop, daemon=True).start()
         threading.Thread(target=ext_loop, daemon=True).start()
         threading.Thread(target=sector_loop, daemon=True).start()
+        threading.Thread(target=links.loop, daemon=True).start()
 
     threading.Thread(target=warm, daemon=True).start()
     srv = ThreadingHTTPServer((args.host, args.port), Handler)

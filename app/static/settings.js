@@ -1,10 +1,11 @@
 /* OpenTicker: Settings. One sheet with everything you can change: looks, Tick, notifications, your phone, and the app itself.
-   Uses globals from index.html (theme, applyTheme, me, api, notifyOn, randTopic) and ask.js (ASK, askProv, tickSide, ...). */
+   Uses globals from index.html (theme, applyTheme, me, api, notifyOn, randTopic), ask.js (ASK, askProv, tickSide, ...)
+   and links.js (linksSection, bindLinks, linksLoad), which loads after this file but is only called once the page is up. */
 Object.assign(IC,{
   gear:'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
 });
 let APP=null;
-const SET_SECTIONS=[["look","Appearance"],["tick","Tick"],["notify","Notifications"],["phone","Your phone"],["data","Data"],["about","About"]];
+const SET_SECTIONS=[["look","Appearance"],["accounts","Accounts"],["tick","Tick"],["notify","Notifications"],["phone","Your phone"],["data","Data"],["about","About"]];
 let HEALTH=null;
 async function loadHealth(){ try{ HEALTH=await (await fetch("/api/health")).json(); }catch(e){ HEALTH=null; } markGear(); return HEALTH; }
 function markGear(){ const g=$("#gear"); if(!g) return; const bad=!!HEALTH&&!HEALTH.ok; g.classList.toggle("warn",bad);
@@ -21,9 +22,9 @@ async function openSettings(section){
   d.addEventListener("close",()=>d.remove());
   d.addEventListener("click",e=>{ if(e.target===d) d.close(); });   // a click on the dimmed backdrop closes it
   if(section) d.querySelector(`#set-${section}`)?.scrollIntoView({block:"start"});
-  const h=loadHealth();
+  const h=loadHealth(), lk=linksLoad();
   try{ APP=await (await fetch("/api/app")).json(); }catch(e){ APP=APP||{}; }
-  await h;
+  await h; await lk;
   if(!ASK.info) await askInfo().catch(()=>{});
   if(document.contains(d)) renderSettings();
 }
@@ -48,6 +49,7 @@ function renderSettings(){
   <div class="sbody">
   ${sec("look","Appearance",
      setRow("Theme","Auto follows your device's light or dark setting.",setSeg("theme",[["auto","Auto"],["light","Light"],["dark","Dark"]],theme)))}
+  ${sec("accounts","Accounts",linksSection())}
   ${sec("tick","Tick",
      `<div class="srow col"><div class="sl"><b>Who Tick thinks with</b><small>An AI agent on your Mac, signed in with your own account.</small></div>
        <div class="sags">${P.map(p=>{ const on=cur?.id===p.id;
@@ -88,6 +90,7 @@ function renderSettings(){
 function bindSettings(d,{cur,st}){
   const on=(sel,ev,fn)=>d.querySelectorAll(sel).forEach(el=>el.addEventListener(ev,fn));
   $("#setClose").onclick=()=>d.close();
+  bindLinks(d);
   on("[data-set-go]","click",e=>{ e.preventDefault(); d.querySelector("#set-"+e.currentTarget.dataset.setGo)?.scrollIntoView({behavior:"smooth",block:"start"}); });
   on("[data-set-theme]","click",e=>{ theme=e.currentTarget.dataset.setTheme; save("theme",theme); applyTheme(); renderSettings(); });
   on("[data-set-agent]","click",e=>{ ASK.prov=e.currentTarget.dataset.setAgent; save("askProv",ASK.prov); askRender(); renderSettings(); });
