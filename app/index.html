@@ -86,6 +86,8 @@ header.bar{position:sticky;top:0;z-index:15;background:color-mix(in srgb,var(--b
 .pcard .tk{font:700 16px/1 var(--f-display);letter-spacing:-.01em}
 .pcard .nm{font-size:11.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pcard .r{font:600 26px/1.1 var(--f-mono);margin-top:8px;letter-spacing:-.02em}
+.pcard .rw{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-top:8px}.pcard .rw .r{margin-top:0}
+.pcard .px{font:500 15px/1 var(--f-mono);color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
 .pcard .meta{display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-2);margin-top:2px;gap:8px}
 .pcard svg{display:block;width:100%;height:38px;margin-top:6px;overflow:hidden}
 .sp{display:inline-block;width:90px;height:24px;vertical-align:middle}.sp svg{display:block;width:90px;height:24px}
@@ -1416,7 +1418,7 @@ body[data-page="mine"] section.keys{display:none}
   .pulse.n2{grid-template-columns:1fr}
   #drAct{display:grid;grid-template-columns:1fr 1fr}#drAct>:not(.btn){grid-column:1/-1}#drAct>.btn{justify-content:center}   /* four actions as a tidy 2×2, no orphan */
   .pulse:not(.n2){grid-template-columns:1fr 1fr;gap:8px}   /* four funds as a 2×2 grid, not 700px of stacked cards */
-  .pulse:not(.n2) .pcard{padding:12px 12px 8px}.pulse:not(.n2) .pcard .nm,.pulse:not(.n2) .pcard .meta span:last-child{display:none}.pulse:not(.n2) .pcard .r{font-size:22px}
+  .pulse:not(.n2) .pcard{padding:12px 12px 8px}.pulse:not(.n2) .pcard .nm,.pulse:not(.n2) .pcard .meta span:last-child{display:none}.pulse:not(.n2) .pcard .r{font-size:22px}.pulse:not(.n2) .pcard .px{font-size:12.5px}
 }
 </style>
 </head>
@@ -1668,7 +1670,7 @@ function renderPulse(){
   $("#pulse").innerHTML=ks.map(k=>{const s=fundStats[k], col=s.r>=0?"var(--up)":"var(--down)";
     return `<button class="pcard" data-f="${k}" aria-pressed="${k===fund}">
       <div class="t"><span class="tk">${k}</span><span class="nm">${esc(base.funds[k].name)}</span></div>
-      <div class="r ${clsR(s.r)}">${pct(s.r)}</div>
+      <div class="rw"><div class="r ${clsR(s.r)}">${pct(s.r)}</div>${isPseudo(k)?"":`<span class="px" title="${k} price per share">${money(lastValid(base.px[k]))}</span>`}</div>
       <div class="meta"><span>Avg stock <b class="num ${clsR(s.ew,1)}">${pct(s.ew,1)}</b></span><span>${s.up}/${s.n} up</span></div>
       ${spark(s.spark,240,38,col,s.dom)}</button>`;}).join("");
 }
