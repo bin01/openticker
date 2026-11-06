@@ -42,11 +42,31 @@ document.addEventListener("keydown",e=>{
 });
 { const k=$(".skbd"); if(k) k.textContent=/Mac|iPhone|iPad/.test(navigator.platform||navigator.userAgent)?"⌘K":"Ctrl K"; }
 
-/* ---------- phone tab bar ---------- */
+/* ---------- phone tab bar ----------
+   Five slots, so labels fit and every target is wide enough for a thumb: the four pages you open every day,
+   then More for Calendar, Screener, alerts and Settings. */
+const TAB_PAGES=["market","mine","funds","levels"];
+IC.more='<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>';
 {
   const nav=document.createElement("nav"); nav.className="tabbar"; nav.id="tabbar"; nav.setAttribute("aria-label","Sections");
-  nav.innerHTML=PAGES.map(([k,l])=>`<a href="#${k}" data-page="${k}">${ic(k,21)}<span>${l}</span></a>`).join("");
+  nav.innerHTML=PAGES.filter(([k])=>TAB_PAGES.includes(k)).map(([k,l])=>`<a href="#${k}" data-page="${k}">${ic(k,21)}<span>${l}</span></a>`).join("")
+    +`<button type="button" id="tbMore" aria-haspopup="menu" aria-expanded="false" aria-controls="tbMenu">${ic("more",21)}<span>More</span></button>`
+    +`<div class="tbmenu" id="tbMenu" role="menu" hidden></div>`;
   document.body.appendChild(nav);
+  const btn=$("#tbMore"), menu=$("#tbMenu");
+  const close=()=>{ menu.hidden=true; btn.setAttribute("aria-expanded","false"); };
+  btn.onclick=e=>{ e.stopPropagation(); if(!menu.hidden) return close();
+    const rows=[...PAGES.filter(([k])=>!TAB_PAGES.includes(k)).map(([k,l])=>({k,l,icon:k,on:k===page})),
+      {k:"alerts",l:"Alerts",icon:"bell"},{k:"settings",l:"Settings",icon:"gear"}];
+    menu.innerHTML=rows.map(r=>`<button type="button" role="menuitem" data-tbm="${r.k}" class="${r.on?"on":""}"${r.on?' aria-current="page"':""}>${ic(r.icon,18)}<span>${r.l}</span></button>`).join("");
+    menu.hidden=false; btn.setAttribute("aria-expanded","true"); menu.querySelector("button")?.focus(); };
+  menu.onclick=e=>{ const b=e.target.closest("[data-tbm]"); if(!b) return; close(); const k=b.dataset.tbm;
+    if(k==="alerts") openAlerts(); else if(k==="settings") openSettings(); else goPage(k); };
+  document.addEventListener("click",e=>{ if(!menu.hidden&&!e.target.closest("#tbMenu")) close(); });
+  document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&!menu.hidden){ close(); btn.focus(); } });
 }
-function renderTabbar(){ document.querySelectorAll("#tabbar a").forEach(a=>{ const on=a.dataset.page===page; a.classList.toggle("on",on); if(on) a.setAttribute("aria-current","page"); else a.removeAttribute("aria-current"); }); }
+function renderTabbar(){
+  document.querySelectorAll("#tabbar a").forEach(a=>{ const on=a.dataset.page===page; a.classList.toggle("on",on); if(on) a.setAttribute("aria-current","page"); else a.removeAttribute("aria-current"); });
+  $("#tbMore")?.classList.toggle("on",!TAB_PAGES.includes(page));   // Calendar and Screener light up More
+}
 renderTabbar();

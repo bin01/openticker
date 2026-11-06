@@ -73,7 +73,7 @@ The scripts are classic `<script>` tags sharing globals, loaded in this order: t
 
 **Tick's charts.** Tick writes a fenced ```` ```chart ```` block of JSON (`type` line or bar, `title`, `unit`, `x`, `series`) and `ask.js` draws it (`chartSpec`, `chartSVG`). The format is described to Tick in `SYSTEM`. A new chart type means both places.
 
-**Add a page.** Add `[key, "Label"]` to `PAGES` in `pages.js`, a `renderKey()` that fills `#app` with an element that has an id, route it in `renderPage()`, and add that id to the `built` map in `render()` in `index.html`. Add an icon named after the key to `IC` for the phone tab bar.
+**Add a page.** Add `[key, "Label"]` to `PAGES` in `pages.js`, a `renderKey()` that fills `#app` with an element that has an id, route it in `renderPage()`, and add that id to the `built` map in `render()` in `index.html`. Add an icon named after the key to `IC`. The phone tab bar has five slots: the pages in `TAB_PAGES` (`ux.js`) and More, which lists the rest. `NAV_GROUP` in `pages.js` marks where the header draws a divider between groups of pages.
 
 **Add a setting.** Add a row in `renderSettings()` and its handler in `bindSettings()` (`app/static/settings.js`). Browser-only preferences use `save`/`load`; anything the server needs goes through `/api/me/settings` and `personal.set_setting`.
 
@@ -89,6 +89,7 @@ The scripts are classic `<script>` tags sharing globals, loaded in this order: t
 - **`bin/openticker` runs on macOS's Python 3.9** as well as the venv: no `match`, no `X | Y` types there. `openticker check` catches this.
 - **Security.** `/api/ask`, and the person's own data (`/api/me*`, `/api/brief`, `/api/agent/*`, via `private_ok` in server.py), answer only this Mac or a paired phone (`X-Ask-Token`; the page sends it with `meHeaders()`), and `agent.host_ok` rejects foreign Host and Origin headers. Anything that runs an agent or a command must keep both checks (see `/api/app/terminal`). Commands come from fixed lists, never from the request. Tick's agents may run only the read-only `openticker` data commands (`AGENT_CMDS` in `agent.py`); code they write runs in Claude Code's macOS sandbox, confined to the conversation's workbench, and reaches the internet only through the workbench proxy, which refuses this Mac and the local network.
 - **Billing.** Tick never uses an API key by default (`agent.PLAN_ONLY`), so people aren't charged twice. Keep it that way.
+- **Icons.** Thin line icons from [Lucide](https://lucide.dev) (ISC), inlined in `IC` with `ic(name,size)`; no icon font or CDN. They mark places (pages, tabs, section titles, group labels, date rows), never numbers, tickers or table rows. Copy a new one's paths from lucide.dev into `IC`.
 - **Words.** UI copy is plain English for people who aren't traders: say what a number means, avoid jargon, no exclamation marks. Numbers use tabular figures; prose doesn't.
 - **Look before you ship.** Every visible change gets a look in light and dark, and on a phone width if layout changed. The bar is high: clean, calm, obvious to use.
 - **Data stays local.** The person's data lives in `OPENTICKER_HOME`, never in the repo. Don't commit `data/`, `cache/` or `logs/`.

@@ -11,7 +11,9 @@ const lvQ=t=>({t,iv:lvIv});
 const lvSpan=d=>{ const x=LV_IV.find(x=>x[0]===d.iv)?.[3]; return x?"in "+x:`since ${d.span?.[0]?.slice(0,4)||"the start"}`; };   // "in the past year", "since 1999"
 let lvT=load("lvT","")||null, lvHover=null;
 const lvIdx=t=>t.startsWith("^");
-const lvLabel=t=>LV_TOP.find(x=>x[0]===t)?.[1]||t;
+/* the other indexes the Market page's tiles open here: [short name, what it is] */
+const LV_NAMES={"^IXIC":["Nasdaq","The Nasdaq Composite: over 3,000 stocks listed on Nasdaq"],"^DJI":["Dow Jones","The Dow Jones Industrial Average: 30 large US companies"],"^RUT":["Russell 2000","2,000 smaller US companies"]};
+const lvLabel=t=>LV_TOP.find(x=>x[0]===t)?.[1]||LV_NAMES[t]?.[0]||t;
 function lvSym(){ return lvT||recent?.[0]||me?.positions?.[0]?.t||me?.watch?.[0]||"NVDA"; }
 function lvPick(t){ if(!t) return; lvT=t; save("lvT",t); $("#lvMain")?.setAttribute("data-t",t); lvClose(); renderLevels(); }
 
@@ -197,7 +199,7 @@ function lvCard(s){
 function lvMain(){
   const t=lvSym(), c=xpeek("levels",lvQ(t));
   document.querySelectorAll(".lvcard").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.lv===t)));
-  const top=LV_TOP.find(x=>x[0]===t), nm=top?top[2]:nameOf(t);
+  const top=LV_TOP.find(x=>x[0]===t), nm=top?top[2]:LV_NAMES[t]?.[1]||nameOf(t);
   $("#lvWho").innerHTML=`<h2>${esc(lvLabel(t))}</h2><span class="nm">${esc(nm&&nm!==t?nm:c?.data?.name||"")}</span>${lvIdx(t)?"":`<button class="lnk" data-sel="${esc(t)}">Open ${esc(t)} ›</button>`}`;
   const q=[...new Set([...(typeof recent!=="undefined"?recent:[]),...(me?.positions||[]).map(p=>p.t),...(me?.watch||[])])].filter(x=>x!==t).slice(0,5);
   $("#lvQuick").innerHTML=q.map(x=>`<button class="chip" data-lv="${esc(x)}">${esc(x)}</button>`).join("");
@@ -246,6 +248,24 @@ document.addEventListener("click",e=>{
   const g=e.target.closest("[data-lvgo]"); if(g){ e.preventDefault(); lvPick(g.dataset.lvgo); return; }
   const c=e.target.closest("#lvl [data-lv]"); if(c){ lvPick(c.dataset.lv); const m=$("#lvMain"); if(m&&c.classList.contains("lvcard")&&m.getBoundingClientRect().top>innerHeight*.6) m.scrollIntoView({behavior:"smooth",block:"start"}); }
 });
+/* ---------- the Levels tab on a stock's page: the same answer, sized for the drawer, with the full page a click away ---------- */
+function paneLevels(el,t){
+  const c=xpeek("levels",lvQ(t)), full=!!$("#drawer.full");
+  const bars=`<div class="seg sm dlvbars" role="group" aria-label="Bar size">${LV_IV.map(([k,l,sh])=>`<button data-dlvr="${k}" aria-pressed="${k===lvIv}" aria-label="${l} bars"><span class="lg">${l}</span><span class="sh">${sh}</span></button>`).join("")}</div>`;
+  const head=`<div class="dlvhead">${bars}<button class="lnk" data-levels="${esc(t)}">Open in Levels ›</button></div>`;
+  if(!c?.data){
+    if(c?.error){ el.innerHTML=head+errBox(c.error,"levels",lvQ(t)); return; }
+    el.innerHTML=head+sk(360); const iv=lvIv;
+    xget("levels",lvQ(t)).then(()=>{ if(drawerOpen&&sel===t&&drTab==="levels"&&lvIv===iv) renderTab(); }); return;
+  }
+  const d=c.data, last=lvLast(t,d), prev=lvPrev(t,d);
+  const W=el.clientWidth||520, cw=full&&W>=820?W-320:W;
+  const keep=lvHover, svg=lvChart(t,d,{w:Math.max(300,Math.round(cw)),h:innerWidth<=600?240:300,last,big:true}).replace(' id="lvX"',""); lvHover=keep;   // the Levels page owns the hover line
+  el.innerHTML=`${head}<div class="lvsum dlvsum"><div class="lvv">${lvTag(lvVerdict(t,d,last))}<p class="lvread">${lvRead(t,d,last)}</p></div>${lvMeter(t,d,last)}</div>
+    <div class="dlvbody${full&&W>=820?" two":""}"><div class="lvchart dlvchart">${svg}</div><div class="dlvside"><div class="lbl">All levels</div>${lvLadder(t,d,last,prev)}</div></div>`;
+}
+document.addEventListener("click",e=>{ const b=e.target.closest("[data-dlvr]"); if(!b) return; lvIv=b.dataset.dlvr; save("lvIv",lvIv); if(drawerOpen&&drTab==="levels") renderTab(); });
+
 /* open the Levels page on a given stock (from the stock page, ⌘K or a link) */
 function openLevels(t){ if(t){ lvT=t; save("lvT",t); } if(drawerOpen) closeDrawer(); if(page!=="levels") goPage("levels"); else renderLevels(); }
 { let rz=null; addEventListener("resize",()=>{ clearTimeout(rz); rz=setTimeout(()=>{ if(page==="levels"&&$("#lvl")) renderLevels(); },150); }); }
