@@ -70,6 +70,7 @@ header.bar{position:sticky;top:0;z-index:15;background:color-mix(in srgb,var(--b
 .seg button{border:0;background:none;padding:6px 11px;border-radius:7px;cursor:pointer;font:600 13px/1 var(--f-body);color:var(--ink-2);transition:background .15s,color .15s}
 .seg button:hover{color:var(--ink);background:var(--grid)}
 .seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.seg button.wi{display:inline-flex;align-items:center;gap:6px}
 .live{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-2)}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--ink-3);flex:none}
 .dot.on{background:var(--up);animation:pulse 2s infinite}
@@ -95,7 +96,7 @@ header.bar{position:sticky;top:0;z-index:15;background:color-mix(in srgb,var(--b
 .hero>*{position:relative;min-width:0}
 .eyebrow{display:flex;align-items:center;gap:10px;font:600 11px/1 var(--f-body);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
 .big-r{font:700 clamp(30px,3vw,40px)/1.05 var(--f-mono);letter-spacing:-.03em;margin:12px 0 6px;font-variant-numeric:tabular-nums}
-.big-sub{color:var(--ink-2);font-size:13px}
+.big-sub{color:var(--ink-2);font-size:13px;display:flex;align-items:center;gap:7px}.big-sub>.ic{color:var(--ink-3)}
 .hero .read{margin-top:18px;display:block;background:none;border:0;padding:0}
 .hero .read p{font:500 17px/1.55 var(--f-body);color:var(--ink);max-width:62ch;margin:10px 0 0}
 .hero .read p b{font-weight:650}
@@ -110,7 +111,8 @@ header.bar{position:sticky;top:0;z-index:15;background:color-mix(in srgb,var(--b
 .subnav{position:sticky;top:var(--hdr,57px);z-index:12;display:flex;align-items:center;gap:4px 12px;padding:8px 0;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);margin-top:-6px}
 .sublinks{display:flex;gap:4px;min-width:0;flex:1 1 auto;overflow-x:auto;scrollbar-width:none}.sublinks::-webkit-scrollbar{display:none}
 .subnav #horizons{flex:none;margin-left:auto}
-.subnav a{font:600 12.5px/1 var(--f-body);color:var(--ink-3);text-decoration:none;padding:7px 11px;border-radius:999px;transition:color .15s,background .15s}
+.subnav a{display:inline-flex;align-items:center;gap:6px;font:600 12.5px/1 var(--f-body);color:var(--ink-3);text-decoration:none;padding:7px 11px;border-radius:999px;transition:color .15s,background .15s}
+.subnav a.on .ic{color:var(--accent)}
 .subnav a:hover{color:var(--ink)}
 .subnav a.on{color:var(--ink);background:var(--panel);box-shadow:inset 0 0 0 1px var(--rule)}
 section[id^="s-"]{scroll-margin-top:120px}
@@ -164,6 +166,7 @@ tr.hl{background:var(--grid)}
 .panel{background:var(--panel);border:1px solid var(--rule);border-radius:18px;padding:20px 22px;min-width:0}
 .ph{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap}
 .ph h2{font:700 17px/1.25 var(--f-display);margin:0;letter-spacing:-.01em;text-wrap:balance}
+.ph h2>.ic{display:inline-block;vertical-align:-2px;margin-right:9px;color:var(--ink-3)}
 .hint{color:var(--ink-3);font-size:12px;margin-top:3px;max-width:70ch}
 svg text{font-family:var(--f-body)}
 svg .mono{font-family:var(--f-mono)}
@@ -451,7 +454,8 @@ tr:hover .lotb{color:var(--ink-2)}
 /* ===== v7: app navigation, pages, stock tabs ===== */
 .brand{margin-right:4px;text-decoration:none;color:inherit}
 .mainnav{display:flex;gap:2px;margin-right:auto;min-width:0}
-.mainnav a{font:600 13.5px/1 var(--f-body);color:var(--ink-2);text-decoration:none;padding:9px 12px;border-radius:9px;white-space:nowrap;transition:color .15s,background .15s}
+.mainnav a{display:inline-flex;align-items:center;gap:7px;font:600 13.5px/1 var(--f-body);color:var(--ink-2);text-decoration:none;padding:9px 12px;border-radius:9px;white-space:nowrap;transition:color .15s,background .15s}
+.mainnav a .ic{color:var(--ink-3);transition:color .15s}.mainnav a:hover .ic{color:var(--ink-2)}.mainnav a.on .ic{color:var(--accent)}
 .mainnav a:hover{color:var(--ink);background:var(--grid)}
 .mainnav a.on{color:var(--ink);background:var(--panel);box-shadow:inset 0 0 0 1px var(--rule),0 1px 2px rgba(0,0,0,.04)}
 /* a faint divider where the next pair of pages starts (NAV_GROUP in pages.js) */
@@ -1093,6 +1097,10 @@ header.bar{container-type:inline-size}
 }
 body.tick-docked .live{margin-left:auto}
 @media (max-width:1500px){body.tick-docked .mainnav a{padding-inline:9px}}
+/* page icons in the header: room is tight below ~1560 px of header, so the search narrows first, and below 1320 px the icons step aside (they come back when the nav gets its own row) */
+@container (min-width:861px) and (max-width:1560px){#ts{width:256px}.mainnav a{padding-inline:8px;gap:6px}}
+@container (min-width:861px) and (max-width:1430px){body:not(.tick-docked) .mainnav a .ic{display:none}#ts{width:220px}}
+@container (min-width:1121px) and (max-width:1300px){body.tick-docked .mainnav a .ic{display:none}}
 .askbtn{gap:5px}
 
 /* a new conversation: Tick speaks first */
@@ -1364,8 +1372,26 @@ const IC={search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',lev
   market:'<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 6-7"/>', funds:'<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
   mine:'<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
   calendar:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>', screener:'<path d="M3 6h18M6 12h12M10 18h4"/>',
-  arrow:'<path d="M5 12h14M13 6l6 6-6 6"/>', clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'};
-const ic=(n,s=16,fill=false)=>`<svg class="ic" viewBox="0 0 24 24" width="${s}" height="${s}" fill="${fill?"currentColor":"none"}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n]||""}</svg>`;
+  arrow:'<path d="M5 12h14M13 6l6 6-6 6"/>', clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  /* section and tab icons, from Lucide (ISC license, see app/static/LICENSE-lucide.txt) */
+  grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>',
+  bars:'<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 16h8M7 11h12M7 6h3"/>',
+  earnings:'<path d="M8 2v4M16 2v4"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/>',
+  award:'<path d="m15.48 12.89 1.51 8.53a.5.5 0 0 1-.81.47l-3.58-2.69a1 1 0 0 0-1.2 0l-3.59 2.69a.5.5 0 0 1-.81-.47l1.51-8.53"/><circle cx="12" cy="8" r="6"/>',
+  scatter:'<circle cx="7.5" cy="7.5" r=".6" fill="currentColor"/><circle cx="18.5" cy="5.5" r=".6" fill="currentColor"/><circle cx="11.5" cy="11.5" r=".6" fill="currentColor"/><circle cx="7.5" cy="16.5" r=".6" fill="currentColor"/><circle cx="17.5" cy="14.5" r=".6" fill="currentColor"/><path d="M3 3v16a2 2 0 0 0 2 2h16"/>',
+  list:'<path d="M3 6h.01M3 12h.01M3 18h.01M8 6h13M8 12h13M8 18h13"/>',
+  brief:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8M16 17H8M10 9H8"/>',
+  xray:'<path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/>',
+  trend:'<path d="M22 7 13.5 15.5l-5-5L2 17"/><path d="M16 7h6v6"/>',
+  layers:'<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>',
+  updown:'<path d="m21 16-4 4-4-4M17 20V4M3 8l4-4 4 4M7 4v16"/>',
+  landmark:'<path d="M3 22h18M6 18v-7M10 18v-7M14 18v-7M18 18v-7"/><path d="M12 2 20 7H4Z"/>',
+  percent:'<path d="M19 5 5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
+  coins:'<circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18M7 6h1v4M16.71 13.88l.7.71-2.82 2.82"/>',
+  rocket:'<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
+  split:'<path d="M16 3h5v5M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.17-2.83L3 3M15 9l6-6"/>'};
+/* Line icons: 1.75 strokes read as fine lines at 15 to 21 px; below 14 px they need 2 to stay visible. */
+const ic=(n,s=16,fill=false)=>`<svg class="ic" viewBox="0 0 24 24" width="${s}" height="${s}" fill="${fill?"currentColor":"none"}" stroke="currentColor" stroke-width="${s<14?2:1.75}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n]||""}</svg>`;
 
 /* ======================= config & state ======================= */
 const HZ=["1D","1W","1M","3M","6M","YTD","1Y"];
@@ -1496,29 +1522,29 @@ function series(a,i0,maxPts=80){ if(!a) return []; const s=firstValid(a,i0); if(
 
 /* ======================= render: shell ======================= */
 function renderControls(){
-  $("#funds").innerHTML=(PAGE_FUNDS[page]||[]).filter(k=>base?.funds[k]).map((k,i)=>`<button aria-pressed="${k===fund}" data-f="${k}" title="${esc(base.funds[k].name)} (key ${i+1})">${k}</button>`).join("");
+  $("#funds").innerHTML=(PAGE_FUNDS[page]||[]).filter(k=>base?.funds[k]).map((k,i)=>{ const fi={Watchlist:"star",Portfolio:"mine"}[k]; return `<button${fi?' class="wi"':""} aria-pressed="${k===fund}" data-f="${k}" title="${esc(base.funds[k].name)} (key ${i+1})">${fi?ic(fi,14):""}${k}</button>`; }).join("");
   if($("#horizons")) $("#horizons").innerHTML=HZ.map(k=>`<button aria-pressed="${k===hz}" data-h="${k}">${k}</button>`).join("");
 }
 function buildShell(){
   const mine=page==="mine";
   $("#app").innerHTML=`
   <section class="pulse" id="pulse"></section>
-  <nav class="subnav" id="subnav"><div class="sublinks">${mine?`<a href="#s-brief" class="on">Brief</a><a href="#s-mine">Positions</a><a href="#s-xray">X-ray</a><a href="#s-overview">Performance</a>`:`<a href="#s-overview" class="on">Overview</a>`}<a href="#s-map">Map &amp; drivers</a><a href="#s-earn">Earnings</a>${mine?"":`<a href="#s-leaders">Leadership</a>`}<a href="#s-holdings">Holdings</a></div><div class="seg sm" id="horizons" role="group" aria-label="Time range"></div></nav>
+  <nav class="subnav" id="subnav"><div class="sublinks">${mine?`<a href="#s-brief" class="on">${ic("brief",14)}Brief</a><a href="#s-mine">${ic("mine",14)}Positions</a><a href="#s-xray">${ic("xray",14)}X-ray</a><a href="#s-overview">${ic("trend",14)}Performance</a>`:`<a href="#s-overview" class="on">${ic("trend",14)}Overview</a>`}<a href="#s-map">${ic("grid",14)}Map &amp; drivers</a><a href="#s-earn">${ic("earnings",14)}Earnings</a>${mine?"":`<a href="#s-leaders">${ic("award",14)}Leadership</a>`}<a href="#s-holdings">${ic("list",14)}Holdings</a></div><div class="seg sm" id="horizons" role="group" aria-label="Time range"></div></nav>
   <section class="panel" id="s-brief" hidden></section>
   <section class="panel" id="s-mine" hidden></section>
   <section class="panel" id="s-xray" hidden></section>
   <section class="hero" id="s-overview"><div><div class="eyebrow" id="heroEyebrow"></div><div class="big-r" id="heroR"></div><div class="big-sub" id="heroSub"></div><div class="read" id="read"></div></div><div class="hchart"><div class="legend" id="heroLeg"></div><div id="heroChart"></div></div></section>
   <section class="kpis" id="kpis"></section>
-  <section class="panel" id="s-earn"><div class="ph"><div><h2>Earnings: last week to two weeks out</h2></div></div><div id="earnCal"></div></section>
+  <section class="panel" id="s-earn"><div class="ph"><div><h2>${ic("earnings")}Earnings: last week to two weeks out</h2></div></div><div id="earnCal"></div></section>
   <section class="row" id="s-map">
-    <div class="panel"><div class="ph"><div><h2 id="mapTitle">Market map</h2><div class="hint">Each tile is a holding, sized by its weight in <span class="fw">the fund</span> and colored by its return. Grouped by sector.</div></div><div class="legend"><span class="num" id="rampLo"></span><span class="ramp"></span><span class="num" id="rampHi"></span></div></div><div class="map" id="map"></div></div>
-    <div class="panel"><div class="ph"><div><h2 id="barsTitle">What moved the fund</h2><div class="hint">Contribution to <span class="fws">the fund's</span> return in percentage points (start weight × return).</div></div></div><div id="bars"></div></div>
+    <div class="panel"><div class="ph"><div><h2>${ic("grid")}<span id="mapTitle">Market map</span></h2><div class="hint">Each tile is a holding, sized by its weight in <span class="fw">the fund</span> and colored by its return. Grouped by sector.</div></div><div class="legend"><span class="num" id="rampLo"></span><span class="ramp"></span><span class="num" id="rampHi"></span></div></div><div class="map" id="map"></div></div>
+    <div class="panel"><div class="ph"><div><h2>${ic("bars")}<span id="barsTitle">What moved the fund</span></h2><div class="hint">Contribution to <span class="fws">the fund's</span> return in percentage points (start weight × return).</div></div></div><div id="bars"></div></div>
   </section>
   <section class="row even" id="s-leaders">
-    <div class="panel"><div class="ph"><div><h2>Leadership across time frames</h2><div class="hint">The <span id="mxN">20</span> largest holdings. Each cell is the stock's return relative to <span class="fw">the fund</span> over that period, so green means it led. RS is its return rank within <span class="fw">the fund</span> for the selected range (99 = best).</div></div></div><div class="mx-wrap" id="matrix"></div></div>
-    <div class="panel"><div class="ph"><div><h2>Rotation</h2><div class="hint">How each stock did against <span class="fw">the fund</span> over 3 months (across) and the last month (up). Leaders sit top right. Stocks losing steam slide down to the right; ones recovering climb on the left.</div></div></div><div id="rotation"></div></div>
+    <div class="panel"><div class="ph"><div><h2>${ic("award")}Leadership across time frames</h2><div class="hint">The <span id="mxN">20</span> largest holdings. Each cell is the stock's return relative to <span class="fw">the fund</span> over that period, so green means it led. RS is its return rank within <span class="fw">the fund</span> for the selected range (99 = best).</div></div></div><div class="mx-wrap" id="matrix"></div></div>
+    <div class="panel"><div class="ph"><div><h2>${ic("scatter")}Rotation</h2><div class="hint">How each stock did against <span class="fw">the fund</span> over 3 months (across) and the last month (up). Leaders sit top right. Stocks losing steam slide down to the right; ones recovering climb on the left.</div></div></div><div id="rotation"></div></div>
   </section>
-  <section class="panel" id="s-holdings"><div class="ph"><div><h2>All holdings</h2><div class="hint" id="tblHint"></div></div><div class="tools"><div class="filters" id="filters"></div><input type="search" id="q" placeholder="Filter by name or sector" aria-label="Filter holdings"></div></div><div class="tbl-wrap"><table class="hold" id="tbl"></table></div><div id="moreWrap"></div></section>
+  <section class="panel" id="s-holdings"><div class="ph"><div><h2>${ic("list")}All holdings</h2><div class="hint" id="tblHint"></div></div><div class="tools"><div class="filters" id="filters"></div><input type="search" id="q" placeholder="Filter by name or sector" aria-label="Filter holdings"></div></div><div class="tbl-wrap"><table class="hold" id="tbl"></table></div><div id="moreWrap"></div></section>
   <section class="keys"><span><kbd>1</kbd>–<kbd>4</kbd> switch fund</span><span><kbd>←</kbd> <kbd>→</kbd> time range</span><span><kbd>/</kbd> search any ticker</span><span><kbd>F</kbd> full-screen stock view</span><span><kbd>Esc</kbd> close detail</span></section>
   <p class="note" id="note"></p>`;
   $("#q").addEventListener("input",e=>{query=e.target.value.trim().toLowerCase();renderTable();});
@@ -1607,7 +1633,7 @@ function renderHero(){
   const m=model, d0=base.dates[m.i0], d1=base.dates[base.dates.length-1], live=isLive(d1);
   $("#heroEyebrow").innerHTML=`<span>${esc(m.f.name)}</span><span>·</span><span>${hz}</span>${live?'<span class="chip up" style="letter-spacing:.04em">● Live</span>':""}`;
   const el=$("#heroR"); el.className="big-r "+cls(m.R); if(shownFund!==fund+hz){ shownR=null; shownFund=fund+hz; } countTo(el,m.R,v=>pct(v));
-  $("#heroSub").textContent=`From the ${longDate(d0)} close to ${live?"now":longDate(d1)}`;
+  $("#heroSub").innerHTML=`${ic("calendar",14)}From the ${longDate(d0)} close to ${live?"now":longDate(d1)}`;
   // your own stocks are measured against the S&P 500; a fund against its own average stock
   const vsM=isPseudo(fund)&&!!base.px.SPY, F=series(base.px[fund],m.i0,400), E=vsM?series(base.px.SPY,m.i0,400):ewSeries();
   const nF=fund==="Portfolio"?"Your portfolio":fund==="Watchlist"?"Your watchlist":fund, nE=vsM?"S&P 500":"Average stock";
@@ -2339,7 +2365,7 @@ function renderMine(){
   el.hidden=false;
   if(fund==="Watchlist"){
     const W=me.watch.filter(t=>base.px[t]), R=new Map((model?.rows||[]).map(r=>[r.t,r]));
-    el.innerHTML=`<div class="ph"><div><h2>Your watchlist</h2><div class="hint">${W.length} stock${W.length===1?"":"s"}. Add more here or with Watch on any stock page.</div></div><form class="frm" id="wForm"><input id="wT" data-fk="wT" placeholder="Add tickers, e.g. AMD TSM" aria-label="Add tickers" autocomplete="off" autocapitalize="characters" spellcheck="false" style="width:220px"><button class="btn">Add</button><span class="err" id="wErr"></span></form></div>
+    el.innerHTML=`<div class="ph"><div><h2>${ic("star")}Your watchlist</h2><div class="hint">${W.length} stock${W.length===1?"":"s"}. Add more here or with Watch on any stock page.</div></div><form class="frm" id="wForm"><input id="wT" data-fk="wT" placeholder="Add tickers, e.g. AMD TSM" aria-label="Add tickers" autocomplete="off" autocapitalize="characters" spellcheck="false" style="width:220px"><button class="btn">Add</button><span class="err" id="wErr"></span></form></div>
      <div class="wl"><div class="wh2" aria-hidden="true"><div class="wmain"><span>Ticker</span><span>Name</span><span>Price</span><span>Today</span><span>${hz}</span></div><i></i></div>${W.map(t=>{ const r=R.get(t)||{}, F=facts(t)||{}, last=lastValid(base.px[t]);
        return `<div class="wr"><button type="button" class="wmain" data-sel="${esc(t)}"><b class="tk">${esc(t)}</b><span class="wn">${esc(nameOf(t))}</span><span class="num wp ${flashes[t]||""}">${money(last)}</span><span class="num wc ${cls(F.chg)}">${pct(F.chg)}</span><span class="num wh ${cls(r.r)}">${pct(r.r)}</span></button><button type="button" class="wx" data-unwatch="${esc(t)}" aria-label="Remove ${esc(t)} from your watchlist" title="Remove from watchlist">${ic("close",14)}</button></div>`; }).join("")}</div>`;
     $("#wForm").onsubmit=async e=>{ e.preventDefault(); const T=splitTickers($("#wT").value); if(!T.length) return; const b=$("#wForm .btn"); b.disabled=true; b.textContent="Adding…"; $("#wErr").textContent="";
@@ -2355,7 +2381,7 @@ function renderMine(){
   rows.sort((a,b)=>b.value-a.value);
   const usd=(x,sg)=>x==null?"–":(x=Math.round(x*100)/100,0)||(sg?(x>0?"+":x<0?"−":""):(x<0?"−":""))+"$"+Math.abs(x).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
   const sample=(me.positions||[]).length&&(me.positions||[]).every(p=>p.note==="sample");
-  el.innerHTML=`${sample?`<div class="sbanner"><span><b>This is a sample portfolio.</b> Look around, then bring in your own. Importing or adding a position clears the sample.</span><button class="btn" id="sImp">Import yours</button><button class="btn ghost" id="sClr">Clear sample</button></div>`:""}<div class="ph"><div><h2>${sample?"Sample portfolio":"Your portfolio"}</h2><div class="hint">${rows.length} positions at live prices. Contribution and the charts below treat today's shares as held for the whole period.</div></div><button class="btn ghost" id="pImp" ${sample?"hidden":""} title="Read a positions CSV from Fidelity, Schwab, Vanguard, E*TRADE and others">Import from broker</button></div>
+  el.innerHTML=`${sample?`<div class="sbanner"><span><b>This is a sample portfolio.</b> Look around, then bring in your own. Importing or adding a position clears the sample.</span><button class="btn" id="sImp">Import yours</button><button class="btn ghost" id="sClr">Clear sample</button></div>`:""}<div class="ph"><div><h2>${ic("mine")}${sample?"Sample portfolio":"Your portfolio"}</h2><div class="hint">${rows.length} positions at live prices. Contribution and the charts below treat today's shares as held for the whole period.</div></div><button class="btn ghost" id="pImp" ${sample?"hidden":""} title="Read a positions CSV from Fidelity, Schwab, Vanguard, E*TRADE and others">Import from broker</button></div>
    <div class="kf mine-k"><div><div class="lbl">Value</div><div class="v">${usd(V)}</div></div>
      <div><div class="lbl">Today</div><div class="v ${cls(D)}">${usd(D,1)}</div><div class="ks ${cls(D)}">${pct(V-D?D/(V-D):null)}</div>${XD!=null?`<div class="ks">${xLab} <span class="num ${cls(XD)}">${usd(XD,1)} · ${pct(V?XD/V:null)}</span></div>`:""}</div>
      <div><div class="lbl">Total gain</div><div class="v ${cls(V-C)}">${usd(V-C,1)}</div><div class="ks ${cls(V-C)}">${pct(C?V/C-1:null)} on ${usd(C)} cost</div></div></div>
