@@ -430,7 +430,7 @@ function renderScreener(){
   const isF=k=>/fund|bond|anchor|etf/.test(k), stocks=L.filter(s=>!isF(s.key)), funds=L.filter(s=>isF(s.key));
   const item=s=>`<button class="scr-it ${s.key===scrSel?"on":""}" data-scr="${s.key}"><b>${esc(s.name)}</b><span>${esc(SCR_DESC[s.key]||"")}</span></button>`;
   $("#scrList").innerHTML=`<button class="scr-it build ${scrSel==="custom"?"on":""}" data-scr="custom"><b>Build your own</b><span>Size, valuation, growth, yield, momentum, sector</span></button>
-    <div class="lbl" style="margin:14px 4px 6px">Signals</div><button class="scr-it ${scrSel==="signals"?"on":""}" data-scr="signals"><b>Momentum signals</b><span>Trend, strength and volume scored the AlphaLens way</span></button>
+    <div class="lbl" style="margin:14px 4px 6px">Signals</div><button class="scr-it ${scrSel==="signals"?"on":""}" data-scr="signals"><b>Momentum signals</b><span>Trend, strength and volume in one score</span></button>
     <div class="lbl" style="margin:14px 4px 6px">Stock ideas</div>${stocks.map(item).join("")||sk(200)}${funds.length?`<div class="lbl" style="margin:14px 4px 6px">Fund ideas</div>${funds.map(item).join("")}`:""}`;
   const main=$("#scrMain");
   if(scrSel==="signals") return renderSignals(main);
@@ -484,7 +484,7 @@ function renderSignals(main){
   rows=[...rows].sort((a,b)=>{const x=G(a),y=G(b); if(x==null) return 1; if(y==null) return -1; return (x-y)*sigSort.dir;});
   const funds=(SIG.funds||["SPY","QQQ","SMH"]).join(", ");
   const head=`<div class="ph" style="margin:0"><div><h2>Momentum signals</h2>
-    <div class="hint">Every stock in ${funds}, plus your own, scored with <a class="sig-src" href="https://alphalens-signals.vercel.app" target="_blank" rel="noopener">AlphaLens</a>'s method: two trend checks, thirteen price and volume signals, and a bonus when several line up. It measures momentum, not value, and isn't advice.</div></div>
+    <div class="hint">Every stock in ${funds}, plus yours, scored from daily price and volume. Weak trends are capped at Hold, six core signals and six boosters add or take away points, and a bonus comes when several line up. It measures momentum, not value, and isn't advice.</div></div>
     <div class="sig-asof">${SIG.asOf?`As of the close on ${sigDay(SIG.asOf)}`:""}${SIG.running&&all.length?` · <span class="sig-busy">refreshing</span>`:""}</div></div>`;
   let body;
   if(!all.length&&SIG.running){
@@ -538,7 +538,7 @@ function method(){
     <p><b>Core signals</b> carry most of the score: beating the S&P 500 and its sector over 6 and 12 months (up to +2.5), the 50-day average against the 200-day (+2.5 for a fresh golden cross, −3 for a death cross), MACD momentum (up to +2), whether volume is heavier on up days than down days (up to +2), how close it is to its 52-week high (up to +2), and whether its sector is beating the market (±1).</p>
     <p><b>Boosters</b> fine-tune it: RSI divergence, a Bollinger squeeze, a volume breakout, a stochastic pullback in an uptrend, tightening pullbacks (VCP) and the 8 and 21-day averages crossing. <b>Combos</b> add up to +1.5 when signals line up, or take 2 away when several roll over together.</p>
     <p><b>Ratings.</b> Strong Buy at 10 or more, Buy at 7, Accumulate at 4, Hold at 1, Avoid below that. Scores use finished trading days, so they change after each close.</p>
-    <p class="hint">Two differences from AlphaLens: the sector benchmark is the SPDR sector fund (chip stocks use SMH) where AlphaLens hand-picks industry funds, and earnings acceleration isn't scored, which AlphaLens doesn't do yet either.</p></div></details>`;
+</div></details>`;
 }
 document.addEventListener("click",e=>{
   const t=e.target.closest("[data-sig-r],[data-sig-s],[data-sig-k],[data-sig-retry],tr[data-sig-t]"); if(!t||e.target.closest("a[data-sel],[data-star]")) return;
