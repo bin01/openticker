@@ -1638,6 +1638,7 @@ function render0(){
     if(drawerOpen) renderDrawer(); lastRender=Date.now(); return;
   }
   if(isPseudo(fund)&&!base.funds[fund]?.holdings.length){
+    $("#tape").hidden=true;   // an empty watchlist or portfolio has no movers; don't leave the last fund's up
     renderControls(); const keep=fund; fund="SPY"; model=compute(); fund=keep;
     if(!$("#emptyMine")||$("#emptyMine").dataset.f!==fund){ renderEmptyMine(); $("#emptyMine").dataset.f=fund; }
     if(drawerOpen) renderDrawer(); lastRender=Date.now(); return;
@@ -2668,22 +2669,32 @@ function toast(msg,undo){
   clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove("on"),6000);
 }
 const sharesTxt=n=>`${(+(+n).toFixed(4)).toLocaleString("en-US")} share${+n===1?"":"s"}`;
+function saveDraft(rowEl){   // what's typed in the new-purchase row, so a redraw (live prices) puts it back
+  const t=rowEl.closest(".lotx").dataset.lotT, f=k=>rowEl.querySelector(`[data-lot-f="${k}"]`).value;
+  lotDraft[t]={shares:f("shares").replace(/[,\s$]/g,""),cost:f("cost").replace(/[,\s$]/g,""),opened:f("opened")};
+}
 async function saveLot(rowEl){
   const box=rowEl.closest(".lotx"), t=box.dataset.lotT, id=rowEl.dataset.lot, msg=box.querySelector("[data-lot-msg]");
   const f=k=>rowEl.querySelector(`[data-lot-f="${k}"]`), sh=f("shares").value.replace(/[,\s$]/g,""), co=f("cost").value.replace(/[,\s$]/g,""), op=f("opened").value;
-  if(id==="new"){ lotDraft[t]={shares:sh,cost:co,opened:op}; if(sh===""||co==="") return; }
+  // a new purchase saves when you leave its row (or press Enter), not on the first field you fill: Cost starts at
+  // today's price, so saving on Tab out of Shares would add it at that price and pull the row out from under you
+  if(id==="new"){ saveDraft(rowEl); if(sh===""||co===""||rowEl.contains(document.activeElement)||rowEl.dataset.saving) return; }
   const bad=[]; if(!(+sh>0)) bad.push("shares"); if(co===""||!(+co>=0)) bad.push("cost");
   rowEl.querySelectorAll("input").forEach(i=>i.classList.toggle("bad",bad.includes(i.dataset.lotF)));
   if(bad.length){ msg.className="lxm err"; msg.textContent=bad.includes("shares")?"Shares must be more than zero.":"Cost per share can't be negative."; return; }
   const o=id==="new"?null:(me.positions||[]).find(p=>p.id===+id);
   if(o&&+sh===+o.shares&&+co===+o.cost&&(op||"")===(o.opened||"")) return;
-  msg.className="lxm"; msg.textContent="Saving…";
+  msg.className="lxm"; msg.textContent="Saving…"; rowEl.dataset.saving="1";
   try{ await api("/api/me/positions/save",{lots:[{id:o?o.id:undefined,t,shares:sh,cost:co,opened:op}]}); if(id==="new") delete lotDraft[t];
     const m=document.querySelector(`.lotx[data-lot-t="${CSS.escape(t)}"] [data-lot-msg]`); if(m){ m.className="lxm"; m.textContent="Saved"; setTimeout(()=>{ if(m.textContent==="Saved") m.textContent=""; },1600); } }
   catch(x){ const m=document.querySelector(`.lotx[data-lot-t="${CSS.escape(t)}"] [data-lot-msg]`)||msg; m.className="lxm err"; m.textContent=x.message; }
+  finally{ delete rowEl.dataset.saving; }
 }
 function refreshMine(){ keepFocus(()=>{ renderMine(); if(drawerOpen&&sel) renderDrawer(); }); }
-document.addEventListener("change",e=>{ const i=e.target.closest?.(".lx input"); if(i) saveLot(i.closest(".lx")); });
+document.addEventListener("change",e=>{ const i=e.target.closest?.(".lx input"), r=i?.closest(".lx"); if(!r) return;
+  if(r.dataset.lot==="new"){ saveDraft(r); return; }   // saved by the focusout below, once you leave the row
+  saveLot(r); });
+document.addEventListener("focusout",e=>{ const r=e.target.closest?.('.lx[data-lot="new"]'); if(r&&!r.contains(e.relatedTarget)) setTimeout(()=>{ if(r.isConnected&&!r.contains(document.activeElement)) saveLot(r); },0); });
 document.addEventListener("keydown",e=>{ const i=e.target.closest?.(".lx input"); if(!i) return;
   if(e.key==="Enter"){ e.preventDefault(); i.blur(); }
   else if(e.key==="Escape"){ e.stopPropagation(); i.value=i.defaultValue; i.classList.remove("bad"); i.blur(); } },true);

@@ -1204,6 +1204,12 @@ def signals_payload(private):
     """The latest scores; starts a fresh scan in the background when a new close is out (or every six hours)."""
     age = time.time() - SIG["at"]
     stale = not SIG["rows"] or age > 6 * 3600 or SIG["whileOpen"] and not market_open() or SIG.get("partial") and age > 900
+    # Yahoo leaves today's daily close empty for a while after the bell, so a scan just after the close can still end
+    # at yesterday: look again every 15 minutes until today's close is in, rather than waiting out the six hours
+    now_ny = dt.datetime.now(NY)
+    hours = X.session_hours(now_ny.date())
+    closed = hours and now_ny.time() > hours[1]
+    stale = stale or bool(closed and SIG["asOf"] and SIG["asOf"] < now_ny.strftime("%Y-%m-%d") and age > 900)
     stale = stale and bool(S.holdings.get("SPY"))   # the first launch is still fetching what the funds hold
     with _sig_lock:
         if stale and not SIG["running"] and time.time() - SIG.get("failAt", 0) > 300:

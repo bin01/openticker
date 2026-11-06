@@ -39,7 +39,8 @@ addEventListener("popstate",()=>{
 });
 function renderNav(){
   $("#mainnav").innerHTML=PAGES.map(([k,l])=>`<a href="#${k}" data-page="${k}" class="${[k===page?"on":"",NAV_GROUP.has(k)?"gs":""].join(" ").trim()}" ${k===page?'aria-current="page"':""}>${ic(k,16)}<span>${l}</span></a>`).join("");
-  $("#toolbar").hidden=page!=="mine";   // Funds picks its fund with the cards; My stocks keeps Watchlist / Portfolio here, since an empty one has no card $("#tape").hidden=!isDash()||$("#tape").dataset.empty==="1";
+  $("#toolbar").hidden=page!=="mine";   // Funds picks its fund with the cards; My stocks keeps Watchlist / Portfolio here, since an empty one has no card
+  $("#tape").hidden=!isDash()||$("#tape").dataset.empty==="1";
   if(typeof renderTabbar==="function") renderTabbar();
 }
 function setFund(k){ fund=k; if(PAGE_FUNDS.funds.includes(k)){ fundFor.funds=k; save("fund",k); } else { fundFor.mine=k; save("fundMine",k); } }
@@ -465,17 +466,28 @@ function renderScreener(){
 
 
 /* ---- Momentum signals: the AlphaLens 3-layer score, computed by the server (app/signals.py) ---- */
-let SIG=null, sigWait=null, sigOpen=null, sigRating=load("sigRating","all"), sigScope=load("sigScope","all"), sigSort={k:"score",dir:-1};
+let SIG=null, sigAt=0, sigBusy=false, sigWait=null, sigOpen=null, sigRating=load("sigRating","all"), sigScope=load("sigScope","all"), sigSort={k:"score",dir:-1};
 const SIG_RATINGS=[["Strong Buy","sb"],["Buy","b"],["Accumulate","a"],["Hold","h"],["Avoid","x"]];
 const sigCls=r=>"rt rt-"+(SIG_RATINGS.find(x=>x[0]===r)||["","h"])[1];
 const pts=x=>x>0?`+${x.toFixed(2)}`:x<0?`−${(-x).toFixed(2)}`:"0";
+const sigHere=()=>page==="screener"&&scrSel==="signals";
 async function loadSignals(){
+  sigBusy=true;
   try{ const r=await fetch("/api/signals",{headers:typeof meHeaders==="function"?meHeaders():{}}); SIG=await r.json(); }catch(e){ SIG=SIG||{error:"OpenTicker's server didn't answer."}; }
-  clearTimeout(sigWait); if(SIG?.running) sigWait=setTimeout(()=>{ if(page==="screener"&&scrSel==="signals") loadSignals().then(()=>renderScreener()); },3000);
+  sigBusy=false; sigAt=Date.now();
+  clearTimeout(sigWait); sigWait=SIG?.running?setTimeout(()=>{ sigWait=null; if(sigHere()) loadSignals().then(()=>sigHere()&&renderScreener()); },3000):null;
 }
+/* Ask again when the copy here may be behind: a scan that was running when you left (its check was dropped), or
+   scores older than a few minutes. Asking is also what tells the server a new close is out and starts its scan. */
+function sigCheck(){
+  if(!SIG||sigBusy||!sigHere()) return;
+  if(SIG.running?!sigWait:Date.now()-sigAt>5*60e3) loadSignals().then(()=>sigHere()&&renderScreener());
+}
+setInterval(()=>{ if(!document.hidden) sigCheck(); },60e3);
 function sigDay(d){ if(!d) return ""; const x=new Date(d+"T12:00:00"); return x.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}); }
 function renderSignals(main){
-  if(!SIG){ main.innerHTML=sk(420); loadSignals().then(()=>page==="screener"&&scrSel==="signals"&&renderScreener()); return; }
+  if(!SIG){ main.innerHTML=sk(420); if(!sigBusy) loadSignals().then(()=>sigHere()&&renderScreener()); return; }
+  sigCheck();
   const all=SIG.rows||[], mine=new Set([...(me?.watch||[]),...((me?.positions||[]).map(p=>p.t))]);
   const scoped=sigScope==="mine"?all.filter(r=>mine.has(r.t)):all;
   const n=k=>scoped.filter(r=>r.rating===k).length;
@@ -493,7 +505,7 @@ function renderSignals(main){
       <div class="sig-bar"><i style="width:${Math.max(4,f)}%"></i></div><span class="mono">${SIG.done||0} of ${SIG.total||"…"}</span></div>`;
   } else if(!all.length){
     body=SIG.error?`<div class="err">${esc(SIG.error)} <button class="btn" data-sig-retry>Try again</button></div>`:`<div class="sig-load"><b>Getting ready</b><span>OpenTicker is still fetching what the funds hold. Scores follow in a minute or two.</span></div>`;
-    if(!SIG.running&&!SIG.error){ clearTimeout(sigWait); sigWait=setTimeout(()=>{ if(page==="screener"&&scrSel==="signals") loadSignals().then(()=>renderScreener()); },5000); }
+    if(!SIG.running&&!SIG.error){ clearTimeout(sigWait); sigWait=setTimeout(()=>{ sigWait=null; if(sigHere()) loadSignals().then(()=>sigHere()&&renderScreener()); },5000); }
   } else {
     const chip=(k,label,cnt,c="")=>`<button class="chip-t sig-f ${sigRating===k?"on":""}" data-sig-r="${esc(k)}" aria-pressed="${sigRating===k}" title="${sigRating===k?"Show every rating":"Show only "+k}">${c?`<i class="dot ${c}"></i>`:""}${label}<span>${cnt}</span></button>`;
     const filt=`<div class="sig-bar-row"><div class="seg sig-scope">${[["all","All stocks"],["mine","My stocks"]].map(([k,l])=>`<button aria-pressed="${sigScope===k}" data-sig-s="${k}">${l}</button>`).join("")}</div>
