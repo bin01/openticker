@@ -1665,13 +1665,18 @@ function renderHero(){
 }
 let shownFund=null;
 
-/* ticker tape: today's biggest movers in the selected fund */
+/* ticker tape: today's move for the selected fund, the holdings that beat it and the ones that trailed it.
+   Colors follow each stock's own move (red when it fell), so on a down day a stock can beat the fund and still be red. */
 function renderTape(){
-  const items=model.items.filter(r=>r.chg!=null).sort((a,b)=>b.chg-a.chg);
-  if(items.length<6){ $("#tape").hidden=true; $("#tape").dataset.empty="1"; return; }
+  const F=model.ff?.chg, items=model.items.filter(r=>r.chg!=null).sort((a,b)=>b.chg-a.chg);
+  if(items.length<6||F==null){ $("#tape").hidden=true; $("#tape").dataset.empty="1"; return; }
   $("#tape").dataset.empty="0";
-  const k=Math.min(10,Math.floor(items.length/2)), ups=items.slice(0,k), dns=items.slice(-k).reverse();
-  const one=`<span class="lab">${fund} today</span><span><b>${fund}</b><span class="${cls(model.ff.chg)}">${pct(model.ff.chg)}</span></span><span class="lab">Leaders</span>${ups.map(r=>`<span data-sel="${esc(r.t)}"><b>${esc(r.t)}</b><span class="up">${pct(r.chg)}</span></span>`).join("")}<span class="lab">Laggards</span>${dns.map(r=>`<span data-sel="${esc(r.t)}"><b>${esc(r.t)}</b><span class="down">${pct(r.chg)}</span></span>`).join("")}`;
+  const k=Math.min(10,Math.floor(items.length/2)), ups=items.slice(0,k).filter(r=>r.chg>F), dns=items.slice(-k).reverse().filter(r=>r.chg<F);
+  const fw=fund==="Portfolio"?"your portfolio":fund==="Watchlist"?"your watchlist":fund;
+  const moved=v=>`${v>=0?"rose":"fell"} ${Math.abs(v*100).toFixed(2)}%`;
+  const tip=r=>`${r.t} ${moved(r.chg)} today, ${Math.abs((r.chg-F)*100).toFixed(2)} points ${r.chg>F?"better":"worse"} than ${fw}`;
+  const item=r=>`<span data-sel="${esc(r.t)}" title="${esc(tip(r))}"><b>${esc(r.t)}</b><span class="${cls(r.chg)}">${pct(r.chg)}</span></span>`;
+  const one=`<span class="lab">Today</span><span><b>${fund}</b><span class="${cls(F)}">${pct(F)}</span></span>${ups.length?`<span class="lab">Beat ${esc(fw)}</span>${ups.map(item).join("")}`:""}${dns.length?`<span class="lab">Trailed ${esc(fw)}</span>${dns.map(item).join("")}`:""}`;
   const t=$("#tape"); t.hidden=false; t.innerHTML=`<div class="wrap" style="padding-inline:0;max-width:none"><div class="tape-in">${one}${one}</div></div>`;
 }
 
