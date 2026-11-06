@@ -263,6 +263,25 @@ class Replies(unittest.TestCase):
         self.assertEqual(next(r for r in rows if r["t"] == "VFIAX")["account"], "Other accounts")
         self.assertEqual((skipped["cash"], skipped["crypto"]), (1, 1))
 
+    def test_ibkr_shape(self):
+        # what IBKR's get_account_positions sent back on 2026-11-06 (numbers changed)
+        data = {"positions": [
+            {"contract_id": 1, "contract_description": "2DG", "position": 1100.0, "market_price": 1.43, "currency": "EUR", "average_price": 4.03, "asset_class": "STK"},
+            {"contract_id": 2, "contract_description": "AAOI", "position": 0.0, "market_price": 30.0, "currency": "USD", "average_price": 0.0, "asset_class": "STK"},
+            {"contract_id": 3, "contract_description": "NVDA", "position": 400.0, "market_price": 190.0, "currency": "USD", "average_price": 120.5, "asset_class": "STK"},
+            {"contract_id": 4, "contract_description": "NVDA 20DEC26 200 C", "position": 2.0, "currency": "USD", "average_price": 900.0, "asset_class": "OPT"},
+        ]}
+        rows, skipped = links.normalize(data)
+        self.assertEqual(rows, [{"t": "NVDA", "shares": 400.0, "cost": 120.5, "account": ""}])
+        self.assertEqual((skipped["foreign"], skipped["options"]), (["2DG"], 1))
+
+    def test_moved_preset_address(self):
+        self.assertEqual(links.MOVED["https://api.ibkr.com/v1/api/mcp"], links.PRESETS["ibkr"]["url"])
+
+    def test_refusal_says_why(self):
+        self.assertEqual(M._refusal(400, b'{"error":"Unsupported client","statusCode":400}'), "The server answered 400: Unsupported client.")
+        self.assertEqual(M._refusal(502, b"<html>bad gateway</html>"), "The server answered 502.")
+
     def test_picks_monarch_tool_by_preset(self):
         tools = [{"name": "GetInvestments", "inputSchema": {"properties": {"intent": {"enum": ["budgeting", "investment_tracking"]}}, "required": ["intent"]}},
                  {"name": "UpdateTransaction"}, {"name": "GetAccounts"}]

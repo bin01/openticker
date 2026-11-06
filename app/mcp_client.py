@@ -75,6 +75,18 @@ def _json(body):
         return None
 
 
+def _refusal(st, body):
+    """'The server answered 400: Unsupported client.' with the server's own reason when it gives a short one."""
+    r = _json(body)
+    why = None
+    if isinstance(r, dict):
+        why = r.get("error_description") or r.get("message") or r.get("error")
+        if isinstance(why, dict):
+            why = why.get("message")
+    why = re.sub(r"\s+", " ", str(why or "")).strip().rstrip(".")[:160]
+    return f"The server answered {st}: {why}." if why else f"The server answered {st}."
+
+
 def _bearer_meta(www_auth: str | None):
     m = re.search(r'resource_metadata="([^"]+)"', www_auth or "")
     return m.group(1) if m else None
@@ -113,7 +125,7 @@ class Session:
         if st == 401 or (st == 403 and "invalid_token" in (hd.get("www-authenticate") or "")):
             raise AuthNeeded(resource_metadata=_bearer_meta(hd.get("www-authenticate")))
         if st >= 400:
-            raise MCPError(f"The server answered {st}.")
+            raise MCPError(_refusal(st, body))
         if hd.get("mcp-session-id"):
             self.sid = hd["mcp-session-id"][:200]
         if "id" not in msg:

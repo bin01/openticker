@@ -134,7 +134,7 @@ async function openLinkReview(id){
     const rows=P.rows.filter(r=>!off.has(r.account)), n=rows.length, tick=new Set(rows.map(r=>r.t));
     const dup=[...tick].filter(t=>mine.has(t)).sort(), est=rows.filter(r=>r.estimated).length;
     const sk=P.skipped, parts=[sk.cash?"cash":"",sk.crypto?`${sk.crypto} crypto holding${sk.crypto===1?"":"s"}`:"",sk.options?`${sk.options} option${sk.options===1?"":"s"}`:"",
-      sk.short?`${sk.short} short position${sk.short===1?"":"s"}`:"",sk.other?.length?`${sk.other.length} with no prices on Yahoo (${sk.other.slice(0,4).join(", ")}${sk.other.length>4?" and others":""})`:""].filter(Boolean);
+      sk.short?`${sk.short} short position${sk.short===1?"":"s"}`:"",sk.foreign?.length?`${sk.foreign.length} priced in another currency (${sk.foreign.slice(0,4).join(", ")}${sk.foreign.length>4?" and others":""})`:"",sk.other?.length?`${sk.other.length} with no prices on Yahoo (${sk.other.slice(0,4).join(", ")}${sk.other.length>4?" and others":""})`:""].filter(Boolean);
     const skipLine=parts.length?` Leaving out ${parts.length>1?parts.slice(0,-1).join(", ")+" and "+parts.at(-1):parts[0]}.`:"";
     const list=t=>t.length<=3?t.join(", "):`${t.slice(0,3).join(", ")} and ${t.length-3} more`;
     const byT=new Map(); rows.forEach(r=>{ const e=byT.get(r.t)||{t:r.t,shares:0,cost:0,accts:new Set(),est:false}; e.shares+=r.shares; e.cost+=r.shares*r.cost; e.accts.add(r.account); e.est=e.est||r.estimated; byT.set(r.t,e); });

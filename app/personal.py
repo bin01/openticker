@@ -240,7 +240,7 @@ def add_link(uid, lid, provider, name, url, auth=True, status="fetching"):
 def update_link(uid, lid, **kw):
     sets, args = [], []
     for k, v in kw.items():
-        if k not in ("status", "error", "off", "synced", "count", "name"):
+        if k not in ("status", "error", "off", "synced", "count", "name", "url"):
             raise ValueError(k)
         sets.append(f"{k}=?")
         args.append(json.dumps(v) if k == "off" else v)

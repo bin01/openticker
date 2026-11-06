@@ -36,12 +36,15 @@ PRESETS = {
     "monarch": {"name": "Monarch", "url": "https://api.monarch.com/mcp", "scope": "mcp:read",
                 "blurb": "Every account you track in Monarch",
                 "tool": "GetInvestments", "args": {"intent": "investment_tracking"}},
-    "ibkr": {"name": "Interactive Brokers", "url": "https://api.ibkr.com/v1/api/mcp", "scope": "mcp.read",
+    # IBKR's /mcp answers "Unsupported client" to any app but the AI assistants it lists; /mcp-public is its address for the rest
+    "ibkr": {"name": "Interactive Brokers", "url": "https://api.ibkr.com/v1/api/mcp-public", "scope": "mcp.read",
              "blurb": "Straight from your broker"},
     "robinhood": {"name": "Robinhood", "url": "https://agent.robinhood.com/mcp/trading", "scope": "internal",   # its only scope
                   "blurb": "Your Robinhood account",
                   "full_access": True},
 }
+# addresses a preset used to have, so links made before the change keep working
+MOVED = {"https://api.ibkr.com/v1/api/mcp": "https://api.ibkr.com/v1/api/mcp-public"}
 # other names a provider's accounts go by inside an aggregator, so the same account isn't counted twice
 ALIASES = {"ibkr": ["interactive brokers", "ibkr"], "robinhood": ["robinhood"]}
 
@@ -167,12 +170,13 @@ def pick_tools(tools, preset=None):
 
 
 # ---------------------------------------------------------------- reading holdings out of any reasonable reply
-SYM_KEYS = ("ticker", "symbol", "ticker_symbol", "tickerSymbol", "underlying_symbol", "contractDesc")
+SYM_KEYS = ("ticker", "symbol", "ticker_symbol", "tickerSymbol", "underlying_symbol", "contractDesc", "contract_description")
 QTY_KEYS = ("quantity", "shares", "position", "qty", "units", "share_quantity", "quantity_held")
 PER_KEYS = ("avgCost", "avg_cost", "average_cost", "averageCost", "avgPrice", "avg_price", "average_price", "averagePrice",
             "average_buy_price", "cost_per_share", "costPerShare", "unit_cost", "cost_basis_per_share")
 TOT_KEYS = ("cost_basis", "costBasis", "total_cost", "totalCost", "book_value", "bookValue")
 KIND_KEYS = ("security_type", "securityType", "assetClass", "asset_class", "type", "instrument_type", "instrumentType", "secType")
+CCY_KEYS = ("currency", "ccy", "currency_code", "currencyCode")
 ACCT_KEYS = ("account_name", "accountName", "account", "acctId", "accountId", "account_id", "account_number")
 SKIP_KINDS = {"cash": re.compile(r"^(cash|money.?market|sweep|currency)$", re.I),
               "crypto": re.compile(r"crypto", re.I),
@@ -210,7 +214,7 @@ def _records(data, depth=0):
 
 def normalize(data, account_hint=None):
     """Rows of {t, shares, cost, account} plus what was skipped and why, from a holdings reply."""
-    rows, skipped = [], {"cash": 0, "crypto": 0, "options": 0, "other": [], "short": 0}
+    rows, skipped = [], {"cash": 0, "crypto": 0, "options": 0, "other": [], "short": 0, "foreign": []}
     for rec in _records(data)[:5000]:
         kind = str(_first(rec, KIND_KEYS) or "")
         why = next((k for k, rx in SKIP_KINDS.items() if kind and rx.search(kind)), None)
@@ -225,6 +229,12 @@ def normalize(data, account_hint=None):
         if qty is None or not sym:
             if sym:
                 skipped["other"].append(sym)
+            continue
+        if qty == 0:      # a position closed earlier today, still listed by the broker
+            continue
+        ccy = str(_first(rec, CCY_KEYS) or "USD").strip().upper()
+        if ccy != "USD":  # a foreign listing: its ticker means something else on a US exchange, and its cost isn't in dollars
+            skipped["foreign"].append(sym[:30])
             continue
         per = _num(_first(rec, PER_KEYS))
         if per is None:
@@ -275,6 +285,9 @@ def fetch(link):
     sec = get_secret(link["id"])
     if link.get("auth") and not sec:
         raise M.AuthNeeded()
+    if link.get("url") in MOVED:
+        link = {**link, "url": MOVED[link["url"]]}
+        personal.update_link(link["user_id"], link["id"], url=link["url"])
     s = _session(link, sec)
     try:
         preset = PRESETS.get(link["provider"])
@@ -282,7 +295,7 @@ def fetch(link):
         hold, acct = pick_tools(tools, preset)
         if not hold:
             raise M.MCPError("This server has no tool OpenTicker can read your holdings from.")
-        rows, skipped = [], {"cash": 0, "crypto": 0, "options": 0, "other": [], "short": 0}
+        rows, skipped = [], {"cash": 0, "crypto": 0, "options": 0, "other": [], "short": 0, "foreign": []}
         if acct:
             ids = _account_ids(M.tool_data(s.call_tool(acct["name"], _fill(acct))))
             for aid, name in ids[:20]:
@@ -350,6 +363,7 @@ def clean_rows(rows, skipped):
             continue
         out.append({**r, "cost": r["cost"] if r["cost"] is not None else last[r["t"]], "estimated": r["cost"] is None})
     skipped["other"] = sorted(set(skipped["other"]))[:50]
+    skipped["foreign"] = sorted(set(skipped.get("foreign") or []))[:50]
     accounts = {}
     for r in out:
         accounts[r["account"]] = accounts.get(r["account"], 0) + 1
