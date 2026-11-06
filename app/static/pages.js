@@ -135,7 +135,7 @@ function myToday(){
   const pos=positionsAgg(); let V=0,D=0,XD=null,xLab=null; const moves=[];
   pos.forEach(p=>{ const F=facts(p.t); const last=lastValid(base.px[p.t]||[]); if(last==null) return; V+=last*p.shares; if(F?.chg!=null){ const prev=last/(1+F.chg); D+=(last-prev)*p.shares; }
     const x=extOf(p.t); if(x){ XD=(XD||0)+(x.p-last)*p.shares; xLab=x.lab; } });
-  // what you own and what you only watch stay apart: the total is your positions, and watched stocks get their own list
+  // what you own and what you only watch stay apart: the total is your positions, and each list shows its three biggest moves today
   const owned=new Set(pos.map(p=>p.t)), watched=me.watch.filter(t=>!owned.has(t));
   const movesOf=ts=>ts.map(t=>{ const F=facts(t); return F?.chg!=null?{t,chg:F.chg,last:F.last,x:extOf(t)}:null; }).filter(Boolean).sort((a,b)=>Math.abs(b.chg)-Math.abs(a.chg));
   return {V,D,dayPct:V-D?D/(V-D):null,own:movesOf([...owned]),watch:movesOf(watched),hasPos:pos.length>0,count:owned.size+watched.length,XD,xLab};
@@ -241,8 +241,8 @@ function renderMarket(){
   $("#mMine").innerHTML=!my||!my.count?`<p class="hint">Add stocks to your watchlist or portfolio to see them here.</p><button class="btn ghost" data-page="mine">Go to My stocks</button>`:
     `${my.hasPos?`<div class="mval"><b>${money(my.V)}</b><span class="${cls(my.D)}">${my.D>=0?"+":"−"}${money(Math.abs(my.D))} · ${pct(my.dayPct)}</span></div>`:""}
      ${my.hasPos&&my.XD!=null?`<div class="mxh">${ic(my.xLab==="Pre-market"?"sun":"moon",12)}${my.xLab} <span class="num ${cls(my.XD)}">${my.XD>=0?"+":"−"}${money(Math.abs(my.XD))} · ${pct(my.V?my.XD/my.V:null)}</span></div>`:""}
-     ${my.own.length?`${my.watch.length?`<div class="mgrp">You own</div>`:""}${myRows(my.own.slice(0,6))}`:""}
-     ${my.watch.length?`<div class="mgrp">Watching</div>${myRows(my.watch.slice(0,my.own.length?3:6))}`:""}
+     ${my.own.length?`${my.watch.length?`<div class="mgrp">You own</div>`:""}${myRows(my.own.slice(0,3))}`:""}
+     ${my.watch.length?`<div class="mgrp">Watching</div>${myRows(my.watch.slice(0,3))}`:""}
      ${(()=>{ const b=briefItems().filter(x=>x.kind!=="move"); return b.length?`<div class="lbl" style="margin-top:16px">From your brief</div>${briefRows(b.slice(0,3))}<a class="lnk" href="#mine" data-page="mine" style="margin-top:6px">Open your brief ›</a>`:""; })()}`;
   // tiles
   $("#mTiles").innerHTML=TILE_GROUPS.map(([g,syms,icn])=>`<div class="tgrp" style="--n:${syms.filter(s=>v.q[s]).length}"><div class="lbl">${ic(icn,12)}${g}</div><div class="tiles">${syms.filter(s=>v.q[s]).map(s=>{ const t=tileValue(s,v), col=t.c==null?"var(--ink-3)":t.c>=0?"var(--up)":"var(--down)";
