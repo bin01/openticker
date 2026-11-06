@@ -508,6 +508,7 @@ class State:
                 "lastPoll": self.last_poll,
                 "open": market_open(),      # the exchange's hours, so a dead feed isn't mistaken for a closed market
                 "now": time.time(),
+                "iv": INTRA.get("at"),      # when the 1D bars last changed, so the page knows to fetch them
             }
 
     def snapshot_base(self):
@@ -628,6 +629,66 @@ def poll_loop():
                 log("polled prices (stream quiet)" if quiet else f"polled {len(syms)} prices the stream hasn't sent")
         except Exception as e:
             log(f"poll failed: {e!r}")
+
+
+# ---------------------------------------------------------------- the day so far
+INTRA_EVERY = 300          # five-minute bars, so fetching more often adds nothing; the live price fills the gap
+INTRA: dict = {}           # the latest session in five-minute bars: what the 1D charts draw
+
+
+def intraday_refresh():
+    """The latest session in five-minute bars, for the 1D charts. Daily closes only give two points (yesterday's
+    close and now), which drew 1D as a straight line. Each fund's own path, the average stock in it (equal weight,
+    from each holding's previous close), and every watchlist and portfolio symbol so those can be built in the page."""
+    df = download_closes(S.tickers(), period="1d", interval="5m")
+    if df.empty:
+        return
+    when = [pd.Timestamp(i).tz_convert(NY) for i in df.index]
+    day = when[-1].date()
+    hours = X.session_hours(day)
+    if not hours:
+        return
+    keep = [t.date() == day and hours[0] <= t.time() < hours[1] for t in when]
+    df = df[keep].ffill()
+    if df.empty:
+        return
+    ts = [int(pd.Timestamp(i).timestamp()) for i in df.index]
+    key = day.isoformat()
+    with S.lock:
+        if key not in S.dates or S.dates.index(key) == 0:
+            return       # the daily history hasn't reached this session yet; the next round will
+        k = S.dates.index(key)
+        prev = {t: a[k - 1] for t, a in S.px.items() if len(a) > k and a[k - 1]}
+        holdings = {f: [h["t"] for h in S.holdings.get(f, {}).get("holdings", [])] for f in FUNDS}
+    r4 = lambda v: None if v is None or v != v else round(float(v), 4)
+    funds = {}
+    for f, hs in holdings.items():
+        cols = [h for h in hs if h in df.columns and h in prev]
+        if not cols:
+            continue
+        ew = (df[cols] / pd.Series({h: prev[h] for h in cols}) - 1).mean(axis=1, skipna=True)
+        funds[f] = {"ew": [None if v != v else round(float(v), 6) for v in ew.tolist()]}
+    want = set(FUNDS) | set(S.extras) | set(personal.all_symbols())
+    px = {t: [r4(v) for v in df[t].tolist()] for t in want if t in df.columns}
+    at = lambda tm: int(dt.datetime.combine(day, tm, tzinfo=NY).timestamp())
+    global INTRA
+    INTRA = {"day": key, "open": at(hours[0]), "close": at(hours[1]), "t": ts, "funds": funds, "px": px,
+             "at": int(time.time()), "during": market_open()}
+    log(f"{key} so far: {len(ts)} five-minute bars for {len(df.columns)} symbols")
+
+
+def intraday_loop():
+    """Every five minutes while the market is open, once at start, and once more after the close for the final bars."""
+    tried = 0.0
+    while True:
+        try:
+            stale = not INTRA or (S.dates and INTRA.get("day") != S.dates[-1])
+            if time.time() - tried >= INTRA_EVERY and (market_open() or stale or INTRA.get("during")):
+                tried = time.time()
+                intraday_refresh()
+        except Exception as e:
+            log(f"couldn't get today's five-minute bars: {e!r}")
+        time.sleep(30)
 
 
 def ext_poll():
@@ -2174,6 +2235,8 @@ main{{max-width:360px;padding:24px;text-align:center}}b{{display:block;font-size
             self.send(200, json.dumps(S.snapshot_base(), separators=(",", ":")).encode(), "application/json")
         elif path == "/api/live":
             self.send(200, json.dumps(S.snapshot_live(), separators=(",", ":")).encode(), "application/json")
+        elif path == "/api/intraday":
+            self.send(200, json.dumps(INTRA, separators=(",", ":")).encode(), "application/json")
         elif path.startswith("/api/x/") and path[7:] in EXTRA:
             try:
                 body = extra(path[7:], parse_qs(urlsplit(self.path).query))
@@ -2352,6 +2415,7 @@ def main():
             threading.Thread(target=stream_loop, daemon=True).start()
         threading.Thread(target=poll_loop, daemon=True).start()
         threading.Thread(target=ext_loop, daemon=True).start()
+        threading.Thread(target=intraday_loop, daemon=True).start()
         threading.Thread(target=sector_loop, daemon=True).start()
         threading.Thread(target=links.loop, daemon=True).start()
 

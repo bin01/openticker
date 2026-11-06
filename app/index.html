@@ -86,6 +86,8 @@ header.bar{position:sticky;top:0;z-index:15;background:color-mix(in srgb,var(--b
 .pcard .tk{font:700 16px/1 var(--f-display);letter-spacing:-.01em}
 .pcard .nm{font-size:11.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pcard .r{font:600 26px/1.1 var(--f-mono);margin-top:8px;letter-spacing:-.02em}
+.pcard .rw{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-top:8px}.pcard .rw .r{margin-top:0}
+.pcard .px{font:500 15px/1 var(--f-mono);color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
 .pcard .meta{display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-2);margin-top:2px;gap:8px}
 .pcard svg{display:block;width:100%;height:38px;margin-top:6px;overflow:hidden}
 .sp{display:inline-block;width:90px;height:24px;vertical-align:middle}.sp svg{display:block;width:90px;height:24px}
@@ -1416,7 +1418,7 @@ body[data-page="mine"] section.keys{display:none}
   .pulse.n2{grid-template-columns:1fr}
   #drAct{display:grid;grid-template-columns:1fr 1fr}#drAct>:not(.btn){grid-column:1/-1}#drAct>.btn{justify-content:center}   /* four actions as a tidy 2×2, no orphan */
   .pulse:not(.n2){grid-template-columns:1fr 1fr;gap:8px}   /* four funds as a 2×2 grid, not 700px of stacked cards */
-  .pulse:not(.n2) .pcard{padding:12px 12px 8px}.pulse:not(.n2) .pcard .nm,.pulse:not(.n2) .pcard .meta span:last-child{display:none}.pulse:not(.n2) .pcard .r{font-size:22px}
+  .pulse:not(.n2) .pcard{padding:12px 12px 8px}.pulse:not(.n2) .pcard .nm,.pulse:not(.n2) .pcard .meta span:last-child{display:none}.pulse:not(.n2) .pcard .r{font-size:22px}.pulse:not(.n2) .pcard .px{font-size:12.5px}
 }
 </style>
 </head>
@@ -1492,6 +1494,7 @@ const sgn=x=>x>0?"+":x<0?"−":"";
 const pct=(x,d=2)=>{ if(x==null||!isFinite(x)) return "–"; const s=Math.abs(x*100).toFixed(d); return (+s?sgn(x):"")+s+"%"; };   // no sign on a move that rounds to zero
 const pp=(x,d=2)=>x==null||!isFinite(x)?"–":sgn(x)+Math.abs(x).toFixed(d)+" pp";
 const cls=x=>x==null?"flat":x>0?"up":x<0?"down":"flat";
+const clsR=(x,d=2)=>x==null?"flat":cls(+(x*100).toFixed(d));   // the color of the number as shown: −0.04% shows as 0.0%, so it isn't red
 const money=x=>x==null?"–":"$"+(x>=1e5?x.toLocaleString("en-US",{maximumFractionDigits:0}):x.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}));   // cents up to $100k, so a column of prices lines up
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const trunc=(s,n)=>s&&s.length>n?s.slice(0,n-1).trimEnd()+"…":s;
@@ -1591,7 +1594,8 @@ function computePulse(){
     const i0=idx(hz), r=ret(base.px[k],i0).r;
     const rs=f.holdings.map(h=>ret(base.px[h.t],i0).r).filter(v=>v!=null);
     const ew=rs.length?rs.reduce((a,b)=>a+b,0)/rs.length:null;
-    out[k]={r,ew,up:rs.filter(v=>v>0).length,n:rs.length,spark:series(base.px[k],i0)};
+    const I=intraOn()?intraFund(k,ew).F:null, day=I&&I.length>1;
+    out[k]={r,ew,up:rs.filter(v=>v>0).length,n:rs.length,spark:day?I:series(base.px[k],i0),dom:day?[intra.open,intra.close]:null};
   });
   return out;
 }
@@ -1651,14 +1655,14 @@ function render0(){
 }
 
 /* ======================= pulse strip ======================= */
-function spark(pts,w=240,h=38,color){
+function spark(pts,w=240,h=38,color,dom){   // dom: the x range to span, when the line should stop short of the end (a session in progress)
   if(pts.length<2) return `<svg viewBox="0 0 ${w} ${h}"></svg>`;
   const ys=pts.map(p=>p[1]), lo=Math.min(0,...ys), hi=Math.max(0,...ys), pad=(hi-lo)*.1||.001;
-  const k0=pts[0][0], k1=pts[pts.length-1][0];
+  const [k0,k1]=dom||[pts[0][0],pts[pts.length-1][0]];
   const X=k=>2+(w-6)*(k-k0)/Math.max(1,k1-k0), Y=v=>2+(h-4)*(1-(v-lo+pad)/(hi-lo+2*pad));
   const d=pts.map((p,j)=>(j?"L":"M")+X(p[0]).toFixed(1)+","+Y(p[1]).toFixed(1)).join("");
   const end=pts[pts.length-1];
-  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><line x1="0" x2="${w}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--rule)" stroke-dasharray="2 3"/><path d="${d}L${X(end[0])},${Y(0)}L${X(k0)},${Y(0)}Z" fill="${color}" opacity=".1"/><path d="${d}" fill="none" stroke="${color}" stroke-width="1.6" vector-effect="non-scaling-stroke"/></svg>`;
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><line x1="0" x2="${w}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--rule)" stroke-dasharray="2 3"/><path d="${d}L${X(end[0])},${Y(0)}L${X(pts[0][0])},${Y(0)}Z" fill="${color}" opacity=".1"/><path d="${d}" fill="none" stroke="${color}" stroke-width="1.6" vector-effect="non-scaling-stroke"/></svg>`;
 }
 function renderPulse(){
   const ks=(PAGE_FUNDS[page]||FUND_ORDER).filter(k=>fundStats[k]&&base.funds[k].holdings.length);
@@ -1666,9 +1670,9 @@ function renderPulse(){
   $("#pulse").innerHTML=ks.map(k=>{const s=fundStats[k], col=s.r>=0?"var(--up)":"var(--down)";
     return `<button class="pcard" data-f="${k}" aria-pressed="${k===fund}">
       <div class="t"><span class="tk">${k}</span><span class="nm">${esc(base.funds[k].name)}</span></div>
-      <div class="r ${cls(s.r)}">${pct(s.r)}</div>
-      <div class="meta"><span>Avg stock <b class="num ${cls(s.ew)}">${pct(s.ew,1)}</b></span><span>${s.up}/${s.n} up</span></div>
-      ${spark(s.spark,240,38,col)}</button>`;}).join("");
+      <div class="rw"><div class="r ${clsR(s.r)}">${pct(s.r)}</div>${isPseudo(k)?"":`<span class="px" title="${k} price per share">${money(lastValid(base.px[k]))}</span>`}</div>
+      <div class="meta"><span>Avg stock <b class="num ${clsR(s.ew,1)}">${pct(s.ew,1)}</b></span><span>${s.up}/${s.n} up</span></div>
+      ${spark(s.spark,240,38,col,s.dom)}</button>`;}).join("");
 }
 
 /* ======================= the read: auto-written headline ======================= */
@@ -1706,22 +1710,52 @@ function ewSeries(){
   const out=[]; for(let k=i0;k<n;k++){ let sum=0,c=0; for(const [a,v] of starts){ if(a[k]!=null){sum+=a[k]/v-1;c++;} } if(c) out.push([k,sum/c]); }
   return out;
 }
+/* 1D: the session so far in five-minute bars (/api/intraday), each line ending at the live price. Daily closes
+   alone give two points, which drew the day as a straight line. Times run over the whole session, so a morning
+   looks like a morning. */
+let intra=null, intraAt=null;
+async function loadIntra(at){ try{ const j=await (await fetch("/api/intraday")).json(); intraAt=at; if(j&&j.t?.length){ intra=j; if(base&&hz==="1D"&&isDash()) render(); } }catch(e){ intraAt=null; } }
+function intraOn(){ return hz==="1D"&&!!intra&&!!base&&intra.day===base.dates[base.dates.length-1]; }
+function intraEnd(){ const now=Date.now()/1000; return liveInfo?.open&&now<intra.close?Math.max(now,intra.t[intra.t.length-1]):intra.close; }
+function intraMix(members){   // [[time, return]] for symbols weighted by their size at yesterday's close
+  const n=base.dates.length, ms=members.map(([t,sz])=>({a:intra.px[t],p:base.px[t],sz})).filter(x=>x.a&&x.p&&x.p[n-2]);
+  if(!ms.length) return [];
+  const at=v=>{ let num=0,den=0; ms.forEach(x=>{ const q=v(x); if(q!=null){ const w=x.sz*x.p[n-2]; num+=w*(q/x.p[n-2]-1); den+=w; } }); return den?num/den:null; };
+  const out=[]; intra.t.forEach((t,j)=>{ const r=at(x=>x.a[j]); if(r!=null) out.push([t,r]); });
+  const end=at(x=>x.p[n-1]); if(end!=null&&out.length) out.push([intraEnd(),end]);
+  return out;
+}
+function intraFund(f,ewNow){   // {F, E}: the fund and what it's measured against, the same two lines as the daily chart
+  if(isPseudo(f)){
+    const mem=f==="Portfolio"?positionsAgg().map(x=>[x.t,x.shares]):(me?.watch||[]).map(t=>[t,1]);
+    return {F:intraMix(mem), E:intraMix([["SPY",1]])};
+  }
+  const F=intraMix([[f,1]]), ew=intra.funds?.[f]?.ew||[], E=[];
+  ew.forEach((v,j)=>{ if(v!=null) E.push([intra.t[j],v]); });
+  if(E.length&&ewNow!=null) E.push([intraEnd(),ewNow]);
+  return {F,E};
+}
+
 function renderHero(){
   const m=model, d0=base.dates[m.i0], d1=base.dates[base.dates.length-1], live=isLive(d1);
   $("#heroEyebrow").innerHTML=`<span>${esc(m.f.name)}</span><span>·</span><span>${hz}</span>${live?'<span class="chip up" style="letter-spacing:.04em">● Live</span>':""}`;
   const el=$("#heroR"); el.className="big-r "+cls(m.R); if(shownFund!==fund+hz){ shownR=null; shownFund=fund+hz; } countTo(el,m.R,v=>pct(v));
   $("#heroSub").innerHTML=`${ic("calendar",14)}From the ${longDate(d0)} close to ${live?"now":longDate(d1)}`;
   // your own stocks are measured against the S&P 500; a fund against its own average stock
-  const vsM=isPseudo(fund)&&!!base.px.SPY, F=series(base.px[fund],m.i0,400), E=vsM?series(base.px.SPY,m.i0,400):ewSeries();
+  const vsM=isPseudo(fund)&&!!base.px.SPY, I=intraOn()?intraFund(fund,m.st.ew):null, day=I&&I.F.length>1;
+  const F=day?I.F:series(base.px[fund],m.i0,400), E=day?I.E:vsM?series(base.px.SPY,m.i0,400):ewSeries();
   const nF=fund==="Portfolio"?"Your portfolio":fund==="Watchlist"?"Your watchlist":fund, nE=vsM?"S&P 500":"Average stock";
   $("#heroLeg").innerHTML=`<span><i class="sw" style="background:var(--ink)"></i>${fund==="Portfolio"?"Your portfolio (today's shares)":fund==="Watchlist"?"Your watchlist (equal weight)":fund+" (weighted by size)"}</span><span><i class="sw" style="background:var(--accent)"></i>${vsM?"S&P 500 (SPY)":"Average stock (equal weight)"}</span>`;
   const cw=$("#heroChart").clientWidth, W=cw>240?Math.round(cw):600, H=250,L=38,R=58,T=10,B=24, all=[...F,...E].map(p=>p[1]); if(!all.length){$("#heroChart").innerHTML="";return;}
   let lo=Math.min(0,...all),hi=Math.max(0,...all); const pad=(hi-lo)*.1||.01; lo-=pad; hi+=pad;
-  const n=base.dates.length, i0=m.i0, X=k=>L+(W-L-R)*(n-1===i0?1:(k-i0)/(n-1-i0)), Y=v=>T+(H-T-B)*(1-(v-lo)/(hi-lo));
+  const n=base.dates.length, i0=m.i0, Y=v=>T+(H-T-B)*(1-(v-lo)/(hi-lo));
+  const X=day?t=>L+(W-L-R)*(t-intra.open)/(intra.close-intra.open):k=>L+(W-L-R)*(n-1===i0?1:(k-i0)/(n-1-i0));
   const path=p=>p.map((q,j)=>(j?"L":"M")+X(q[0]).toFixed(1)+","+Y(q[1]).toFixed(1)).join("");
   let s=`<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${nF} versus the ${vsM?"S&P 500":"average holding"}">`;
   niceTicks(lo,hi,4).forEach((t,_,a)=>{s+=`<line x1="${L}" x2="${W-R}" y1="${Y(t)}" y2="${Y(t)}" stroke="${t===0?"var(--ink-3)":"var(--grid)"}" ${t===0?'stroke-dasharray="3 3"':""}/><text x="${L-6}" y="${Y(t)+4}" font-size="10.5" text-anchor="end" class="mono" fill="var(--ink-3)">${tickPct(t,a)}</text>`;});
-  const nn=n-1-i0,c=Math.min(5,nn+1); for(let j=0;j<c;j++){const k=Math.round(i0+nn*j/Math.max(1,c-1)); s+=`<text x="${X(k)}" y="${H-5}" font-size="10.5" text-anchor="middle" fill="var(--ink-3)">${shortDate(base.dates[k])}</text>`;}
+  if(day){ const step=intra.close-intra.open>5*3600?7200:3600;   // 10 AM, 12 PM, 2 PM, 4 PM (hourly on a 1 pm close)
+    for(let t=Math.ceil(intra.open/3600)*3600;t<=intra.close;t+=step) s+=`<text x="${X(t)}" y="${H-5}" font-size="10.5" text-anchor="middle" fill="var(--ink-3)">${new Date(t*1000).toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"numeric"})}</text>`; }
+  else{ const nn=n-1-i0,c=Math.min(5,nn+1); for(let j=0;j<c;j++){const k=Math.round(i0+nn*j/Math.max(1,c-1)); s+=`<text x="${X(k)}" y="${H-5}" font-size="10.5" text-anchor="middle" fill="var(--ink-3)">${shortDate(base.dates[k])}</text>`;} }
   // shade the gap between the two lines
   if(F.length>1&&E.length>1&&F.length===E.length){ s+=`<path d="${path(E)}${[...F].reverse().map(q=>"L"+X(q[0]).toFixed(1)+","+Y(q[1]).toFixed(1)).join("")}Z" fill="var(--accent)" opacity=".07"/>`; }
   s+=`<path d="${path(E)}" fill="none" stroke="var(--accent)" stroke-width="2"/><path d="${path(F)}" fill="none" stroke="var(--ink)" stroke-width="2.2"/>`;
@@ -1735,6 +1769,9 @@ function renderHero(){
     new ResizeObserver(()=>{ const w=hc.clientWidth; if(Math.abs(w-w0)<8) return; w0=w; clearTimeout(t); t=setTimeout(()=>model&&document.contains(hc)&&renderHero(),100); }).observe(hc); }
   const svg=$("#heroChart svg"),hov=svg.querySelector("#hhov"),xh=svg.querySelector("#hxh");
   hov.addEventListener("mousemove",ev=>{const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;const p=pt.matrixTransform(svg.getScreenCTM().inverse());
+    if(day){ const t=intra.open+(p.x-L)/(W-L-R)*(intra.close-intra.open), near=a=>a.reduce((b,q)=>!b||Math.abs(q[0]-t)<Math.abs(b[0]-t)?q:b,null);
+      const vf=near(F), ve=E.length?near(E):null; if(!vf) return; xh.setAttribute("x1",X(vf[0]));xh.setAttribute("x2",X(vf[0]));xh.setAttribute("opacity",1);
+      showTip(ev,`<b>${vf===F[F.length-1]&&live?"Now":fmtAxis(vf[0],"1D")}</b><br>${nF} ${pct(vf[1])}<br>${nE} ${ve?pct(ve[1]):"–"}`); return; }
     const k=clamp(Math.round(i0+(p.x-L)/(W-L-R)*(n-1-i0)),i0,n-1); xh.setAttribute("x1",X(k));xh.setAttribute("x2",X(k));xh.setAttribute("opacity",1);
     const vf=F.find(q=>q[0]===k),ve=E.find(q=>q[0]===k); showTip(ev,`<b>${longDate(base.dates[k])}</b><br>${nF} ${vf?pct(vf[1]):"–"}<br>${nE} ${ve?pct(ve[1]):"–"}`);});
   hov.addEventListener("mouseleave",()=>{xh.setAttribute("opacity",0);hideTip();});
@@ -2823,6 +2860,7 @@ async function poll(){
     const L=await (await fetch("/api/live")).json(); liveInfo=L;
     const xs=JSON.stringify(L.ext||{}), extNew=xs!==extSig; if(extNew){ extSig=xs; EXT=L.ext||{}; }
     if(!base||L.v!==base.v) await getBase();
+    if(L.iv&&L.iv!==intraAt){ intraAt=L.iv; loadIntra(L.iv); }
     else{
       let changed=extNew; const fl={};
       for(const [t,v] of Object.entries(L.last)){ const a=base.px[t]; if(!a||v==null) continue; const old=a[a.length-1]; if(old!==v){ a[a.length-1]=v; changed=true; if(old!=null) fl[t]=v>old?"flash-up":"flash-down"; } }
