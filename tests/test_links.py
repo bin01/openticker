@@ -193,6 +193,18 @@ class Links(unittest.TestCase):
             threading.Event().wait(0.05)
         return out["id"]
 
+    def test_try_again_after_a_failed_first_read(self):
+        lid = self.sign_in()
+        personal.update_link("me", lid, status="error", error="The server answered 400.")
+        links.retry("me", lid)
+        for _ in range(100):
+            if personal.link("me", lid)["status"] != "fetching":
+                break
+            threading.Event().wait(0.05)
+        self.assertEqual((personal.link("me", lid)["status"], personal.link("me", lid)["error"]), ("review", ""))
+        with self.assertRaises(ValueError):
+            links.retry("me", lid)                                     # only a failed link can be tried again
+
     def test_sign_in_review_and_mirror(self):
         lid = self.sign_in()
         self.assertEqual(self.fake.registered["redirect_uris"], ["http://127.0.0.1:8765/api/links/callback"])

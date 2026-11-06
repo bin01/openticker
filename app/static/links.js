@@ -63,7 +63,7 @@ function linksSection(){
     else if(l.status==="review") ctl=`<button type="button" class="btn" data-lk-act="review" data-lk="${l.id}">Review</button>`;
     else if(l.status==="signin"||l.status==="fetching") ctl=local?`<button type="button" class="btn ghost" data-lk-act="cancel" data-lk="${l.id}">Cancel</button>`:"";
     else if(l.status==="auth") ctl=local?`<button type="button" class="btn" data-lk-act="reconnect" data-lk="${l.id}">Sign in again</button>`:"";
-    else if(l.status==="error") ctl=local?`<button type="button" class="btn ghost" data-lk-act="remove" data-lk="${l.id}">Remove</button>`:"";
+    else if(l.status==="error") ctl=`<button type="button" class="btn" data-lk-act="retry" data-lk="${l.id}">Try again</button>${local?`<button type="button" class="btn ghost" data-lk-act="remove" data-lk="${l.id}">Remove</button>`:""}`;
     else ctl=`<button type="button" class="btn ghost" data-lk-act="sync" data-lk="${l.id}">Sync now</button>${local?`<button type="button" class="btn ghost" data-lk-act="ask" data-lk="${l.id}">Disconnect</button>`:""}`;
     const wait=l.status==="signin"||l.status==="fetching";
     return `<div class="srow lkrow"><span class="lkic${l.status==="ok"&&!l.error?" on":""}">${ic("landmark",16)}</span><div class="sl"><b>${esc(l.name)}</b><small class="${tone}">${wait?`<i class="lkspin" aria-hidden="true"></i>`:""}${esc(msg)}</small>${LK.err[l.id]?`<small class="bad">${esc(LK.err[l.id])}</small>`:""}</div><div class="sc">${ctl}</div></div>`
@@ -108,6 +108,7 @@ async function linkAct(act,id){
   if(act==="no"){ LK.confirm=null; return renderSettings(); }
   if(act==="review") return openLinkReview(id);
   if(act==="reconnect") return linkConnect({id});
+  if(act==="retry"){ LK.want=id; try{ await linkApi("retry",{id}); }catch(x){ LK.err[id]=x.message; } await linksLoad(); renderSettings(); return linksWatch(); }
   LK.busy[id]={sync:"Syncing…",keep:"Disconnecting…",drop:"Disconnecting…",cancel:"Cancelling…",remove:"Removing…"}[act]||"…"; LK.confirm=null; renderSettings();
   try{
     if(act==="sync"){ const r=await linkApi("sync",{id}); toast(`Synced ${l?.name||"your account"}: ${r.count} position${r.count===1?"":"s"}`); }

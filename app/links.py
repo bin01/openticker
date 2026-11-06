@@ -515,6 +515,16 @@ def sync(uid, lid):
     return apply(uid, lid)
 
 
+def retry(uid, lid):
+    """Read a link's holdings again after its first read failed, then show the review."""
+    link = personal.link(uid, lid)
+    if not link:
+        raise ValueError("That link is gone.")
+    if link["status"] != "error":
+        raise ValueError("This account isn't waiting to be tried again.")
+    _fetch_async(uid, lid)
+
+
 def reconnect(uid, lid):
     """A new sign-in for a link whose token expired. Keeps its positions and the accounts chosen."""
     link = personal.link(uid, lid)

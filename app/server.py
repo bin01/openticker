@@ -1951,6 +1951,9 @@ class Handler(BaseHTTPRequestHandler):
                 if errs and len(errs) == len(ids):
                     raise ValueError(errs[0])
                 out["errors"] = errs
+            elif action == "retry":
+                links.retry(uid, lid)
+                out = {}
             elif action == "disconnect":
                 links.disconnect(uid, lid, keep=bool(body.get("keep")))
                 out = {}
