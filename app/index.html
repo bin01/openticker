@@ -128,9 +128,10 @@ section[id^="s-"]{scroll-margin-top:120px}
 /* hover cross-highlight */
 .tile.hl{outline:2px solid var(--ink);z-index:4;filter:brightness(1.08)}
 g.hl>rect:first-child{fill:var(--grid)}
-.hl-on #rotation g[data-sel]:not(.hl) circle{opacity:.18;transition:opacity .15s}
-.hl-on #rotation g.hl circle{stroke:var(--ink);stroke-width:2;fill-opacity:.95}
 tr.hl{background:var(--grid)}
+#rotation .tail{display:none}#rotation .tail.on{display:inline}
+.hl-on #rotation g[data-sel]:not(.hl) .hd{opacity:.18;transition:opacity .15s}.hl-on #rotation g[data-sel]:not(.hl) .tail{display:none}
+.hl-on #rotation g.hl .tail{display:inline}.hl-on #rotation g.hl .hd{stroke:var(--ink);stroke-width:2;fill-opacity:.95}
 .mx tr.hl td.l{color:var(--accent)}
 .tile.tick-up{animation:tu 1.2s}.tile.tick-down{animation:td 1.2s}
 @keyframes tu{0%{box-shadow:inset 0 0 0 3px var(--up-soft)}100%{box-shadow:inset 0 0 0 0 transparent}}
@@ -1542,7 +1543,7 @@ function buildShell(){
   </section>
   <section class="row even" id="s-leaders">
     <div class="panel"><div class="ph"><div><h2>${ic("award")}Leadership across time frames</h2><div class="hint">The <span id="mxN">20</span> largest holdings. Each cell is the stock's return relative to <span class="fw">the fund</span> over that period, so green means it led. RS is its return rank within <span class="fw">the fund</span> for the selected range (99 = best).</div></div></div><div class="mx-wrap" id="matrix"></div></div>
-    <div class="panel"><div class="ph"><div><h2>${ic("scatter")}Rotation</h2><div class="hint">How each stock did against <span class="fw">the fund</span> over 3 months (across) and the last month (up). Leaders sit top right. Stocks losing steam slide down to the right; ones recovering climb on the left.</div></div></div><div id="rotation"></div></div>
+    <div class="panel"><div class="ph"><div><h2>${ic("scatter")}<span id="rotTitle">Relative rotation</span></h2><div class="hint" id="rotHint"></div></div></div><div id="rotation"></div></div>
   </section>
   <section class="panel" id="s-holdings"><div class="ph"><div><h2>${ic("list")}All holdings</h2><div class="hint" id="tblHint"></div></div><div class="tools"><div class="filters" id="filters"></div><input type="search" id="q" placeholder="Filter by name or sector" aria-label="Filter holdings"></div></div><div class="tbl-wrap"><table class="hold" id="tbl"></table></div><div id="moreWrap"></div></section>
   <section class="keys"><span><kbd>1</kbd>–<kbd>4</kbd> switch fund</span><span><kbd>←</kbd> <kbd>→</kbd> time range</span><span><kbd>/</kbd> search any ticker</span><span><kbd>F</kbd> full-screen stock view</span><span><kbd>Esc</kbd> close detail</span></section>
@@ -1783,45 +1784,81 @@ function renderMatrix(){
 function tickPct(t,a){ const st=a.length>1?Math.abs(a[1]-a[0])*100:1; let d=0; while(d<2&&Math.abs(st*10**d-Math.round(st*10**d))>1e-6) d++; return pct(t,d); }
 function niceTicks(lo,hi,n){ const span=hi-lo; if(!(span>0)||!isFinite(span)) return isFinite(lo)?[lo]:[];   // a flat or empty series would otherwise loop forever
   const step0=span/n,mag=Math.pow(10,Math.floor(Math.log10(step0))); const step=[1,2,2.5,5,10].map(x=>x*mag).find(x=>span/x<=n)||mag*10; const out=[]; for(let v=Math.ceil(lo/step)*step;v<=hi+1e-12;v+=step) out.push(Math.abs(v)<1e-12?0:v); return out; }
+/* Relative Rotation Graph, the chart traders use for relative strength (Julius de Kempenaer's RRG, as on StockCharts).
+   RS = stock ÷ fund. RS-Ratio is RS normalised against its own recent average (100 = keeping pace with the fund);
+   RS-Momentum is the same normalisation applied to RS-Ratio's rate of change (100 = strength steady).
+   The exact JdK formulas are unpublished; this is the widely used open approximation (rolling z-scores around 100).
+   The selected range sets the bar size and the tail: short ranges use daily bars, longer ones weekly, and the tail
+   traces where each stock has been over that range. */
+const RRG={"1D":{step:1,tail:1},"1W":{step:1,tail:5},"1M":{step:5,tail:4},"3M":{step:5,tail:13},"6M":{step:5,tail:26},"1Y":{step:5,tail:52}};
+const RRG_WIN=10;
+function rrgCfg(h){ if(h!=="YTD") return RRG[h]||RRG["3M"];
+  const d=(Date.now()-new Date(new Date().getFullYear(),0,1))/864e5; return d<45?{step:1,tail:Math.max(1,Math.round(d*5/7))}:{step:5,tail:Math.round(d/7)}; }
+function rrgPath(a,b,step,tail){
+  // computed on daily closes with the windows scaled to the bar size, then sampled, so tails curve instead of jumping
+  const n=Math.min(a.length,b.length), win=RRG_WIN*step, sm=step===1?3:5;
+  let la=null,lb=null; const rs=[];
+  for(let k=0;k<n;k++){ if(a[k]!=null) la=a[k]; if(b[k]!=null) lb=b[k]; rs.push(la&&lb?la/lb:null); }
+  const ema=arr=>{ const al=2/(sm+1); let e=null; return arr.map(v=>v==null?(e=null):(e=e==null?v:e+al*(v-e))); };
+  const z=(arr,i)=>{ if(i<win-1) return null; let m=0,c=0; for(let j=i-win+1;j<=i;j++){ if(arr[j]==null) return null; m+=arr[j]; c++; } m/=c;
+    let v=0; for(let j=i-win+1;j<=i;j++) v+=(arr[j]-m)**2; const sd=Math.sqrt(v/c); return sd>0?(arr[i]-m)/sd:0; };
+  const rsS=ema(rs), rsr=rsS.map((_,i)=>{ const v=z(rsS,i); return v==null?null:100+v; });
+  const roc=ema(rsr.map((v,i)=>i>=step&&v!=null&&rsr[i-step]!=null?v-rsr[i-step]:null));
+  const rsm=roc.map((_,i)=>{ const v=z(roc,i); return v==null?null:100+v; });
+  const stride=Math.max(1,Math.ceil(tail/10)), pts=[];   // about ten points per tail at most
+  for(let j=tail;j>=0;j-=stride){ const i=n-1-j*step; if(i<0||rsr[i]==null||rsm[i]==null) return null; pts.push([rsr[i],rsm[i]]); }
+  if(pts.length<2&&tail>0){ const i=n-1-tail*step; if(i>=0&&rsr[i]!=null&&rsm[i]!=null) pts.unshift([rsr[i],rsm[i]]); }
+  const i=n-1; if(rsr[i]==null||rsm[i]==null) return null; const last=pts[pts.length-1]; if(last[0]!==rsr[i]||last[1]!==rsm[i]) pts.push([rsr[i],rsm[i]]);
+  return pts;
+}
 function renderRotation(){
-  let pts=model.rows.filter(r=>!r.other&&r.ex["3M"]!=null&&r.ex["1M"]!=null);
-  pts=pts.sort((a,b)=>b.w-a.w).slice(0,fund==="SPY"?60:40);
-  if(!pts.length){$("#rotation").innerHTML="";return;}
-  const W=Math.round(Math.min(560,Math.max(320,$("#rotation")?.clientWidth||520))),H=Math.round(W*0.77),L=56,R=12,T=12,B=40;
-  const xs=pts.map(r=>r.ex["3M"]), ys=pts.map(r=>r.ex["1M"]);
-  const xm=Math.max(.05,...xs.map(Math.abs))*1.22, ym=Math.max(.03,...ys.map(Math.abs))*1.28, fs=W<420?12:11, ts=W<420?11.5:10.5;
-  const X=v=>L+(W-L-R)*(v+xm)/(2*xm), Y=v=>T+(H-T-B)*(1-(v+ym)/(2*ym));
-  const wmax=Math.max(...pts.map(r=>r.w)), rad=w=>3.5+10*Math.sqrt(w/wmax);
-  let s=`<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Rotation quadrant">`;
-  const q=[[X(0),T,W-R-X(0),Y(0)-T,"var(--up)","Leading","end",W-R-6,T+14],[L,T,X(0)-L,Y(0)-T,"var(--accent)","Improving","start",L+6,T+14],[L,Y(0),X(0)-L,H-B-Y(0),"var(--down)","Lagging","start",L+6,H-B-8],[X(0),Y(0),W-R-X(0),H-B-Y(0),"var(--warn)","Weakening","end",W-R-6,H-B-8]];
+  const box=$("#rotation"); if(!box) return;
+  const vs=isPseudo(fund)?"your "+fund.toLowerCase():fund, cfg=rrgCfg(hz), bars=cfg.step===1?"daily":"weekly";
+  const tailN=Math.min(cfg.tail,5), tailWords=tailN===1?"day":tailN+" "+(cfg.step===1?"trading days":"weeks");   // traders keep tails short: the last few bars show direction, longer ones turn to scribble
+  $("#rotTitle").textContent=`Relative rotation · ${bars} bars`;
+  $("#rotHint").innerHTML=`The relative rotation graph traders use, on ${bars} prices against ${esc(vs)}. Across is relative strength: past 100 means stronger than ${esc(vs)}. Up is momentum: above 100 means gaining on it. Stocks tend to move clockwise, from Improving to Leading to Weakening to Lagging. Positions reflect roughly the last ${cfg.step===1?"month":"few months"} of trading, not the ${hz==="YTD"?"year to date":hz+" return"}. Point at a dot for its ${hz} return and its path over the last ${tailWords}.`;
+  const B=base.px[fund]; if(!B){ box.innerHTML=""; return; }
+  let pts=model.rows.filter(r=>!r.other&&base.px[r.t]).sort((a,b)=>b.w-a.w).slice(0,fund==="SPY"?60:40)
+    .map(r=>({...r,path:rrgPath(base.px[r.t],B,cfg.step,tailN)})).filter(r=>r.path);
+  if(!pts.length){ box.innerHTML=`<p class="hint">Not enough price history for this range yet.</p>`; return; }
+  const W=Math.round(Math.min(560,Math.max(320,box.clientWidth||520))),H=Math.round(W*0.77),L=56,R=12,T=12,B2=40;
+  const all=pts.flatMap(r=>r.path), xm=Math.max(1,...all.map(p=>Math.abs(p[0]-100)))*1.12, ym=Math.max(1,...all.map(p=>Math.abs(p[1]-100)))*1.15, fs=W<420?12:11, ts=W<420?11.5:10.5;
+  const X=v=>L+(W-L-R)*(v-100+xm)/(2*xm), Y=v=>T+(H-T-B2)*(1-(v-100+ym)/(2*ym));
+  const wmax=Math.max(...pts.map(r=>r.w)), rad=w=>3.5+9*Math.sqrt(w/wmax);
+  const head=r=>r.path[r.path.length-1];
+  const quadColor=p=>p[0]>=100?(p[1]>=100?"var(--up)":"var(--warn)"):(p[1]>=100?"var(--accent)":"var(--down)");
+  let s=`<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Relative rotation graph">`;
+  const q=[[X(100),T,W-R-X(100),Y(100)-T,"var(--up)","Leading","end",W-R-6,T+14],[L,T,X(100)-L,Y(100)-T,"var(--accent)","Improving","start",L+6,T+14],[L,Y(100),X(100)-L,H-B2-Y(100),"var(--down)","Lagging","start",L+6,H-B2-8],[X(100),Y(100),W-R-X(100),H-B2-Y(100),"var(--warn)","Weakening","end",W-R-6,H-B2-8]];
   q.forEach(([x,y,w,h,c])=>{s+=`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${c}" opacity=".05"/>`;});
-  niceTicks(-xm,xm,4).forEach((t,_,a)=>{s+=`<text x="${X(t)}" y="${H-B+16}" font-size="${ts}" text-anchor="middle" class="mono" fill="var(--ink-3)">${tickPct(t,a)}</text>`;});
-  niceTicks(-ym,ym,4).forEach((t,_,a)=>{s+=`<text x="${L-6}" y="${Y(t)+4}" font-size="${ts}" text-anchor="end" class="mono" fill="var(--ink-3)">${tickPct(t,a)}</text>`;});
-  s+=`<line x1="${X(0)}" x2="${X(0)}" y1="${T}" y2="${H-B}" stroke="var(--ink-3)"/><line x1="${L}" x2="${W-R}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--ink-3)"/>`;
-  const vs=isPseudo(fund)?"your "+fund.toLowerCase():fund;
-  s+=`<text x="${(L+W-R)/2}" y="${H-4}" font-size="${ts}" text-anchor="middle" fill="var(--ink-3)">Last 3 months vs ${vs} →</text><text transform="rotate(-90)" x="${-(T+(H-T-B)/2)}" y="12" font-size="${ts}" text-anchor="middle" fill="var(--ink-3)">Last month vs ${vs} →</text>`;
-  const quadColor=r=>r.ex["3M"]>=0?(r.ex["1M"]>=0?"var(--up)":"var(--warn)"):(r.ex["1M"]>=0?"var(--accent)":"var(--down)");
-  [...pts].reverse().forEach(r=>{const on=r.t===sel;
-    s+=`<g data-sel="${esc(r.t)}" data-tip="${esc(`<b>${r.t}</b> · ${r.n}<br>Last 3 months vs ${isPseudo(fund)?"your "+fund.toLowerCase():fund} ${pct(r.ex["3M"])}<br>Last month ${pct(r.ex["1M"])}<br>Weight ${r.w.toFixed(2)}%`)}"><circle cx="${X(r.ex["3M"]).toFixed(1)}" cy="${Y(r.ex["1M"]).toFixed(1)}" r="${rad(r.w).toFixed(1)}" fill="${quadColor(r)}" fill-opacity="${on?.95:.6}" stroke="${on?"var(--ink)":"var(--panel)"}" stroke-width="${on?2:1.2}"/></g>`;});
-  // labels: the biggest names first, each placed where it overlaps no dot label or quadrant name; skipped if nowhere fits
-  // every dot is an obstacle for labels, so a label never sits on a dot
-  const dots=pts.map(r=>{ const k=rad(r.w)+1; return {t:r.t,b:[X(r.ex["3M"])-k,Y(r.ex["1M"])-k,2*k,2*k]}; });
+  const fmt=t=>(Math.round(t*10)/10).toString();
+  niceTicks(100-xm,100+xm,4).forEach(t=>{s+=`<text x="${X(t)}" y="${H-B2+16}" font-size="${ts}" text-anchor="middle" class="mono" fill="var(--ink-3)">${fmt(t)}</text>`;});
+  niceTicks(100-ym,100+ym,4).forEach(t=>{s+=`<text x="${L-6}" y="${Y(t)+4}" font-size="${ts}" text-anchor="end" class="mono" fill="var(--ink-3)">${fmt(t)}</text>`;});
+  s+=`<line x1="${X(100)}" x2="${X(100)}" y1="${T}" y2="${H-B2}" stroke="var(--ink-3)"/><line x1="${L}" x2="${W-R}" y1="${Y(100)}" y2="${Y(100)}" stroke="var(--ink-3)"/>`;
+  s+=`<text x="${(L+W-R)/2}" y="${H-4}" font-size="${ts}" text-anchor="middle" fill="var(--ink-3)">Relative strength vs ${esc(vs)} (RS-Ratio) →</text><text transform="rotate(-90)" x="${-(T+(H-T-B2)/2)}" y="12" font-size="${ts}" text-anchor="middle" fill="var(--ink-3)">Momentum (RS-Momentum) →</text>`;
+  const tailed=new Set(sel?[sel]:[]);
+  [...pts].reverse().forEach(r=>{ const on=r.t===sel, h=head(r), c=quadColor(h);
+    const P=r.path;
+    const line=P.map(p=>`${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" ");
+    const tail=`<g class="tail${tailed.has(r.t)?" on":""}"><polyline points="${line}" fill="none" stroke="${c}" stroke-width="1.5" stroke-opacity=".7" stroke-linejoin="round"/>${P.slice(0,-1).map(p=>`<circle cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="1.8" fill="${c}" fill-opacity=".7"/>`).join("")}</g>`;
+    const was=r.path[0];
+    const QN={"var(--up)":"Leading","var(--warn)":"Weakening","var(--accent)":"Improving","var(--down)":"Lagging"};
+    s+=`<g data-sel="${esc(r.t)}" data-tip="${esc(`<b>${r.t}</b> · ${r.n}<br><b>${QN[c]}</b> · strength ${h[0].toFixed(1)}, momentum ${h[1].toFixed(1)}<br>${tailN===1?"A day":tailWords[0].toUpperCase()+tailWords.slice(1)} ago: ${QN[quadColor(was)].toLowerCase()}${r.ex[hz]!=null?`<br>${hz==="YTD"?"Year to date":hz}: ${pct(r.ex[hz])} vs ${esc(vs)}`:""}<br>Weight ${r.w.toFixed(2)}%`)}">${tail}<circle class="hd" cx="${X(h[0]).toFixed(1)}" cy="${Y(h[1]).toFixed(1)}" r="${rad(r.w).toFixed(1)}" fill="${c}" fill-opacity="${on?.95:.6}" stroke="${on?"var(--ink)":"var(--panel)"}" stroke-width="${on?2:1.2}"/></g>`; });
+  // labels: biggest names first, each where it overlaps no dot, label or quadrant name; skipped if nowhere fits
+  const dots=pts.map(r=>{ const k=rad(r.w)+1, h=head(r); return {t:r.t,b:[X(h[0])-k,Y(h[1])-k,2*k,2*k]}; });
   const over=(b,o)=>b[0]<o[0]+o[2]&&b[0]+b[2]>o[0]&&b[1]<o[1]+o[3]&&b[1]+b[3]>o[1];
   const qBox=(l,a,tx,ty)=>{ const w=l.length*fs*.78; return [a==="end"?tx-w:tx,ty-fs,w,fs+3]; };
-  // a quadrant name moves to its inner corner (next to the axis) when dots crowd its outer corner
   q.forEach(e=>{ const [,,,,,l,a,tx,ty]=e; if(!dots.some(d=>over(qBox(l,a,tx,ty),d.b))) return;
-    const na=a==="end"?"start":"end", ntx=a==="end"?X(0)+6:X(0)-6; if(!dots.some(d=>over(qBox(l,na,ntx,ty),d.b))){ e[6]=na; e[7]=ntx; } });
+    const na=a==="end"?"start":"end", ntx=a==="end"?X(100)+6:X(100)-6; if(!dots.some(d=>over(qBox(l,na,ntx,ty),d.b))){ e[6]=na; e[7]=ntx; } });
   const boxes=q.map(([,,,,,l,a,tx,ty])=>qBox(l,a,tx,ty));
-  const hit=(b,t)=>boxes.some(o=>over(b,o))||dots.some(d=>d.t!==t&&over(b,d.b))||b[0]<L||b[0]+b[2]>W-R||b[1]<T||b[1]+b[3]>H-B;
+  const hit=(b,t)=>boxes.some(o=>over(b,o))||dots.some(d=>d.t!==t&&over(b,d.b))||b[0]<L||b[0]+b[2]>W-R||b[1]<T||b[1]+b[3]>H-B2;
   const order=[...pts.slice(0,14)]; if(sel&&!order.some(r=>r.t===sel)){ const r=pts.find(p=>p.t===sel); if(r) order.unshift(r); }
-  let labs="";
-  const lh=fs+3;
-  order.forEach(r=>{ const cx=X(r.ex["3M"]), cy=Y(r.ex["1M"]), rr=rad(r.w), w=r.t.length*fs*.64+2;
+  let labs=""; const lh=fs+3;
+  order.forEach(r=>{ const h=head(r), cx=X(h[0]), cy=Y(h[1]), rr=rad(r.w), w=r.t.length*fs*.72+4;
     const opts=[[cx+rr+3,cy-lh/2],[cx-rr-3-w,cy-lh/2],[cx-w/2,cy-rr-lh-2],[cx-w/2,cy+rr+2],[cx+rr*.7+2,cy-rr*.7-lh+2],[cx-rr*.7-2-w,cy-rr*.7-lh+2],[cx+rr*.7+2,cy+rr*.7-2],[cx-rr*.7-2-w,cy+rr*.7-2]];
     const ok=opts.find(([x,y])=>!hit([x,y,w,lh],r.t)); if(!ok&&r.t!==sel) return; const [x,y]=ok||opts[0];
     boxes.push([x,y,w,lh]); labs+=`<text x="${x.toFixed(1)}" y="${(y+fs).toFixed(1)}" font-size="${fs}" class="mono" font-weight="600" fill="var(--ink)" stroke="var(--panel)" stroke-width="3" paint-order="stroke" pointer-events="none">${esc(r.t)}</text>`; });
   q.forEach(([,,,,c,l,a,tx,ty])=>{ s+=`<text x="${tx}" y="${ty}" font-size="${fs}" font-weight="700" letter-spacing=".08em" text-anchor="${a}" fill="${c}" stroke="var(--panel)" stroke-width="3" paint-order="stroke" pointer-events="none">${l.toUpperCase()}</text>`; });
-  $("#rotation").innerHTML=s+labs+"</svg>";
+  box.innerHTML=s+labs+"</svg>";
 }
 
 /* ======================= holdings table ======================= */
