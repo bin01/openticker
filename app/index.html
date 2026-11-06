@@ -1492,7 +1492,7 @@ function buildShell(){
   </section>
   <section class="row even" id="s-leaders">
     <div class="panel"><div class="ph"><div><h2>Leadership across time frames</h2><div class="hint">The <span id="mxN">20</span> largest holdings. Each cell is the stock's return relative to <span class="fw">the fund</span> over that period, so green means it led. RS is its return rank within <span class="fw">the fund</span> for the selected range (99 = best).</div></div></div><div class="mx-wrap" id="matrix"></div></div>
-    <div class="panel"><div class="ph"><div><h2 id="rotTitle">Rotation</h2><div class="hint">How each stock did against <span class="fw">the fund</span> over <span id="rotX">the past 3 months</span> (across) and <span id="rotY">the past month</span> (up). Leaders sit top right. Stocks losing steam slide down to the right; ones recovering climb on the left.</div></div></div><div id="rotation"></div></div>
+    <div class="panel"><div class="ph"><div><h2 id="rotTitle">Relative strength</h2><div class="hint">Each stock's return minus <span class="fws">the fund's</span>, over <span id="rotX">the past 3 months</span> (across) and <span id="rotY">the past month</span> (up). The strongest sit top right. Stocks losing strength slide down to the right; ones gaining it climb on the left.</div></div></div><div id="rotation"></div></div>
   </section>
   <section class="panel" id="s-holdings"><div class="ph"><div><h2>All holdings</h2><div class="hint" id="tblHint"></div></div><div class="tools"><div class="filters" id="filters"></div><input type="search" id="q" placeholder="Filter by name or sector" aria-label="Filter holdings"></div></div><div class="tbl-wrap"><table class="hold" id="tbl"></table></div><div id="moreWrap"></div></section>
   <section class="keys"><span><kbd>1</kbd>–<kbd>4</kbd> switch fund</span><span><kbd>←</kbd> <kbd>→</kbd> time range</span><span><kbd>/</kbd> search any ticker</span><span><kbd>F</kbd> full-screen stock view</span><span><kbd>Esc</kbd> close detail</span></section>
@@ -1742,7 +1742,7 @@ function rotPair(h){
 const ROT_AXIS={"1D":"Last session","1W":"Last week","1M":"Last month","3M":"Last 3 months","6M":"Last 6 months","YTD":"Year to date","1Y":"Last year"};
 function renderRotation(){
   const [hx,hy]=rotPair(hz), ax=ROT_AXIS[hx], ay=ROT_AXIS[hy];
-  if($("#rotTitle")) $("#rotTitle").textContent=`Rotation · ${hz}`;
+  if($("#rotTitle")) $("#rotTitle").textContent=`Relative strength · ${hz}`;
   if($("#rotX")) $("#rotX").textContent=hzWords(hx); if($("#rotY")) $("#rotY").textContent=hzWords(hy);
   let pts=model.rows.filter(r=>!r.other&&r.ex[hx]!=null&&r.ex[hy]!=null);
   pts=pts.sort((a,b)=>b.w-a.w).slice(0,fund==="SPY"?60:40);
@@ -1752,7 +1752,7 @@ function renderRotation(){
   const xm=Math.max(.05,...xs.map(Math.abs))*1.22, ym=Math.max(.03,...ys.map(Math.abs))*1.28, fs=W<420?12:11, ts=W<420?11.5:10.5;
   const X=v=>L+(W-L-R)*(v+xm)/(2*xm), Y=v=>T+(H-T-B)*(1-(v+ym)/(2*ym));
   const wmax=Math.max(...pts.map(r=>r.w)), rad=w=>3.5+10*Math.sqrt(w/wmax);
-  let s=`<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Rotation quadrant">`;
+  let s=`<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Relative strength quadrant">`;
   const q=[[X(0),T,W-R-X(0),Y(0)-T,"var(--up)","Leading","end",W-R-6,T+14],[L,T,X(0)-L,Y(0)-T,"var(--accent)","Improving","start",L+6,T+14],[L,Y(0),X(0)-L,H-B-Y(0),"var(--down)","Lagging","start",L+6,H-B-8],[X(0),Y(0),W-R-X(0),H-B-Y(0),"var(--warn)","Weakening","end",W-R-6,H-B-8]];
   q.forEach(([x,y,w,h,c])=>{s+=`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${c}" opacity=".05"/>`;});
   niceTicks(-xm,xm,4).forEach((t,_,a)=>{s+=`<text x="${X(t)}" y="${H-B+16}" font-size="${ts}" text-anchor="middle" class="mono" fill="var(--ink-3)">${tickPct(t,a)}</text>`;});
