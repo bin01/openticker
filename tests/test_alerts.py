@@ -112,8 +112,18 @@ class CloseNote(unittest.TestCase):
         self.assertEqual(n["title"], "Market close: S&P 500 +0.40%, Nasdaq −0.20%")
         lines = n["body"].split("\n")
         self.assertTrue(lines[0].startswith("Your portfolio rose 8.0% (+$"))
-        self.assertTrue(lines[1].startswith("Your biggest movers: ABC +8.0% (8× a normal day, its own news); XYZ −0.5%"))
+        self.assertEqual(lines[1], "Your biggest movers: ABC +8.0% (8× a normal day, its own news).")   # XYZ is only watched
         self.assertEqual(lines[2], "Reporting tomorrow: XYZ after the close.")
+
+    def test_watched_stocks_get_their_own_line(self):
+        base = calm()
+        server.S.px["WAT"] = base + [base[-1] * 0.95]
+        personal.set_watch("me", "WAT", True)
+        personal.add_position("me", "ABC", 10, 900)
+        lines = server.close_note("me", fetch=False)["body"].split("\n")
+        self.assertTrue(lines[1].startswith("Your biggest movers: ABC +8.0%"))
+        self.assertNotIn("WAT", lines[1])
+        self.assertTrue(lines[2].startswith("On your watchlist: WAT −5.0%"))
 
     def test_note_without_stocks_uses_the_index(self):
         server.S.holdings = {"SPY": {"holdings": [{"t": "ABC"}, {"t": "XYZ"}]}}

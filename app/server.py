@@ -206,9 +206,9 @@ HOLDING_SOURCES = {"SPY": lambda: holdings_ssga("SPY"), "SPSM": lambda: holdings
 
 def load_holdings(force=False):
     path = CACHE / "holdings.json"
-    old = {}
-    if path.exists():
-        old = json.loads(path.read_text())
+    old = paths.read_json(path, {})
+    old = old if isinstance(old, dict) else {}
+    if old:
         if not force and time.time() - old.get("_fetched", 0) < HOLDINGS_TTL and all(f in old for f in FUNDS):
             return old
     out = {"_fetched": time.time()}
@@ -227,7 +227,7 @@ def load_holdings(force=False):
             health(f"holdings {fund}", False, e)
             if fund in old:
                 out[fund] = old[fund]
-    path.write_text(json.dumps(out))
+    paths.write_json(path, out)
     return out
 
 
@@ -239,14 +239,11 @@ NAMES_PATH = CACHE / "names.json"   # company names for symbols outside the fund
 
 
 def load_sectors():
-    return json.loads(SECTORS_PATH.read_text()) if SECTORS_PATH.exists() else {}
+    return paths.read_json(SECTORS_PATH, {})
 
 
 def load_names():
-    try:
-        return json.loads(NAMES_PATH.read_text()) if NAMES_PATH.exists() else {}
-    except Exception:
-        return {}
+    return paths.read_json(NAMES_PATH, {})
 
 
 def sector_loop():
@@ -272,14 +269,14 @@ def sector_loop():
                 time.sleep(5)
             time.sleep(0.25)
             if added and added % 50 == 0:
-                SECTORS_PATH.write_text(json.dumps(known))
-                NAMES_PATH.write_text(json.dumps(names))
+                paths.write_json(SECTORS_PATH, known)
+                paths.write_json(NAMES_PATH, names)
                 with S.lock:
                     S.sectors, S.names = dict(known), dict(names)
                     S.version += 1
         if added:
-            SECTORS_PATH.write_text(json.dumps(known))
-            NAMES_PATH.write_text(json.dumps(names))
+            paths.write_json(SECTORS_PATH, known)
+            paths.write_json(NAMES_PATH, names)
             with S.lock:
                 S.sectors, S.names = dict(known), dict(names)
                 S.version += 1
@@ -366,7 +363,7 @@ class State:
     # daily bars ---------------------------------------------------------
     def load_history(self):
         syms = self.tickers()
-        start = dt.date(dt.date.today().year - 1, 1, 1) - dt.timedelta(days=10)
+        start = dt.date(X.ny_today().year - 1, 1, 1) - dt.timedelta(days=10)
         log(f"downloading daily history for {len(syms)} symbols since {start}")
         df = download_closes(syms, start=start.isoformat())
         df = df.loc[:, ~df.columns.duplicated()].dropna(how="all").sort_index()
@@ -402,6 +399,22 @@ class State:
             if holes:
                 log(f"filled {len(got)}/{len(holes)} empty {session} closes from minute bars")
         with self.lock:
+            # a refresh never leaves less than it found: offline (a Mac just awake, before Wi-Fi) or rate-limited, Yahoo
+            # sends nothing or a fraction, and taking that would blank the dashboard and the copy on disk. Keep what we
+            # have and look again in five minutes.
+            if self.px and (not dates or len(px) < 0.5 * len(self.px)):
+                self.history_fetched = time.time() - HISTORY_TTL + 300
+                log(f"history refresh got {len(px)} of {len(self.px)} symbols; keeping the prices we have")
+                return
+            if not dates:
+                raise RuntimeError("Yahoo sent no daily prices")
+            # symbols Yahoo skipped this time keep their old closes, lined up with the new dates
+            for t, old in self.px.items():
+                if t in px or not old or len(old) != len(self.dates):
+                    continue
+                by_day = dict(zip(self.dates, old))
+                tail = next((v for v in reversed(old) if v is not None), None)
+                px[t] = [by_day.get(d, tail if d > self.dates[-1] else None) for d in dates]
             # never go backwards: if the download is behind what we already had, keep our newer session
             if self.dates and dates and self.dates[-1] > dates[-1] and self.dates[-2:-1] == dates[-1:]:
                 dates.append(self.dates[-1])
@@ -480,10 +493,11 @@ class State:
         """The extended-hours prices that matter right now, Yahoo style: pre-market before the open, after hours
         from the close until the next pre-market, nothing during the regular session. Change is from the last close."""
         now = dt.datetime.now(NY)
-        weekday = X.session_hours(now.date()) is not None    # a trading day
-        if weekday and dt.time(9, 30) <= now.time() < dt.time(16, 0) or not self.dates:
+        hours = X.session_hours(now.date())      # None when the market is shut; closes at 1 pm on its half days
+        weekday = hours is not None    # a trading day
+        if weekday and hours[0] <= now.time() < hours[1] or not self.dates:
             return {}
-        pre_now = weekday and dt.time(4, 0) <= now.time() < dt.time(9, 30)
+        pre_now = weekday and dt.time(4, 0) <= now.time() < hours[0]
         today, last_day = now.strftime("%Y-%m-%d"), self.dates[-1]
         out = {}
         for sym, (p, ts, sess, day) in self.ext.items():
@@ -525,11 +539,13 @@ class State:
 
 
 def ext_session(when):
-    """'pre' or 'post' for a New York time inside those sessions on a weekday, else None."""
-    if not X.session_hours(when.date()):     # weekends and market holidays
+    """'pre' or 'post' for a New York time inside those sessions on a trading day, else None. After hours starts at the
+    session's own close: 1 pm on the half days (the day after Thanksgiving, Christmas Eve, July 3)."""
+    hours = X.session_hours(when.date())
+    if not hours:     # weekends and market holidays
         return None
     t = when.time()
-    return "pre" if dt.time(4, 0) <= t < dt.time(9, 30) else "post" if dt.time(16, 0) <= t < dt.time(20, 0) else None
+    return "pre" if dt.time(4, 0) <= t < hours[0] else "post" if hours[1] <= t < dt.time(20, 0) else None
 
 
 S = State()
@@ -989,8 +1005,9 @@ def fetch_chart(sym, rng):
         if pts:
             d = h.index[-1].tz_convert(NY)
             at = lambda hh, mm: int(d.replace(hour=hh, minute=mm, second=0, microsecond=0).timestamp())
-            reg = h[(h.index >= pd.Timestamp(at(9, 30), unit="s", tz="UTC")) & (h.index < pd.Timestamp(at(16, 0), unit="s", tz="UTC"))]
-            day = {"pre": at(4, 0), "open": at(9, 30), "close": at(16, 0), "post": at(20, 0),
+            shut = (X.session_hours(d.date()) or (dt.time(9, 30), dt.time(16, 0)))[1]    # 1 pm on half days
+            reg = h[(h.index >= pd.Timestamp(at(9, 30), unit="s", tz="UTC")) & (h.index < pd.Timestamp(at(shut.hour, shut.minute), unit="s", tz="UTC"))]
+            day = {"pre": at(4, 0), "open": at(9, 30), "close": at(shut.hour, shut.minute), "post": at(20, 0),
                    "last": jsonable(md.get("regularMarketPrice")),   # the official regular-session price
                    # the day's basics for the stock page's key stats (regular session only, like Yahoo's quote page)
                    "o": jsonable(round(float(reg["Open"].iloc[0]), 4)) if len(reg) else None,
@@ -1032,12 +1049,12 @@ def stock_chart(sym, rng, vs=None):
 
 # ---------------------------------------------------------------- earnings calendar
 EARN_PATH = CACHE / "earnings.json"
-EARN = json.loads(EARN_PATH.read_text()) if EARN_PATH.exists() else {}
+EARN = paths.read_json(EARN_PATH, {})
 
 
 def fetch_earnings_calendar():
     """Yahoo's earnings calendar, a week back to two weeks ahead, companies over $2B."""
-    today = dt.date.today()
+    today = X.ny_today()
     cal = yf.Calendars(start=today - dt.timedelta(days=7), end=today + dt.timedelta(days=15))
     out = {}
     for off in range(0, 3000, 100):
@@ -1155,7 +1172,7 @@ def signals_scan():
     universe = [t for t in list(fund) + own if VALID.fullmatch(t) and t not in FUNDS and t not in etf_of]
     bench = ["SPY", "SMH"] + [e for e, _, _ in X.SECTOR_ETFS]
     SIG.update(running=True, done=0, total=len(universe))
-    start = (dt.date.today() - dt.timedelta(days=430)).isoformat()
+    start = (X.ny_today() - dt.timedelta(days=430)).isoformat()
     try:
         _yf_fresh()
         b = _signal_ohlc(bench, start)
@@ -1191,7 +1208,7 @@ def signals_scan():
         as_of = spy.index[-1].strftime("%Y-%m-%d")
         partial = sum(1 for r in rows if r["vs"]) < 0.8 * len(rows)   # sectors still being looked up on a first launch
         SIG.update(rows=jsonable(rows), asOf=as_of, at=time.time(), whileOpen=live, partial=partial, running=False, error=None)
-        SIGNALS_PATH.write_text(json.dumps({k: SIG[k] for k in ("rows", "asOf", "at", "whileOpen", "partial")}, separators=(",", ":")))
+        paths.write_json(SIGNALS_PATH, {k: SIG[k] for k in ("rows", "asOf", "at", "whileOpen", "partial")}, separators=(",", ":"))
         log(f"signals: scored {len(rows)}/{len(universe)} stocks as of {as_of}")
     except Exception as e:
         log(f"signals scan failed: {e!r}")
@@ -1234,7 +1251,7 @@ def earnings_loop():
                         pass
                     time.sleep(0.3)
                 EARN = got
-                EARN_PATH.write_text(json.dumps(EARN))
+                paths.write_json(EARN_PATH, EARN)
                 log(f"earnings calendar: {len(EARN)} companies ({filled} filled from company pages)")
                 health("earnings calendar")
             else:
@@ -1412,7 +1429,10 @@ def _macro_pair(sym, day):
         d = m["daily"]
         a = d["px"].get(sym) or []
         prev = [v for x, v in zip(d["dates"], a) if x < day and v is not None]
-        today = (m["intraday"].get("last") or {}).get(sym) or next((v for x, v in zip(d["dates"], a) if x == day), None)
+        # the intraday price counts only when it is from this same session: a copy served after a failed fetch can be
+        # hours or days old, and the page's macroView makes the same check
+        live = (m["intraday"].get("last") or {}).get(sym) if (m["intraday"].get("day") or {}).get(sym) == day else None
+        today = live or next((v for x, v in zip(d["dates"], a) if x == day), None)
         return [prev[-1], today] if prev and today else None
     except Exception:
         return None
@@ -1461,20 +1481,33 @@ def close_note(uid, fetch=True):
             d = now - prev
             lines.append(f"Your portfolio {'rose' if d >= 0 else 'fell'} {abs(d / prev) * 100:.1f}% "
                          f"({'+' if d >= 0 else '−'}${abs(d):,.0f}).")
-    mine = sorted(set(snap["watch"]) | {p["t"] for p in snap["positions"]})
-    pool = mine or spy_hold
-    moves = sorted(((t, day_change(px.get(t))) for t in pool), key=lambda x: -abs(x[1] or 0))
-    moves = [(t, c) for t, c in moves if c is not None][:3]
-    if moves:
-        if mine and abs(moves[0][1]) < 0.01:
-            lines.append("Your stocks had a quiet day: none moved more than 1%.")
-        else:
-            head = "Your biggest movers" if mine else "Biggest moves in the S&P 500"
-            items = []
-            for t, c in moves:
-                why = reason_phrase(move_reason(t, px.get(t), px.get("SPY"), peer_for(t))) if abs(c) >= 0.01 else ""
-                items.append(f"{t} {_signed(c)}" + (f" ({why})" if why else ""))
-            lines.append(f"{head}: " + "; ".join(items) + ".")
+    own = sorted({p["t"] for p in snap["positions"]})
+    watched = sorted(set(snap["watch"]) - set(own))     # what you own and what you only watch stay apart, as on the page
+    mine = own + watched
+
+    def biggest(pool, n=3):
+        ms = sorted(((t, day_change(px.get(t))) for t in pool), key=lambda x: -abs(x[1] or 0))
+        return [(t, c) for t, c in ms if c is not None][:n]
+
+    def movers_line(head, moves):
+        items = []
+        for t, c in moves:
+            why = reason_phrase(move_reason(t, px.get(t), px.get("SPY"), peer_for(t))) if abs(c) >= 0.01 else ""
+            items.append(f"{t} {_signed(c)}" + (f" ({why})" if why else ""))
+        return f"{head}: " + "; ".join(items) + "."
+
+    mo, mw = biggest(own), biggest(watched)
+    if mine and (mo or mw) and all(abs(c) < 0.01 for _, c in mo + mw):
+        lines.append("Your stocks had a quiet day: none moved more than 1%.")
+    elif mine:
+        if mo:
+            lines.append(movers_line("Your biggest movers", mo))
+        if mw and abs(mw[0][1]) >= 0.01:
+            lines.append(movers_line("On your watchlist", mw))
+    else:
+        ms = biggest(spy_hold)
+        if ms:
+            lines.append(movers_line("Biggest moves in the S&P 500", ms))
     nxt = personal._next_day(day)
     rep = []
     for t in mine:
@@ -1525,7 +1558,7 @@ def me_payload(uid):
 def _upcoming_earnings(sym):
     e = earnings_info(sym)
     d = e.get("date")
-    return d if d and d >= dt.date.today().isoformat() and e.get("reported") is None else None
+    return d if d and d >= X.ny_today().isoformat() and e.get("reported") is None else None
 
 
 def _ago(sec):
@@ -1546,7 +1579,7 @@ def _business_days_since(day):
         d = pd.Timestamp(day).date()
     except Exception:
         return None
-    return max(0, len(pd.bdate_range(d, dt.date.today())) - 1)
+    return max(0, len(pd.bdate_range(d, X.ny_today())) - 1)
 
 
 def _nice_day(day):
@@ -1573,7 +1606,9 @@ def health_report():
         problems.append(f"Live prices haven't updated since {_ago(now - last_px) if last_px else 'the app started'}. The feed status is “{stream}”.")
     ny = dt.datetime.now(NY)
     traded_today = bool(last_px) and dt.datetime.fromtimestamp(last_px, NY).date() == ny.date()   # false on holidays
-    behind = traded_today and ny.time() >= dt.time(16, 30) and last_day and last_day < ny.strftime("%Y-%m-%d") and now - hist_at > 600
+    hours = X.session_hours(ny.date())
+    settled = bool(hours) and ny >= dt.datetime.combine(ny.date(), hours[1], tzinfo=NY) + dt.timedelta(minutes=30)
+    behind = traded_today and settled and last_day and last_day < ny.strftime("%Y-%m-%d") and now - hist_at > 600
     if behind:
         problems.append(f"Today's closing prices haven't come in yet, so “today” numbers still show {last_day}.")
     hist_ok = bool(hist_at) and now - hist_at < 30 * 3600 and not behind
@@ -1751,7 +1786,7 @@ def _days_ago(d, today):
 def brief(uid):
     """Research-based items for the user's stocks: rating changes, target moves, estimate revisions,
     insider buying, big insider sales, unusual options and the move options price for earnings."""
-    today = dt.date.today()
+    today = X.ny_today()
     syms = sorted(_user_syms(uid))
     items, pending = [], 0
     for sym in syms:
@@ -1782,7 +1817,8 @@ def brief(uid):
                                    f"in two weeks, {avg * 100:+.0f}% on average. Latest: {pts[0].get('firm')} to ${pts[0]['pt']:,.0f}"),
                           "tab": "analysts", "score": min(74, 52 + 3 * len(pts) + 60 * abs(avg))})
         et = (a.get("eps_trend") or {}).get("0y") or {}
-        if et.get("current") and et.get("30daysAgo"):
+        # a ratio of two estimates only reads as "raised" or "cut" when both are profits; for a loss it flips sign
+        if (et.get("current") or 0) > 0 and (et.get("30daysAgo") or 0) > 0:
             chg = et["current"] / et["30daysAgo"] - 1
             if abs(chg) >= 0.03:
                 rv = (a.get("eps_revisions") or {}).get("0y") or {}

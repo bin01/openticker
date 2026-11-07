@@ -311,7 +311,7 @@ def sec_earnings(sym, hist, opts):
         if not timing and hist:      # the company's usual time of day, from past reports
             timing = "AMC" if (hist[0].get("hour") or 0) >= 12 else "BMO"
         when = {"BMO": "before the open", "AMC": "after the close"}.get(timing, "")
-        today = dt.date.today().isoformat()
+        today = srv.X.ny_today().isoformat()
         known = next((h for h in hist or [] if h.get("date") == e["date"] and h.get("eps") is not None), None)
         est = (f", EPS estimate ${e['epsEst']:.2f}" if e.get("epsEst") else "") + (f", revenue estimate {_money(e['revEst'])}" if e.get("revEst") else "")
         if e.get("reported") is None and not known and e["date"] > today:
@@ -364,7 +364,7 @@ def sec_ownership(o):
     if m:
         bits = [f"{k.replace('PercentHeld', ' %').replace('Count', ' count')}: {v:.2%}" if isinstance(v, float) and v < 1.5 else f"{k}: {v}" for k, v in m.items()]
         L.append("Holders: " + "; ".join(bits) + ".")
-    today = dt.date.today()
+    today = srv.X.ny_today()
     tx = o.get("insiders") or []
 
     def within(x, n):
@@ -554,7 +554,7 @@ def sec_insiders(o, price):
     if not o:
         return []
     tx = o.get("insiders") or []
-    today = dt.date.today()
+    today = srv.X.ny_today()
 
     def age(x):
         try:
@@ -697,7 +697,8 @@ def _my_position(sym, uid):
     if ps and last:
         sh = sum(p["shares"] for p in ps)
         cost = sum(p["shares"] * p["cost"] for p in ps)
-        L.append(f"You own {sh:g} shares, average cost ${cost / sh:,.2f}, now worth {_money(sh * last)} ({_pct(sh * last / cost - 1)} total gain).")
+        L.append(f"You own {sh:g} shares, average cost ${cost / sh:,.2f}, now worth {_money(sh * last)}"   # a $0 cost (gifted shares, RSUs) has no gain %
+                  + (f" ({_pct(sh * last / cost - 1)} total gain)." if cost > 0 else "."))
     elif sym in snap["watch"]:
         L.append("It's on your watchlist; you don't own it.")
     return L
@@ -781,8 +782,8 @@ def portfolio_context(uid):
             _, arr = _series(t)
             q = pos[t]
             rows.append([t, f"{q['sh']:g}", f"${q['cost'] / q['sh']:,.2f}", f"${arr[-1]:,.2f}", _money(v), _pct(v / total, 1, False),
-                         _pct(_ret(arr, 1)), _pct(_ret(arr, 21)), _pct(v / q["cost"] - 1)])
-        L += ["## Portfolio", f"Value {_money(total)}, today {'+' if day >= 0 else '-'}{_money(abs(day))}, total gain {_pct(total / cost_all - 1)} on {_money(cost_all)} cost.", "",
+                         _pct(_ret(arr, 1)), _pct(_ret(arr, 21)), _pct(v / q["cost"] - 1) if q["cost"] > 0 else "n/a"])
+        L += ["## Portfolio", f"Value {_money(total)}, today {'+' if day >= 0 else '-'}{_money(abs(day))}, total gain {_pct(total / cost_all - 1) if cost_all > 0 else 'n/a'} on {_money(cost_all)} cost.", "",
               _table(["Ticker", "Shares", "Avg cost", "Price", "Value", "Weight", "1D", "1M", "Total gain"], rows)]
         with srv.S.lock:
             ext = srv.S.ext_view()
@@ -807,7 +808,7 @@ def portfolio_context(uid):
                 rows.append([t, f"${arr[-1]:,.2f}", _pct(_ret(arr, 1)), _pct(_ret(arr, 21)), _pct(_ytd(d, arr))])
         L += ["", "## Watchlist", _table(["Ticker", "Price", "1D", "1M", "YTD"], rows)]
     syms = sorted(set(pos) | set(snap["watch"]))
-    up = [(t, srv.EARN[t]) for t in syms if t in srv.EARN and srv.EARN[t].get("date", "") >= dt.date.today().isoformat() and srv.EARN[t].get("reported") is None]
+    up = [(t, srv.EARN[t]) for t in syms if t in srv.EARN and srv.EARN[t].get("date", "") >= srv.X.ny_today().isoformat() and srv.EARN[t].get("reported") is None]
     if up:
         L += ["", "Upcoming earnings: " + "; ".join(f"{t} {e['date']} {e.get('timing') or ''}".strip() for t, e in sorted(up, key=lambda x: x[1]["date"])) + "."]
     b = srv.brief(uid)
@@ -969,8 +970,8 @@ def history_context(syms, n, label):
 
 def calendar_context(uid):
     syms = srv._user_syms(uid) if uid else set()
-    today = dt.date.today().isoformat()
-    end = (dt.date.today() + dt.timedelta(days=14)).isoformat()
+    today = srv.X.ny_today().isoformat()
+    end = (srv.X.ny_today() + dt.timedelta(days=14)).isoformat()
     big = []
     for t, e in srv.EARN.items():
         if today <= e.get("date", "") <= end and e.get("reported") is None:
@@ -1151,7 +1152,7 @@ def remember_model(pid, asked, model):
         s[key] = model
         try:
             SEEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-            SEEN_FILE.write_text(json.dumps(s))
+            paths.write_json(SEEN_FILE, s)
         except OSError:
             pass
 
