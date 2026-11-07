@@ -368,7 +368,7 @@ def evaluate(uid, px, dates, names, earnings, link_base="", explain=None):
             if not a:
                 continue
             last, prev, _ = _last2(a)
-            if last is None:
+            if last is None or not prev:     # a zero print would stop every alert after it
                 continue
             nm = names.get(t, t)
             k, v = rule["kind"], rule["value"]

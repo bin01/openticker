@@ -37,3 +37,21 @@ for _d in (CACHE, DATA, LOGS):
     _d.mkdir(parents=True, exist_ok=True)
 SKILLS = _first(APP / "skills", ROOT / "skills")
 BIN = _first(APP / "bin", ROOT / "bin")
+
+
+def write_json(path: Path, obj, **kw) -> None:
+    """Write a cache file whole or not at all: a temp file, then a rename. A plain write cut off by a restart or a
+    crash leaves half a file, and a half file used to stop the server from starting."""
+    import json
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(obj, **kw))
+    tmp.replace(path)
+
+
+def read_json(path: Path, default=None):
+    """A cache file's contents, or `default` when it's missing or unreadable (a cache is only ever a head start)."""
+    import json
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return default

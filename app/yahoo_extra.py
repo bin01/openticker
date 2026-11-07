@@ -319,7 +319,7 @@ def options(sym, earnings_date: str | None = None, expiry: str | None = None):
         price = t.fast_info["last_price"]
     except Exception:
         pass
-    today = dt.date.today()
+    today = ny_today()
 
     def chain(e):
         c = t.option_chain(e)
@@ -530,13 +530,17 @@ def futures_trading(now=None):
 
 
 def last_close_time(now=None):
-    """The most recent 4 pm New York close on a weekday, at or before now (market holidays aside)."""
+    """The most recent stock market close in New York at or before now: 4 pm, or 1 pm on a half day; holidays skipped."""
     t = (now or pd.Timestamp.now(tz=NY))
-    c = t.normalize() + pd.Timedelta(hours=16)
-    while c > t or c.weekday() >= 5:
-        c -= pd.Timedelta(days=1)
-        c = c.normalize() + pd.Timedelta(hours=16)
-    return c
+    d = t.date()
+    for _ in range(15):
+        hours = session_hours(d)
+        if hours:
+            c = pd.Timestamp(dt.datetime.combine(d, hours[1])).tz_localize(NY)
+            if c <= t:
+                return c
+        d -= dt.timedelta(days=1)
+    return t.normalize() + pd.Timedelta(hours=16)
 
 
 def futures_overnight():
@@ -623,6 +627,11 @@ def market_holidays(year):
                 h.add(o)
         _HOLIDAYS[year] = h
     return _HOLIDAYS[year]
+
+
+def ny_today():
+    """Today's date in New York. The market runs on it, and the Mac's own date can be a day ahead or behind."""
+    return pd.Timestamp.now(tz=NY).date()
 
 
 def session_hours(day):
@@ -754,7 +763,7 @@ def screen_custom(p: dict, count=50):
 
 # ---------------------------------------------------------------- calendars
 def _cal(days_back=2, days_ahead=14):
-    today = dt.date.today()
+    today = ny_today()
     return yf.Calendars(start=today - dt.timedelta(days=days_back), end=today + dt.timedelta(days=days_ahead))
 
 
