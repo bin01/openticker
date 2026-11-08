@@ -160,6 +160,7 @@ tr.hl{background:var(--grid)}
 .duo .meter{margin:0}
 .chip{display:inline-flex;align-items:center;gap:5px;font:600 11px/1 var(--f-body);padding:4px 7px;border-radius:999px;background:var(--grid);color:var(--ink-2);white-space:nowrap}
 .chip.up{background:var(--up-soft);color:var(--up)} .chip.down{background:var(--down-soft);color:var(--down)}
+.chip.hb{border:1px solid transparent;cursor:pointer} .chip.hb:hover{border-color:var(--rule)} .chip.hb[aria-pressed="true"]{background:var(--ink);color:var(--bg);cursor:default}
 
 /* panels */
 .row{display:grid;gap:16px;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)}
@@ -1996,15 +1997,35 @@ const safeUrl=u=>/^https?:\/\//i.test(u||"")?u:null;
 let full=load("full","0")==="1", hashDone=false;
 const searchNames={};
 function nameOf(t){ for(const f of FUND_ORDER){ const h=base.funds[f]?.holdings.find(x=>x.t===t); if(h) return h.n; } const n=base.names?.[t]||detailCache[t]?.info?.longName||searchNames[t]; return n?niceName(n):t; }
+/* the fund a stock is measured against: the fund it was opened from if that fund holds it, else the fund
+   it belongs to (chip makers to SMH, tech and media to QQQ, the rest to SPY), else SPY for the broad market */
+let benchPick=null, benchM=null;   // benchPick: a fund picked under "Held in" for the open stock
+function benchFor(t){
+  const held=k=>!!base?.funds[k]?.holdings.some(h=>h.t===t);
+  if(benchPick?.t===t&&held(benchPick.k)) return benchPick.k;
+  if(FUND_LIST.includes(t)) return t==="SPY"?"QQQ":"SPY";
+  if(isDash()&&FUND_LIST.includes(fund)&&held(fund)) return fund;
+  if(held("SMH")) return "SMH";
+  const sec=base?.sectors?.[t]||detailCache[t]?.info?.sector||"";
+  if(/tech|communication/i.test(sec)&&held("QQQ")) return "QQQ";
+  return ["SPY","SPSM","QQQ"].find(held)||"SPY";
+}
+function benchModel(k){
+  if(k===fund&&model?.f===base.funds[k]) return model;
+  if(benchM&&benchM.k===k&&benchM.hz===hz&&benchM.src===model) return benchM.m;
+  const keep=fund; fund=k; let m; try{ m=compute(); } finally{ fund=keep; }
+  benchM={k,hz,src:model,m}; return m;
+}
 function stockRow(t){
-  const r=model.rows.find(x=>x.t===t); if(r) return {...r,held:true};
+  const bench=benchFor(t), M=benchModel(bench);
+  const r=M.rows.find(x=>x.t===t); if(r) return {...r,held:true,bench};
   const F=facts(t); if(!F||F.last==null) return null;
-  const fr=model.ff?.rets||{}, ex={}; HZ.forEach(k=>ex[k]=F.rets[k]!=null&&fr[k]!=null?F.rets[k]-fr[k]:null);
-  return {...F,t,n:nameOf(t),w:null,held:false,ex,exh:ex[hz],r:F.rets[hz],sector:base.sectors?.[t]||SECTOR_NAME[detailCache[t]?.info?.sector]||detailCache[t]?.info?.sector||"Unclassified"};
+  const fr=M.ff?.rets||{}, ex={}; HZ.forEach(k=>ex[k]=F.rets[k]!=null&&fr[k]!=null?F.rets[k]-fr[k]:null);
+  return {...F,t,n:nameOf(t),w:null,held:false,bench,ex,exh:ex[hz],r:F.rets[hz],sector:base.sectors?.[t]||SECTOR_NAME[detailCache[t]?.info?.sector]||detailCache[t]?.info?.sector||"Unclassified"};
 }
 async function openDrawer(t){
   if(!t||t==="Other"||!base) return;
-  if(t!==sel){ aboutOpen=false; $("#drawer").scrollTop=0; drTab=nextTab||"overview"; } else if(nextTab&&drawerOpen){ setTab(nextTab); }
+  if(t!==sel){ aboutOpen=false; benchPick=null; $("#drawer").scrollTop=0; drTab=nextTab||"overview"; } else if(nextTab&&drawerOpen){ setTab(nextTab); }
   nextTab=null;
   sel=t; drawerOpen=true; drawerKey=""; pushRecent(t);
   const d=$("#drawer"); d.classList.toggle("full",full); d.classList.add("open"); $("#scrim").classList.add("open"); d.setAttribute("aria-hidden","false");
@@ -2035,10 +2056,10 @@ async function loadDetail(t,force){
   if((d.infoError||d.newsError)&&!force) setTimeout(()=>{ if(drawerOpen&&sel===t) loadDetail(t,true); },20e3);
 }
 async function loadChart(t,rng){
-  const k=t+"|"+rng+"|"+fund, c=chartCache[k], ttl=(rng==="1D"||rng==="5D")?60e3:30*60e3;
+  const vs=benchFor(t), k=t+"|"+rng+"|"+vs, c=chartCache[k], ttl=(rng==="1D"||rng==="5D")?60e3:30*60e3;
   if(c&&(c.loading||Date.now()-c.at<ttl)) return c.loading?null:c;
   chartCache[k]={...(c||{}),loading:true};
-  try{ const r=await fetch(`/api/chart?t=${encodeURIComponent(t)}&r=${rng}&vs=${fund}`); const d=await r.json(); chartCache[k]=r.ok?{...d,at:Date.now()}:{error:d.error||"No chart data.",at:Date.now()-ttl+15e3}; }
+  try{ const r=await fetch(`/api/chart?t=${encodeURIComponent(t)}&r=${rng}&vs=${vs}`); const d=await r.json(); chartCache[k]=r.ok?{...d,at:Date.now()}:{error:d.error||"No chart data.",at:Date.now()-ttl+15e3}; }
   catch(e){ chartCache[k]={error:"Couldn't reach the local server.",at:Date.now()-ttl+15e3}; }
   if(drawerOpen&&sel===t&&curRange()===rng) drawPriceChart();
   if(drawerOpen&&sel===t&&rng==="1D") renderKeyStats();
@@ -2047,10 +2068,10 @@ const curRange=()=>chartRange||HZ_TO_CR[hz]||"1M";
 
 function renderDrawer(){
   const r=stockRow(sel); if(!r) return;
-  const key=[sel,fund,hz,r.held].join("|");
+  const key=[sel,r.bench,hz,r.held].join("|");
   if(key!==drawerKey){ drawerKey=key; drawerShell(r); }
   drawerLive(r);
-  const rng=curRange(); if((rng==="1D"||rng==="5D")){ const c=chartCache[sel+"|"+rng+"|"+fund]; if(c&&!c.loading&&Date.now()-c.at>60e3) loadChart(sel,rng); }
+  const rng=curRange(); if((rng==="1D"||rng==="5D")){ const c=chartCache[sel+"|"+rng+"|"+r.bench]; if(c&&!c.loading&&Date.now()-c.at>60e3) loadChart(sel,rng); }
 }
 function drawerShell(r){
   const sec=(o,h,id,inner,cls="")=>`<div class="dr-sec" style="order:${o}"><h4${id?` id="${id}H"`:""}>${h}</h4>${inner}</div>`;
@@ -2065,7 +2086,7 @@ function drawerShell(r){
    <div class="dr-sec ins-sec"><h4>What stands out</h4><div id="drIns"><div class="sk" style="height:90px"></div></div>${typeof askRow==="function"?askRow(r.t,"stock"):""}</div>
    <div class="dr-body"><div class="dr-main">
      <div class="dr-sec" style="order:1"><div class="ch-head"><div class="seg sm" id="drRng" role="group" aria-label="Chart range"></div>
-       <span class="vsg"><label class="vs"><input type="checkbox" id="drMa" ${showMa?"checked":""}> Averages</label><label class="vs"><input type="checkbox" id="drEv" ${showEv?"checked":""}> Events</label>${isPseudo(fund)?"":`<label class="vs"><input type="checkbox" id="drVs" ${showVs?"checked":""}> vs ${fund}</label>`}<button class="lnk" data-levels="${esc(r.t)}" title="Support and resistance for ${esc(r.t)}">Levels ›</button></span></div>
+       <span class="vsg"><label class="vs"><input type="checkbox" id="drMa" ${showMa?"checked":""}> Averages</label><label class="vs"><input type="checkbox" id="drEv" ${showEv?"checked":""}> Events</label><label class="vs"><input type="checkbox" id="drVs" ${showVs?"checked":""}> vs ${r.bench}</label><button class="lnk" data-levels="${esc(r.t)}" title="Support and resistance for ${esc(r.t)}">Levels ›</button></span></div>
        <div class="ch-sum" id="drChSum"></div><div id="drChart"><div class="sk" style="height:250px"></div></div></div>
      ${sec(3,"Analyst view","",`<div id="drAnalyst"><div class="sk" style="height:110px"></div></div>`)}
      ${sec(4,"Next earnings","",`<div id="drEarn"><div class="sk" style="height:60px"></div></div>`)}
@@ -2075,11 +2096,11 @@ function drawerShell(r){
      ${sec(10,"News","",`<div id="drNews"><div class="sk" style="height:140px"></div></div>`)}
    </div><div class="dr-side">
      <div class="dr-sec" id="drMineSec" style="order:2" hidden><h4>Your position</h4><div id="drMine"></div></div>
-     ${sec(2,`In ${fund}`,"",`<div class="stats" id="drFund"></div>`)}
-     ${sec(7,"Returns vs the fund","",`<div id="drRet"></div>`)}
+     ${sec(2,`In ${r.bench}`,"",`<div class="stats" id="drFund"></div>`)}
+     ${sec(7,`Returns vs ${r.bench}`,"",`<div id="drRet"></div>`)}
      ${sec(8,"Moving averages","",`<div id="drMA"></div>`)}
      ${sec(8,"Positioning","",`<div class="stats" id="drPos"></div>`)}
-     ${sec(9,`Sector peers in ${fund}`,"drPeers",`<div id="drPeers"></div>`)}
+     ${sec(9,`Sector peers in ${r.bench}`,"drPeers",`<div id="drPeers"></div>`)}
      ${sec(11,"About","",`<div id="drAbout"><div class="sk" style="height:80px"></div></div>`)}
      ${sec(12,"Held in","",`<div class="badges" style="margin:0" id="drHeld"></div>`)}
    </div></div></div>
@@ -2092,7 +2113,7 @@ function drawerShell(r){
   renderTabs(); renderDetail(); drawPriceChart(); loadChart(r.t,curRange()); drawerMine(r); renderEarnHist(); loadEarnHist(r.t);
 }
 function drawerLive(r){
-  const fr=model.ff.rets, inFunds=FUND_ORDER.filter(k=>base.funds[k]?.holdings.some(h=>h.t===r.t));
+  const fund=r.bench, fr=benchModel(fund).ff.rets, inFunds=FUND_LIST.filter(k=>base.funds[k]?.holdings.some(h=>h.t===r.t));
   const X=extOf(r.t);
   $("#drPrice").innerHTML=!X?`<span class="p ${flashes[r.t]||""}">${money(r.last)}</span><span class="num ${cls(r.chg)}">${pct(r.chg)} today</span>`:
     `<div class="pq"><div class="pr"><span class="p">${money(r.last)}</span><span class="num ${cls(r.chg)}">${pct(r.chg)}${X.s==="post"?" today":""}</span></div><div class="pw">${X.s==="post"?"At the close, 4:00 pm":"Last close"}</div></div>
@@ -2103,7 +2124,7 @@ function drawerLive(r){
   if(r.vs50!=null&&r.vs200!=null) badges.push(r.vs50>0&&r.vs200>0?`<span class="chip up">Uptrend · above 50 &amp; 200-day</span>`:r.vs50<0&&r.vs200<0?`<span class="chip down">Downtrend · below 50 &amp; 200-day</span>`:`<span class="chip">Trend turning · ${r.vs50>0?"above":"below"} 50-day, ${r.vs200>0?"above":"below"} 200-day</span>`);
   if(r.ex["3M"]!=null&&r.ex["1M"]!=null){ const q=r.ex["3M"]>=0?(r.ex["1M"]>=0?"Leading":"Weakening"):(r.ex["1M"]>=0?"Improving":"Lagging"); badges.push(`<span class="chip">${q} vs ${fund}</span>`); }
   $("#drBadges").innerHTML=badges.join("");
-  $("#drFund").innerHTML=!r.held?`<p class="hint" style="margin:0;grid-column:1/-1">${esc(r.t)} isn't in ${fund}. ${inFunds.length?`It's held in ${inFunds.join(", ")}; pick one below to see its weight and contribution.`:"It isn't held in any of the four funds; the returns below still compare it with "+fund+"."}</p>`:`
+  $("#drFund").innerHTML=!r.held?`<p class="hint" style="margin:0;grid-column:1/-1">${FUND_LIST.includes(r.t)?`${esc(r.t)} is one of the four funds, so it's compared with ${fund}${benchWhy(fund,r)}.`:`${esc(r.t)} isn't held in ${FUND_LIST.slice(0,-1).join(", ")} or ${FUND_LIST.at(-1)}, so it's compared with ${fund}${benchWhy(fund,r)}, a stand-in for the whole market.`}</p>`:`
      <div class="stat"><div class="lbl">Weight</div><div class="v">${r.w.toFixed(2)}%</div></div>
      <div class="stat"><div class="lbl">${hz} contribution</div><div class="v ${cls(r.c)}">${pp(r.c)}</div></div>
      <div class="stat"><div class="lbl">Share of ${fund}'s move</div><div class="v">${r.share==null?"–":Math.round(r.share*100)+"%"}</div></div>
@@ -2121,13 +2142,16 @@ function drawerLive(r){
      ${M.cross?`<p class="hint" style="margin:10px 0 0"><b style="color:var(--ink)">${M.cross.golden?"Golden cross":"Death cross"} on ${shortDate(M.cross.day)}:</b> the 50-day average moved ${M.cross.golden?"above":"below"} the 200-day. Traders read it as a sign the longer trend ${M.cross.golden?"has turned up":"has turned down"}; it often comes after much of the move.</p>`:""}`;
   renderPeers(r);
   $("#drHeld").innerHTML=inFunds.length?"":`<p class="hint" style="margin:0">None of ${FUND_LIST.slice(0,-1).join(", ")} or ${FUND_LIST.at(-1)}.</p>`;
-  if(inFunds.length) $("#drHeld").innerHTML=inFunds.map(k=>{const h=base.funds[k].holdings.find(x=>x.t===r.t);return `<button class="chip" data-f="${k}" style="border:0;cursor:pointer">${k} · ${h.w.toFixed(2)}%</button>`;}).join("");
+  if(inFunds.length){ $("#drHeld").innerHTML=inFunds.map(k=>{const h=base.funds[k].holdings.find(x=>x.t===r.t);return `<button class="chip hb" data-bench="${k}" aria-pressed="${k===fund}" title="${k===fund?`Comparing with ${k}`:`Compare with ${k}`}">${k} · ${h.w.toFixed(2)}%</button>`;}).join("")+(inFunds.length>1?`<p class="hint" style="margin:6px 0 0;flex-basis:100%">Compared with ${fund}${benchWhy(fund,r)}. Pick another fund to compare with it instead.</p>`:"");
+    $("#drHeld").querySelectorAll("[data-bench]").forEach(b=>b.onclick=()=>{ if(b.dataset.bench===fund) return; benchPick={t:r.t,k:b.dataset.bench}; renderDrawer(); loadChart(r.t,curRange()); }); }
   const d=detailCache[r.t]; if(d&&!d.loading) renderAnalyst(r,d);
   if(!document.activeElement?.closest?.("#drawer form")) drawerMine(r);   // the lot editor keeps focus through render()
   renderInsights();
 }
+/* why this fund: said once, under "Held in" */
+function benchWhy(k,r){ return k==="SMH"?", the chip makers' fund":k==="QQQ"&&/tech|communication/i.test(r.sector)?", the Nasdaq-100, home of most big tech":k==="SPY"?", the S&amp;P 500":k==="SPSM"?", the small-cap fund":""; }
 function renderPeers(r){
-  const all=model.rows.filter(x=>!x.other&&x.sector===r.sector).sort((a,b)=>b.w-a.w);
+  const fund=r.bench, all=benchModel(fund).rows.filter(x=>!x.other&&x.sector===r.sector).sort((a,b)=>b.w-a.w);
   const rank=all.findIndex(x=>x.t===r.t)+1, sw=all.reduce((a,x)=>a+x.w,0);
   let list=all.slice(0,10); if(rank>10) list=[...all.slice(0,9),r];
   if(r.sector==="Unclassified"||all.length<(r.held?2:1)){ $("#drPeers").innerHTML=`<p class="hint" style="margin:0">${r.sector==="Unclassified"?"Sector not loaded yet for this stock.":`No other ${esc(r.sector)} stocks in ${fund}.`}</p>`; return; }
@@ -2188,8 +2212,8 @@ const CATEGORY={"Large Blend":"Large US companies","Large Growth":"Large growth 
   "Short-Term Bond":"Bonds, short-term","Long Government":"Long-term Treasuries","Digital Assets":"Crypto"};
 function renderKeyStats(){
   const el=$("#drKf"), r=stockRow(sel), d=detailCache[sel]; if(!el||!r) return;
-  const i=d?.info||{}, day=chartCache[sel+"|1D|"+fund]?.day||{}, last=r.last??i.currentPrice;
-  if(!chartCache[sel+"|1D|"+fund]) loadChart(sel,"1D");                 // the day's range and volume come from today's chart
+  const i=d?.info||{}, day=chartCache[sel+"|1D|"+r.bench]?.day||{}, last=r.last??i.currentPrice;
+  if(!chartCache[sel+"|1D|"+r.bench]) loadChart(sel,"1D");                 // the day's range and volume come from today's chart
   if(!Object.keys(i).length&&day.hi==null){ el.innerHTML=""; return; }
   const isFund=i.quoteType==="ETF"||i.quoteType==="MUTUALFUND", rng=(lo,hi)=>lo!=null&&hi!=null?`${money(lo)} – ${money(hi)}`:"–";
   const cell=(l,v,k,tip,w)=>`<div${w?` class="kfw"`:""}${tip?` title="${esc(tip)}"`:""}><div class="lbl">${l}</div><div class="v">${v}</div>${k?`<div class="ks">${k}</div>`:""}</div>`;
@@ -2255,7 +2279,7 @@ function fmtTip(ts,rng){ const d=new Date(ts*1000), o={timeZone:"America/New_Yor
   if(rng==="1D"||rng==="5D") return d.toLocaleString("en-US",{...o,weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
   return (rng==="5Y"?"Week of ":"")+d.toLocaleDateString("en-US",{...o,month:"short",day:"numeric",year:"numeric"}); }
 function drawPriceChart(){
-  const rng=curRange(), c=chartCache[sel+"|"+rng+"|"+fund], el=$("#drChart"); if(!el) return;
+  const rng=curRange(), vs=benchFor(sel), c=chartCache[sel+"|"+rng+"|"+vs], el=$("#drChart"); if(!el) return;
   document.querySelectorAll("#drRng button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.cr===rng));
   if(!c||c.loading&&!c.pts){ el.innerHTML=`<div class="sk" style="height:250px"></div>`; $("#drChSum").innerHTML="&nbsp;"; return; }
   if(c.error||!c.pts?.length){ el.innerHTML=`<p class="hint" style="height:250px;display:grid;place-items:center;margin:0">${esc(c.error||"No chart data.")}</p>`; $("#drChSum").innerHTML="&nbsp;"; return; }
@@ -2270,7 +2294,7 @@ function drawPriceChart(){
   const fch=F.length?F[F.length-1][1]/base0-1:null;
   const MA=showMa&&c.ma?[["50","var(--accent)"],["200","var(--warn)"]].map(([k,col])=>({k,col,a:(c.ma[k]||[]).map((v,j)=>v==null?null:[j,v]).filter(Boolean)})).filter(m=>m.a.length>1):[];
   $("#drMa").closest("label").hidden=!c.ma;
-  $("#drChSum").innerHTML=`<span class="num ${cls(ch)}" style="font-weight:600">${pct(ch)}</span> <span class="hint">${rng==="1D"?(regP.length?(hasPost?"at the close":"since yesterday's close"):"before the open, since yesterday's close"):"over "+(rng==="5D"?"the past week":rng)}</span>${xch!=null?` <span class="hint">· after hours</span> <span class="num ${cls(xch)}">${pct(xch)}</span>`:""}${fch!=null?` <span class="hint">· ${fund} ${pct(fch)} · difference</span> <span class="num ${cls(ch-fch)}">${pct(ch-fch)}</span>`:""}`;
+  $("#drChSum").innerHTML=`<span class="num ${cls(ch)}" style="font-weight:600">${pct(ch)}</span> <span class="hint">${rng==="1D"?(regP.length?(hasPost?"at the close":"since yesterday's close"):"before the open, since yesterday's close"):"over "+(rng==="5D"?"the past week":rng)}</span>${xch!=null?` <span class="hint">· after hours</span> <span class="num ${cls(xch)}">${pct(xch)}</span>`:""}${fch!=null?` <span class="hint">· ${vs} ${pct(fch)} · difference</span> <span class="num ${cls(ch-fch)}">${pct(ch-fch)}</span>`:""}`;
   const evK=rng==="1D"||rng==="5D"?null:placeEvents(sel,P), LANE=evK?22:0;
   const W=innerWidth<560?390:520,H=(innerWidth<560?240:260)+LANE,L=8,R=46,T=10,VB=innerWidth<560?38:46,B=22, PH=H-LANE-T-B-VB-6;
   const sess=rng==="1D"?390/ (c.interval==="5m"?5:1):n-1;  // 1D spans the whole session so a partial day looks partial
@@ -2326,7 +2350,7 @@ function drawPriceChart(){
     xh.setAttribute("x1",X(k)); xh.setAttribute("x2",X(k)); xh.setAttribute("opacity",1); xd.setAttribute("cx",X(k)); xd.setAttribute("cy",Y(q[1])); xd.setAttribute("opacity",1);
     const mav=MA.map(m=>{ const v=c.ma[m.k][k]; return v==null?"":`<br>${m.k}-day avg ${money(v)}`; }).join("");
     const fv=fm.get(k), evs=evK?[k-1,k,k+1].flatMap(j=>evK.get(j)||[]):[];
-    showTip(e,`<b>${fmtTip(q[0],rng)}</b>${D&&!isReg(q[0])?` <span>${q[0]<D.open?"pre-market":"after hours"}</span>`:""}<br>${esc(sel)} ${money(q[1])} <span>(${pct(q[1]/base0-1)})</span>${fv!=null?`<br>${fund} ${pct(fv/base0-1)}`:""}${mav}<br>Volume ${vol(q[2])}${VR[k]&&rng!=="1D"?` <span>(${VR[k]>=0.95&&VR[k]<1.05?"about usual":VR[k].toFixed(1)+"× usual"})</span>`:""}${evs.map(x=>`<br>• ${esc(x.text)}`).join("")}`); };
+    showTip(e,`<b>${fmtTip(q[0],rng)}</b>${D&&!isReg(q[0])?` <span>${q[0]<D.open?"pre-market":"after hours"}</span>`:""}<br>${esc(sel)} ${money(q[1])} <span>(${pct(q[1]/base0-1)})</span>${fv!=null?`<br>${vs} ${pct(fv/base0-1)}`:""}${mav}<br>Volume ${vol(q[2])}${VR[k]&&rng!=="1D"?` <span>(${VR[k]>=0.95&&VR[k]<1.05?"about usual":VR[k].toFixed(1)+"× usual"})</span>`:""}${evs.map(x=>`<br>• ${esc(x.text)}`).join("")}`); };
   hov.addEventListener("mousemove",move); hov.addEventListener("touchmove",ev=>{move(ev);},{passive:true});
   const out=()=>{xh.setAttribute("opacity",0);xd.setAttribute("opacity",0);hideTip();}; hov.addEventListener("mouseleave",out); hov.addEventListener("touchend",out);
 }

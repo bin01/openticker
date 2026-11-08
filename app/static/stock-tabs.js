@@ -295,7 +295,7 @@ function renderInsights(){
 }
 function stockInsights(r){
   const t=r.t, out=[], info=detailCache[t]?.info||{}, A=xpeek("analysts",{t})?.data, O=xpeek("ownership",{t})?.data, OP=xpeek("options",{t})?.data, F=xpeek("financials",{t})?.data, E=xpeek("etf",{t})?.data;
-  const fundName=isPseudo(fund)?"your "+fund.toLowerCase():fund;
+  const fundName=r.bench||"SPY";
   // momentum vs the fund
   const r1=r.rets?.["1M"], ex=r.ex?.["3M"];
   if(r1!=null&&r.ex?.["1M"]!=null&&Math.abs(r.ex["1M"])>0.03){ const a=r.ex["1M"]>0, same=ex!=null&&(ex>0)===a;
