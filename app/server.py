@@ -54,6 +54,52 @@ import yahoo_extra as X  # noqa: E402
 
 warnings.filterwarnings("ignore")   # yfinance resets filters on import; keep pandas deprecation noise out of the log
 
+
+def _close_yf_cache_connections():
+    """yfinance keeps small sqlite caches (time zones, cookies, ISINs) through peewee, which opens a connection per
+    thread and never closes it. Every request thread and every yf.download worker left the database and its WAL file
+    open, about 100 files a minute after a start, until the server hit macOS's limit of 256 open files and every
+    download failed with "unable to open database file". Close the calling thread's connection after each use."""
+    try:
+        from yfinance import cache as yfc
+    except Exception:
+        return
+    for name in ("_TzCache", "_CookieCache", "_ISINCache"):
+        cls = getattr(yfc, name, None)
+        for meth in ("lookup", "store"):
+            fn = getattr(cls, meth, None)
+            if fn is None or getattr(fn, "_ot_closes", False):
+                continue
+
+            def wrapped(self, *a, _fn=fn, **kw):
+                try:
+                    return _fn(self, *a, **kw)
+                finally:
+                    db = getattr(self, "db", None)
+                    try:
+                        if db is not None and not db.in_transaction():
+                            db.close()   # this thread's connection only; the next call opens a fresh one
+                    except Exception:
+                        pass
+            wrapped._ot_closes = True
+            setattr(cls, meth, wrapped)
+
+
+def _raise_file_limit(want=4096):
+    """launchd starts the server with a soft limit of 256 open files. Price streams, sockets and caches can need more,
+    so raise it as far as the hard limit allows (macOS refuses more than 10240 per process)."""
+    try:
+        import resource
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        cap = want if hard == resource.RLIM_INFINITY else min(want, hard)
+        if soft != resource.RLIM_INFINITY and soft < cap:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (cap, hard))
+    except Exception:
+        pass
+
+
+_close_yf_cache_connections()
+
 HERE = Path(__file__).resolve().parent
 CACHE = paths.CACHE
 NY = ZoneInfo("America/New_York")
@@ -2354,6 +2400,7 @@ def main():
 
     global LINK_BASE, PORT, HOST
     PORT, HOST = args.port, args.host
+    _raise_file_limit()
     personal.init()
     agent.bind(sys.modules[__name__])
     links.bind(sys.modules[__name__])

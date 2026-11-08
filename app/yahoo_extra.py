@@ -504,7 +504,10 @@ def macro_daily():
 def macro_intraday():
     syms = [m[0] for m in MACRO] + [s[0] for s in SECTOR_ETFS]
     close = _series(syms, "1d", "5m")
-    _enough(close, syms)
+    # Futures and the dollar index run on their own week (Sunday 6 pm to Friday 5 pm New York time), so from Friday
+    # evening to Sunday evening Yahoo has no bars for them at all. That's expected, and the page falls back to their
+    # daily closes; only the rest decide whether Yahoo answered.
+    _enough(close, [s for s in syms if not (s.endswith("=F") or s == "DX-Y.NYB")])
     last, spark, day = {}, {}, {}
     for c in close.columns:
         s = close[c].dropna()
