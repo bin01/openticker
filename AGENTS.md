@@ -22,7 +22,7 @@ The loop, every time:
 
 1. **Find the code.** `openticker status` prints where it lives (usually `~/.openticker`). Work there, or in the clone they installed from.
 2. **Make the change.** The map below says where things are. Keep to the house rules at the end.
-3. **Check.** `openticker check` compiles the Python, syntax-checks every script, checks that the CLI still runs on Python 3.9, validates the skills and pings the running server. Fix anything it reports.
+3. **Check.** `openticker check` compiles the Python, syntax-checks every script, checks that the CLI still runs on Python 3.9, validates the skills and pings the running server. Fix anything it reports. If the change touches Tick's answers, the workbench, live prices and the market calendar, linked accounts, or momentum signals, also run `python3 .claude/formal/verify.py` (or the matching `verify-*` skill in `.claude/skills`): it model-checks those state machines with TLC and runs their tests.
 4. **Apply.** Python changes: `openticker restart`. Page changes (HTML, CSS, JS): just reload; in the Mac app that's ⌘R. The server serves `app/` straight from disk.
 5. **Look.** `openticker shot funds --dark` (or `market`, `levels`, `mine`, `calendar`, `screener`, a ticker like `NVDA`; add `--phone`, `--light`, `--no-tick`) saves a screenshot with headless Chrome and prints its path. Open the image and judge it like the person would. Check light and dark, and the phone width for layout changes.
 6. **Keep it.** Commit to the local repo with a plain message (`git add -A && git commit -m "Add XLE to Funds"`). `openticker update` replays their commits on top of new versions, and stops without changing anything if the two clash. Don't push anywhere unless they ask.
@@ -56,6 +56,7 @@ The person can start you here with `openticker edit "what they want"`, or from *
 | `bin/openticker` | The CLI: service, setup, update, data commands, `edit`/`check`/`shot`, and the stdio MCP server |
 | `skills/*/SKILL.md` | Tick's playbooks (also installed for outside agents). `skills/openticker` is the hidden core skill |
 | `mac/OpenTicker.swift` | The Mac app: a WKWebView window. Rebuilt by `openticker setup` and `openticker update` |
+| `.claude/skills/verify-*` | Formal verification for coding agents (not Tick's playbooks): a TLA+ model per subsystem, its rules, the map from model to code and known findings. `.claude/formal/verify.py` runs them (needs Java 11+) |
 
 The scripts are classic `<script>` tags sharing globals, loaded in this order: the inline script in `index.html`, then `stock-tabs.js`, `insights.js`, `pages.js`, `levels.js`, `ux.js`, `ask.js`, `settings.js`, `links.js`. A later file can use anything an earlier one defines. Useful globals: `base` (holdings and prices from `/api/base`), `me` (the person's data from `/api/me`), `page`, `fund`, `hz` (time range), `render()`, `load(k)`/`save(k,v)` (localStorage, prefixed `idx.`), `$`, `esc`, `ic(name,size)` with icons in `IC`, `api(path, body)` for `/api/me/...` posts.
 
