@@ -13,7 +13,7 @@ Data:
   * Live prices: Yahoo's streaming quote feed via yfinance.WebSocket, with a
     polling fallback if the stream goes quiet.
 
-Run:  ./run.sh   (or: python server.py --port 8765)
+Run:  openticker start   (or: python app/server.py --port 8765)
 """
 
 from __future__ import annotations
@@ -27,7 +27,6 @@ import math
 import mimetypes
 import re
 import secrets
-import os
 import subprocess
 import sys
 import threading
@@ -602,20 +601,20 @@ STREAM_CHUNK = 90   # Yahoo's stream only sends about 100 symbols per connection
 
 
 def on_stream_msg(m):
-        try:
-            ts = int(m.get("time", 0)) / 1000
-            if m.get("market_hours") != 1:      # pre-market or after hours: kept apart from the daily close
-                with S.lock:
-                    S.apply_ext(m["id"], m.get("price"), ts)
-                S.last_ext_tick = time.time()
-                return
-            day = dt.datetime.fromtimestamp(ts, NY).strftime("%Y-%m-%d")
-            S.apply_price(m["id"], m.get("price"), day)
-            S.last_tick = S.tick_at[m["id"]] = time.time()
-            S.ticks += 1
-            S.stream_status = "live"
-        except Exception:
-            pass
+    try:
+        ts = int(m.get("time", 0)) / 1000
+        if m.get("market_hours") != 1:      # pre-market or after hours: kept apart from the daily close
+            with S.lock:
+                S.apply_ext(m["id"], m.get("price"), ts)
+            S.last_ext_tick = time.time()
+            return
+        day = dt.datetime.fromtimestamp(ts, NY).strftime("%Y-%m-%d")
+        S.apply_price(m["id"], m.get("price"), day)
+        S.last_tick = S.tick_at[m["id"]] = time.time()
+        S.ticks += 1
+        S.stream_status = "live"
+    except Exception:
+        pass
 
 
 def stream_shard(syms):
@@ -1724,9 +1723,9 @@ def health_report():
     behind = traded_today and settled and last_day and last_day < ny.strftime("%Y-%m-%d") and now - hist_at > 600
     if behind:
         problems.append(f"Today's closing prices haven't come in yet, so “today” numbers still show {last_day}.")
-    hist_ok = bool(hist_at) and now - hist_at < 30 * 3600 and not behind
-    rows.append({"name": "Daily price history", "detail": f"through {_nice_day(last_day) if last_day else '?'}, fetched {_ago(now - hist_at) if hist_at else 'never'}", "ok": hist_ok})
-    if not hist_ok:
+    stale = not hist_at or now - hist_at >= 30 * 3600
+    rows.append({"name": "Daily price history", "detail": f"through {_nice_day(last_day) if last_day else '?'}, fetched {_ago(now - hist_at) if hist_at else 'never'}", "ok": not (stale or behind)})
+    if stale:
         problems.append("Daily price history hasn't refreshed in over a day, so returns and charts may be behind.")
     for f in FUNDS:
         h = S.holdings.get(f) or {}
@@ -2030,7 +2029,14 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 10_000)) or b"{}")
             except Exception:
                 return self.send(400, b"bad json", "text/plain")
-            personal.chat_delete(user_for(self), str(body.get("id") or ""))
+            uid, cid = user_for(self), str(body.get("id") or "")
+            mine = personal.chat(uid, cid) is not None
+            live = runs.running_for_chat(uid, cid) if mine else None
+            if live:   # stop its answer first, so finishing doesn't bring the conversation back
+                runs.stop(live["id"], uid)
+            personal.chat_delete(uid, cid)
+            if mine and not runs.running_for_chat(uid, cid):   # an answer still running keeps its folder; the prune gets it later
+                workbench.remove(cid)
             return self.send(200, b'{"ok":true}', "application/json")
         if self.path.split("?")[0] == "/api/app/terminal":
             if not (agent.is_local(self) and agent.host_ok(self)):
@@ -2130,7 +2136,10 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("Nothing to import.")
                 clean_rows, bad = [], []
                 for r in rows:
-                    t = yahoo_symbol(str((r or {}).get("t") or ""))
+                    if not isinstance(r, dict):
+                        bad.append("?")
+                        continue
+                    t = yahoo_symbol(str(r.get("t") or ""))
                     try:   # no cost in the file: count gains from today's price
                         shares, cost = float(r.get("shares")), (-1.0 if r.get("cost") in (None, "") else float(r.get("cost")))
                     except (TypeError, ValueError):
@@ -2249,7 +2258,7 @@ main{{max-width:360px;padding:24px;text-align:center}}b{{display:block;font-size
     # ------------------------------------------------------------ ask an agent (streams Server-Sent Events)
     def ask(self):
         if not agent.may_ask(self):
-            return self.send(403, json.dumps({"error": "Ask runs agents signed in on your Mac, so it only works there or on a paired phone."}).encode(), "application/json")
+            return self.send(403, json.dumps({"error": "Tick runs agents signed in on your Mac, so it only works there or on a paired phone."}).encode(), "application/json")
         try:
             body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 200_000)) or b"{}")
         except Exception:
@@ -2269,7 +2278,13 @@ main{{max-width:360px;padding:24px;text-align:center}}b{{display:block;font-size
         hist = [h for h in body.get("history") or [] if isinstance(h, dict)][-6:]
         cid = str(body.get("chat") or "")
         cid = cid if re.fullmatch(r"[\w-]{8,40}", cid) else ""
-        if cid:
+        retry = body.get("retry") is True   # "Ask again": the question is already in the conversation
+        if cid and retry:
+            if personal.chat(uid, cid) is None:
+                cid = ""
+            elif runs.running_for_chat(uid, cid):   # its answer would land after the new one
+                return self.send(409, json.dumps({"error": "Tick is still answering in this conversation."}).encode(), "application/json")
+        elif cid:
             try:
                 personal.chat_add(uid, cid, {"role": "user", "text": str(body.get("show") or q)[:4000], "ctx": {"scope": scope, "t": t or None},
                                              "skill": sk["name"] if sk else None, "ts": time.time()})
@@ -2278,7 +2293,13 @@ main{{max-width:360px;padding:24px;text-align:center}}b{{display:block;font-size
         fit = None if sk else agent.match_skill(q, scope)   # a typed question a playbook says it covers
         spec = {"q": q, "skill": sk["name"] if sk else fit["name"] if fit else None, "history": hist, "model": body.get("model"), "effort": body.get("effort"),
                 "scope": scope, "t": t or None}
-        rid = runs.start(uid, cid, prov, spec, lambda: agent.context_for(scope, t, uid))
+        old = personal.chat_drop_answer(uid, cid) if cid and retry else []   # the new answer replaces the old one
+        try:
+            rid = runs.start(uid, cid, prov, spec, lambda: agent.context_for(scope, t, uid))
+        except Exception:
+            for m in old:                    # it didn't start: the old answer stays, as it does on the page
+                personal.chat_add(uid, cid, m)
+            raise
         self.follow_run(rid, uid, 0)   # the answer runs on its own: leaving this stream doesn't stop it
 
     def follow_run(self, rid, uid, after):

@@ -35,4 +35,4 @@ If the command isn't found, OpenTicker isn't installed. Tell the user they can i
 - Compare to something: the S&P 500, the stock's own history, its peers, or what was expected.
 - Separate facts from interpretation, and say what would change the picture.
 - Don't tell the user to buy or sell. Lay out the tradeoffs and what to watch.
-- For a specific playbook (quick take, why it's moving, earnings, the chart, insider trades, bull vs bear, analyst pulse, valuation, portfolio check-up, week ahead, market recap, sector rotation, macro backdrop), use the matching `openticker-*` skill if you have it.
+- For a specific playbook (quick take, deep dive, why it's moving, earnings, the chart, insider trades, bull vs bear, analyst pulse, valuation, portfolio check-up, week ahead, market recap, sector rotation, macro backdrop), use the matching `openticker-*` skill if you have it.

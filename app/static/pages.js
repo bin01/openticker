@@ -18,9 +18,9 @@ function setHash(push){
   try{ if(location.hash!==h) history[push?"pushState":"replaceState"](null,"",h); }catch(e){}
 }
 function readHash(){
-  const h=decodeURIComponent(location.hash.slice(1)); if(!h) return null;
+  let h=location.hash.slice(1); try{ h=decodeURIComponent(h); }catch(e){}   // a stray % (#100%) must not stop the app starting
+  if(!h) return null;
   const [p,t]=h.split("/");
-  if(p==="levels"&&t){ page=p; save("page",p); save("lvT",t); return null; }   // #levels/NVDA opens Levels on NVDA
   if(PAGES.some(x=>x[0]===p)){ page=p; save("page",p); return t||null; }
   if(/^[A-Z][A-Z0-9^=.-]{0,11}$/.test(p)) return p;          // old links like #NVDA
   return null;
@@ -50,9 +50,12 @@ function xget(name,params,force){
   // a request already on its way hands back that same answer when it comes; resolving straight away would let
   // "show a placeholder, fetch, then draw again" run in a tight loop that never lets the fetch finish
   if(c?.loading&&c.wait) return c.wait;
-  if(c&&!force&&!c.loading&&Date.now()-c.at<(c.error?20e3:5*60e3)) return Promise.resolve(c);
+  if(c&&!force&&!c.loading&&Date.now()-c.at<xttl(c)) return Promise.resolve(c);
   const wait=xfetch(key,name,params,c); X[key]={...(c||{}),loading:true,wait}; return wait;
 }
+const xttl=c=>c.error?20e3:5*60e3;
+// a list on screen older than its freshness window: fetch it again while the old one stays up (no spinner)
+const xstale=c=>!!c?.data&&!c.loading&&Date.now()-c.at>=xttl(c);
 async function xfetch(key,name,params,c){
   // Yahoo fails for a moment now and then: try again quietly before showing anything, and if it still fails,
   // keep trying in the background and fill the section in when it answers
@@ -63,12 +66,20 @@ async function xfetch(key,name,params,c){
   if(res.soft){ await new Promise(f=>setTimeout(f,2500)); res=await once(); }
   if(res.soft&&!c?.data){ res.error="Yahoo Finance isn't answering right now. This fills in on its own when it does."; res.later=true; }
   X[key]=res.error&&c?.data?{...c,loading:false,at:Date.now()-4*60e3}:res;   // a failed refresh keeps what's on screen
-  if(res.later&&!xRetrying.has(key)){ xRetrying.add(key); (async()=>{ for(const wait of [20e3,60e3,180e3]){ await new Promise(f=>setTimeout(f,wait)); const r=await once(); if(!r.error){ X[key]=r; xRetrying.delete(key); render(); return; } } xRetrying.delete(key); })(); }
+  if(res.later&&!xRetrying.has(key)){ xRetrying.add(key); (async()=>{ for(const wait of [20e3,60e3,180e3]){ await new Promise(f=>setTimeout(f,wait)); const r=await once(); if(!r.error){ X[key]=r; xRetrying.delete(key); repaintPage(); return; } }
+    xRetrying.delete(key); if(X[key]?.later) X[key]={...X[key],later:false,error:"Yahoo Finance isn't answering right now. Try again in a few minutes."}; repaintPage(); })(); }
   return X[key];
 }
 const xRetrying=new Set();
 const xpeek=(name,params)=>X[name+"|"+JSON.stringify(params||{})];
 
+/* redraw what's showing. render() leaves Market, Calendar, Screener and Levels alone once they're built,
+   so an answer that comes late (a background retry, Try now) draws its page directly */
+function repaintPage(){
+  const f={market:renderMarket,calendar:renderCalendar,screener:renderScreener,levels:renderLevels}[page];
+  if(!f||!base) return render();
+  f(); if(drawerOpen) renderDrawer();
+}
 function renderPage(){
   if(page==="market") return renderMarket();
   if(page==="calendar") return renderCalendar();
@@ -85,7 +96,7 @@ function dayLabel(d,today=nyToday()){
   return new Date(d+"T12:00:00Z").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",timeZone:"UTC"});
 }
 const errBox=(msg,name,params)=>{ const later=name&&xRetrying.has(name+"|"+JSON.stringify(params||{}));
-  return `<div class="errbox${later?" later":""}">${later?`<i class="spin" aria-hidden="true"></i>`:""}<span>${esc(msg)}</span>${name?`<button class="lnk" data-retry-x="${esc(name)}" data-retry-p="${esc(JSON.stringify(params||{}))}">Try now</button>`:""}</div>`; };
+  return `<div class="errbox">${later?`<i class="spin" aria-hidden="true"></i>`:""}<span>${esc(msg)}</span>${name?`<button class="lnk" data-retry-x="${esc(name)}" data-retry-p="${esc(JSON.stringify(params||{}))}">Try now</button>`:""}</div>`; };
 const sk=(h=120)=>`<div class="sk" style="height:${h}px"></div>`;
 function miniSpark(arr,w=120,h=34,color){ const pts=(arr||[]).map((v,i)=>[i,v]).filter(p=>p[1]!=null); if(pts.length<2) return ""; const b=pts[0][1]; return spark(pts.map(p=>[p[0],p[1]/b-1]),w,h,color); }
 function insightList(items){
@@ -152,7 +163,8 @@ function overnightInsight(v){
   const f=k=>ov.q[k]?.chg, es=f("ES=F"), nq=f("NQ=F"); if(es==null) return null;
   const lead=(es+(nq??es))/2, dir=lead>0.0015?"a higher open":lead<-0.0015?"a lower open":"a flat open";
   const since=new Date(ov.since), today=nyToday(), sinceDay=since.toLocaleDateString("en-CA",{timeZone:"America/New_York"});
-  const when=sinceDay===today?"Since the 4 pm close":`Since ${since.toLocaleDateString("en-US",{weekday:"long",timeZone:"America/New_York"})}'s close`;
+  const hr=isNaN(since)?"4 pm":since.toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"numeric",minute:"2-digit"}).toLowerCase().replace(":00","");   // 1 pm on a half day
+  const when=sinceDay===today?`Since the ${hr} close`:`Since ${since.toLocaleDateString("en-US",{weekday:"long",timeZone:"America/New_York"})}'s close`;
   const ud=x=>`${x>=0?"up":"down"} ${pct(Math.abs(x)).replace(/^\+/,"")}`;
   const rest=[["YM=F","the Dow"],["RTY=F","small caps"]].filter(([k])=>f(k)!=null).map(([k,n])=>`${n} ${pct(f(k))}`);
   return {tone:cls(lead),html:`<b>Futures point to ${dir}.</b> ${when}, S&amp;P 500 futures are ${ud(es)}${nq!=null?` and Nasdaq-100 futures ${ud(nq)}`:""}${rest.length?`; ${rest.join(", ")}`:""}.${ov.trading?"":" Futures are paused right now, so these are the last trades."}`};
@@ -200,7 +212,7 @@ function marketInsights(v){
   const mine=new Set([...(me?.watch||[]),...(me?.positions||[]).map(p=>p.t)]);
   const nextE=Object.entries(EARN).filter(([t,e])=>mine.has(t)&&e.date>=today&&e.reported==null).sort((a,b)=>a[1].date.localeCompare(b[1].date)).slice(0,3);
   const nb=x=>String(x).trim().replace(/ /g,"\u00a0");   // keep "Thu Nov 6 8:30 AM" on one line
-  if(nextEv.length||nextE.length) ins.push({tone:"",html:`<b>Coming up:</b> ${[...nextE.map(([t,e])=>({k:e.date+" 99",h:`<a href="#" data-sel="${t}">${t}</a> earnings ${nb(dayLabel(e.date).toLowerCase()==="today"?"today":dayLabel(e.date))}`})),...nextEv.map(e=>({k:e.date+" "+(e.time||""),h:`${esc(econName(e.event))} ${nb((dayLabel(e.date)==="Today"?"today":dayLabel(e.date))+" "+(e.time||""))}`}))].sort((a,b)=>a.k.localeCompare(b.k)).map(x=>x.h).join(" · ")}.`});
+  if(nextEv.length||nextE.length) ins.push({tone:"",html:`<b>Coming up:</b> ${[...nextE.map(([t,e])=>({k:e.date+" 99",h:`<a href="#" data-sel="${t}">${t}</a> earnings ${nb(dayLabel(e.date).toLowerCase()==="today"?"today":dayLabel(e.date))}`})),...nextEv.map(e=>({k:e.date+" "+(e.time||""),h:`${esc(econName(e.event))} ${nb((dayLabel(e.date)==="Today"?"today":dayLabel(e.date))+" "+econTime(e.time))}`}))].sort((a,b)=>a.k.localeCompare(b.k)).map(x=>x.h).join(" · ")}.`});
   return ins;
 }
 const MAJOR_EV=/CPI|PPI|payroll|unemployment rate|GDP|FOMC|fed funds|retail sales|PCE|ISM (manufacturing|n-mfg|services) PMI|jobless claims|consumer confidence|sentiment|JOLTS|ADP|durable goods|housing starts/i;
@@ -210,7 +222,7 @@ function mktLevels(){
   MKT_LEVELS.forEach(s=>{ const el=document.querySelector(`[data-tlv="${CSS.escape(s)}"]`); if(!el) return;
     const fill=()=>{ const c=xpeek("levels",lvQ(s)), x=document.querySelector(`[data-tlv="${CSS.escape(s)}"]`); if(!x) return;
       x.innerHTML=c?.data?lvTag(lvVerdict(s,c.data,lvLast(s,c.data))):""; };   // the same price the Levels page reads, so the two always agree
-    const c=xpeek("levels",lvQ(s)); fill(); if(!c?.data&&!c?.error) xget("levels",lvQ(s)).then(fill); });
+    const c=xpeek("levels",lvQ(s)); fill(); if(!c?.data&&!c?.error||xstale(c)) xget("levels",lvQ(s)).then(fill); });
 }
 const TILE_GROUPS=[["Stocks",["^GSPC","^IXIC","^DJI","^RUT","ES=F","NQ=F"],"trend"],["Rates, volatility and the dollar",["^TNX","^FVX","^IRX","^VIX","DX-Y.NYB"],"percent"],["Commodities and crypto",["CL=F","GC=F","BTC-USD"],"coins"]];
 function tileValue(sym,v){
@@ -345,12 +357,14 @@ function econName(n){ n=String(n||"").trim(); if(ECON_NAMES[n]) return ECON_NAME
   const per=/\bMM\b/.test(n)?", monthly":/\bYY\b/.test(n)?", yearly":/\bQQ\b/.test(n)?", quarterly":"";
   n=n.replace(/\b(MM|YY|QQ)\b/,"").replace(/,?\s*\bR\b\s*$/,"").replace(/\bEx-?\s?/g,"excl. ").replace(/\bMfg\b|\bManuf\b/g,"manufacturing").replace(/\bIdx\b|\bIndx\b/g,"index").replace(/[\s,]+$/,"").replace(/\s+/g," ").trim();
   return n.split(" ").map((w,i)=>i&&/^[A-Z][a-z]/.test(w)?w.toLowerCase():w).join(" ")+per; }
+/* the server sends New York times as "14:00"; say them the way the rest of the app does ("2:00 pm", as extTime) */
+const econTime=s=>{ const m=/^(\d{1,2}):(\d{2})$/.exec(s||""); if(!m) return s||""; const h=+m[1]; return `${h%12||12}:${m[2]} ${h<12?"am":"pm"}`; };
 function econList(rows,compact){
   if(!rows.length) return `<p class="hint">No US releases in this window.</p>`;
   const today=nyToday(), by=new Map(); rows.forEach(e=>{ if(!by.has(e.date)) by.set(e.date,[]); by.get(e.date).push(e); });
   const fmt=v=>v==null?"–":(v<0?"−":"")+(Math.abs(v)>=1000?Math.abs(v).toLocaleString("en-US"):String(+Math.abs(+v).toFixed(2)));
   return [...by].map(([d,list])=>`<div class="eg"><div class="egh ${d===today?"today":""}">${dayLabel(d,today)}</div><table class="hz econ"><tbody>${list.map(e=>{ const surprise=e.actual!=null&&e.expected!=null?e.actual-e.expected:null;
-    return `<tr class="${e.actual==null?"pending":""}"><td class="l mono ks" style="width:48px">${esc(e.time)}</td><td class="l" title="${esc(e.event)}">${esc(econName(e.event))}${e.for?` <span class="ks">${esc(String(e.for))}</span>`:""}</td><td class="num"><b>${fmt(e.actual)}</b></td>${compact?"":`<td class="num ks">${fmt(e.expected)}</td>`}<td class="num ks">${fmt(e.last)}</td>${surprise!=null&&!compact?`<td class="num sg ${surprise>0?"up":surprise<0?"down":""}">${surprise>0?"▲":surprise<0?"▼":"="}</td>`:compact?"":`<td class="num sg"></td>`}</tr>`; }).join("")}</tbody></table></div>`).join("")
+    return `<tr class="${e.actual==null?"pending":""}"><td class="l mono ks" style="width:64px;white-space:nowrap">${esc(econTime(e.time))}</td><td class="l" title="${esc(e.event)}">${esc(econName(e.event))}${e.for?` <span class="ks">${esc(String(e.for))}</span>`:""}</td><td class="num"><b>${fmt(e.actual)}</b></td>${compact?"":`<td class="num ks">${fmt(e.expected)}</td>`}<td class="num ks">${fmt(e.last)}</td>${surprise!=null&&!compact?`<td class="num sg ${surprise>0?"up":surprise<0?"down":""}">${surprise>0?"▲":surprise<0?"▼":"="}</td>`:compact?"":`<td class="num sg"></td>`}</tr>`; }).join("")}</tbody></table></div>`).join("")
    +`<p class="hint">${compact?"Bold is the actual figure, grey the previous one.":"Actual, then the forecast and the previous figure. ▲ ▼ show whether the actual came in above or below the forecast."}</p>`;
 }
 
@@ -378,11 +392,12 @@ function renderCalendar(){
   const name=calTab, c=xpeek(name);
   if(!c||c.loading&&!c.data){ body.innerHTML=`<section class="panel">${sk(400)}</section>`; xget(name).then(()=>page==="calendar"&&calTab===name&&renderCalendar()); return; }
   if(c.error){ body.innerHTML=`<section class="panel">${errBox(c.error,name)}</section>`; return; }
+  if(xstale(c)) xget(name).then(()=>page==="calendar"&&calTab===name&&renderCalendar());
   if(name==="econ"){ $("#calSub").textContent="US economic releases from a few days ago to two weeks out."; body.innerHTML=`<section class="panel">${econList(c.data,false)}</section>`; return; }
   if(name==="ipo"){ $("#calSub").textContent="Companies going public, from last week to a month out.";
-    body.innerHTML=`<section class="panel">${c.data.length?`<div class="tbl-wrap"><table class="hold"><thead><tr><th class="l">Date</th><th class="l">Company</th><th class="l">Exchange</th><th>Price range</th><th>Priced</th><th>Shares</th><th class="l">Status</th></tr></thead><tbody>${c.data.map(r=>`<tr><td class="l">${r.date?dayLabel(r.date):"TBA"}</td><td class="l"><b class="mono">${esc(r.t)}</b> <span class="qn">${esc(r.company||"")}</span></td><td class="l ks">${esc(r.exchange||"")}</td><td class="num">${r.priceFrom?`$${r.priceFrom}–${r.priceTo}`:"–"}</td><td class="num">${r.price?money(r.price):"–"}</td><td class="num">${r.shares?(r.shares/1e6).toFixed(1)+"M":"–"}</td><td class="l ks">${esc(r.action||"")}</td></tr>`).join("")}</tbody></table></div>`:`<p class="hint">No IPOs scheduled in this window.</p>`}</section>`; return; }
+    body.innerHTML=`<section class="panel">${c.data.length?`<div class="tbl-wrap"><table class="hold"><thead><tr><th class="l">Date</th><th class="l">Company</th><th class="l">Exchange</th><th>Price range</th><th>Priced</th><th>Shares</th><th class="l">Status</th></tr></thead><tbody>${c.data.map(r=>`<tr><td class="l">${r.date?dayLabel(r.date):"TBA"}</td><td class="l"><b class="mono">${esc(r.t)}</b> <span class="qn">${esc(r.company||"")}</span></td><td class="l ks">${esc(r.exchange||"")}</td><td class="num">${r.priceFrom!=null||r.priceTo!=null?[r.priceFrom,r.priceTo].map(x=>x==null?"–":"$"+esc(x)).join(" to "):"–"}</td><td class="num">${r.price?money(r.price):"–"}</td><td class="num">${r.shares?(r.shares/1e6).toFixed(1)+"M":"–"}</td><td class="l ks">${esc(r.action||"")}</td></tr>`).join("")}</tbody></table></div>`:`<p class="hint">No IPOs scheduled in this window.</p>`}</section>`; return; }
   if(name==="splits"){ $("#calSub").textContent="Upcoming stock splits and reverse splits for US-listed companies.";
-    body.innerHTML=`<section class="panel">${c.data.length?`<div class="tbl-wrap"><table class="hold"><thead><tr><th class="l">Date</th><th class="l">Company</th><th>Split</th><th class="l">Kind</th></tr></thead><tbody>${c.data.map(r=>`<tr data-sel="${esc(r.t)}"><td class="l">${r.date?dayLabel(r.date):"–"}</td><td class="l"><b class="mono">${esc(r.t)}</b> <span class="qn">${esc(r.company||"")}</span></td><td class="num">${r.new}-for-${r.old}</td><td class="l ks">${r.new>r.old?"Split":"Reverse split"}</td></tr>`).join("")}</tbody></table></div>`:`<p class="hint">No splits scheduled in this window.</p>`}</section>`; }
+    body.innerHTML=`<section class="panel">${c.data.length?`<div class="tbl-wrap"><table class="hold"><thead><tr><th class="l">Date</th><th class="l">Company</th><th>Split</th><th class="l">Kind</th></tr></thead><tbody>${c.data.map(r=>`<tr data-sel="${esc(r.t)}"><td class="l">${r.date?dayLabel(r.date):"–"}</td><td class="l"><b class="mono">${esc(r.t)}</b> <span class="qn">${esc(r.company||"")}</span></td><td class="num">${r.new!=null&&r.old!=null?`${esc(r.new)}-for-${esc(r.old)}`:"–"}</td><td class="l ks">${r.new==null||r.old==null?"":+r.new>+r.old?"Split":"Reverse split"}</td></tr>`).join("")}</tbody></table></div>`:`<p class="hint">No splits scheduled in this window.</p>`}</section>`; }
 }
 const CAL_SHOW=10;
 /* earnings grid: W maps ticker -> weight (or null when weights don't apply) */
@@ -427,13 +442,16 @@ const SCR_DESC={day_gainers:"Up the most today, $2B+ companies",day_losers:"Down
   solid_large_growth_funds:"Highly rated large-growth mutual funds",solid_midcap_growth_funds:"Highly rated mid-growth mutual funds",
   top_mutual_funds:"Best-performing mutual funds",conservative_foreign_funds:"Low-risk international funds",high_yield_bond:"High-yield bond funds",
   top_etfs_us:"Large, popular U.S. exchange-traded funds",top_performing_etfs:"ETFs with the best recent returns",technology_etfs:"Funds that hold tech stocks",bond_etfs:"Funds that hold bonds"};
+let scrRq=null;   // the list on screen, so a page left open can refresh it
+// a refreshed list redraws, unless you're typing in the screen form (redrawing would drop what you typed)
+const scrRefresh=()=>{ if(page==="screener"&&!$("#sform")?.contains(document.activeElement)) renderScreener(); };
 const SECTORS=["Technology","Healthcare","Financial Services","Consumer Cyclical","Communication Services","Industrials","Consumer Defensive","Energy","Basic Materials","Real Estate","Utilities"];
 function renderScreener(){
   if(!$("#scr")){
     $("#app").innerHTML=`<div id="scr" class="page"><div class="phead"><div><h1 class="ptitle">Screener</h1><p class="hint">Start from one of Yahoo's ready-made ideas, or build your own. Star anything worth following.</p></div></div>
-      <div class="scr"><aside class="scr-list" id="scrList"></aside><section class="panel scr-main" id="scrMain"></section></div></div>`;
+      <div class="scr"><aside class="scr-list" id="scrList"></aside><section class="panel" id="scrMain"></section></div></div>`;
     xget("screens").then(()=>page==="screener"&&renderScreener());
-  }
+  } else if(xstale(xpeek("screens"))) xget("screens").then(scrRefresh);
   const L=xpeek("screens")?.data||[];
   const isF=k=>/fund|bond|anchor|etf/.test(k), stocks=L.filter(s=>!isF(s.key)), funds=L.filter(s=>isF(s.key));
   const item=s=>`<button class="scr-it ${s.key===scrSel?"on":""}" data-scr="${s.key}"><b>${esc(s.name)}</b><span>${esc(SCR_DESC[s.key]||"")}</span></button>`;
@@ -450,13 +468,13 @@ function renderScreener(){
       <label><span>Sort by</span><select data-sf="sort">${[["marketcap","Size"],["change","Today's move"],["growth","Revenue growth"],["pe","P/E"],["yield","Dividend yield"],["year","1-year change"]].map(([k,l])=>`<option value="${k}" ${f.sort===k?"selected":""}>${l}</option>`).join("")}</select></label>
       <button class="btn">Find stocks</button></form>`;
     const params=Object.fromEntries(Object.entries(f).filter(([k,v])=>v!==""&&v!=null));
-    rq=["custom",params]; c=xpeek("custom",params); if(!c) xget("custom",params).then(()=>page==="screener"&&renderScreener());
+    rq=["custom",params]; c=xpeek("custom",params); if(!c) xget("custom",params).then(()=>page==="screener"&&renderScreener()); else if(xstale(c)) xget("custom",params).then(scrRefresh);
   } else {
     const s=L.find(x=>x.key===scrSel)||{name:scrSel};
     head=`<div class="ph" style="margin:0"><div><h2>${esc(s.name||"")}</h2><div class="hint">${esc(SCR_DESC[scrSel]||"")}</div></div></div>`;
-    c=xpeek("screen",{name:scrSel}); if(!c) xget("screen",{name:scrSel}).then(()=>page==="screener"&&renderScreener());
+    c=xpeek("screen",{name:scrSel}); if(!c) xget("screen",{name:scrSel}).then(()=>page==="screener"&&renderScreener()); else if(xstale(c)) xget("screen",{name:scrSel}).then(scrRefresh);
   }
-  let body;
+  scrRq=rq; let body;
   if(!c||c.loading&&!c.data) body=sk(420);
   else if(c.error) body=errBox(c.error,...rq);
   else{
@@ -515,7 +533,7 @@ function renderSignals(main){
     if(!SIG.running&&!SIG.error){ clearTimeout(sigWait); sigWait=setTimeout(()=>{ sigWait=null; if(sigHere()) loadSignals().then(()=>sigHere()&&renderScreener()); },5000); }
   } else {
     const chip=(k,label,cnt,c="")=>`<button class="chip-t sig-f ${sigRating===k?"on":""}" data-sig-r="${esc(k)}" aria-pressed="${sigRating===k}" title="${sigRating===k?"Show every rating":"Show only "+k}">${c?`<i class="dot ${c}"></i>`:""}${label}<span>${cnt}</span></button>`;
-    const filt=`<div class="sig-bar-row"><div class="seg sig-scope">${[["all","All stocks"],["mine","My stocks"]].map(([k,l])=>`<button aria-pressed="${sigScope===k}" data-sig-s="${k}">${l}</button>`).join("")}</div>
+    const filt=`<div class="sig-bar-row"><div class="seg">${[["all","All stocks"],["mine","My stocks"]].map(([k,l])=>`<button aria-pressed="${sigScope===k}" data-sig-s="${k}">${l}</button>`).join("")}</div>
       <div class="chips" style="margin:0">${SIG_RATINGS.map(([k,c])=>chip(k,k,n(k),"rt-"+c)).join("")}</div></div>
       ${dist(scoped)}`;
     const th=(k,l,c="")=>`<th class="${c} ${G&&sigSort.k===k?"on":""} ${k?"sortable":""}" ${k?`data-sig-k="${k}"`:""} ${k&&k!=="rating"?`data-c="${k}"`:""}>${l}${sigSort.k===k?(sigSort.dir>0?" ↑":" ↓"):""}</th>`;
@@ -531,7 +549,7 @@ function renderSignals(main){
         <td class="num" data-c="stop">${money(r.stop)}</td><td class="num" data-c="target">${money(r.target)}</td>
         <td><button class="star ${on?"on":""}" data-star="${esc(r.t)}" aria-label="${on?"Remove from":"Add to"} watchlist" title="${on?"On your watchlist":"Add to watchlist"}">${ic("star",16,on)}</button></td></tr>
         ${open?`<tr class="sig-why"><td colspan="10">${why(r)}</td></tr>`:""}`; };
-    const table=rows.length?`<div class="tbl-wrap sig-tbl"><table class="hold qt sig"><thead><tr>${th("","Stock","l")}${th("rating","Rating","l")}${th("score","Score")}${th("price","Price")}<th data-c="adx" class="sortable ${sigSort.k==="adx"?"on":""}" data-sig-k="adx" title="Average Directional Index: how strong the trend is. Under 20 is no trend.">Trend${sigSort.k==="adx"?(sigSort.dir>0?" ↑":" ↓"):""}</th>${th("rs6","vs S&P, 6 mo")}${th("fromHigh","From high")}<th data-c="stop">Stop</th><th data-c="target">Target</th><th></th></tr></thead>
+    const table=rows.length?`<div class="tbl-wrap"><table class="hold qt sig"><thead><tr>${th("","Stock","l")}${th("rating","Rating","l")}${th("score","Score")}${th("price","Price")}<th data-c="adx" class="sortable ${sigSort.k==="adx"?"on":""}" data-sig-k="adx" title="Average Directional Index: how strong the trend is. Under 20 is no trend.">Trend${sigSort.k==="adx"?(sigSort.dir>0?" ↑":" ↓"):""}</th>${th("rs6","vs S&P, 6 mo")}${th("fromHigh","From high")}<th data-c="stop">Stop</th><th data-c="target">Target</th><th></th></tr></thead>
       <tbody>${rows.map(tr).join("")}</tbody></table></div>`:`<p class="hint" style="margin:14px 0">${sigScope==="mine"&&!scoped.length?"None of your stocks are scored yet. Add some to your watchlist or portfolio.":"No stocks have this rating today."}</p>`;
     body=filt+`<p class="hint" style="margin:10px 0 0">${rows.length} stocks. Click a row to see why it scored what it did; click the ticker to open the stock.</p>`+table+method();
   }
@@ -574,7 +592,7 @@ document.addEventListener("click",e=>{
   const t=e.target.closest("[data-page]:not(body),[data-mr],[data-mov],[data-sector],[data-sector-close],[data-industry],[data-ct],[data-cs],[data-eday],[data-scr],[data-star],[data-retry-x]"); if(!t) return;
   if(t.dataset.page){ e.preventDefault(); if(t.dataset.cal) { calTab=t.dataset.cal; save("calTab",calTab); } goPage(t.dataset.page); return; }
   if(t.dataset.mr){ mktRange=t.dataset.mr; save("mktRange",mktRange); renderMarket(); return; }
-  if(t.dataset.mov){ save("movers",t.dataset.mov); xget("screen",{name:t.dataset.mov}).then(()=>renderMarket()); renderMarket(); return; }
+  if(t.dataset.mov){ save("movers",t.dataset.mov); xget("screen",{name:t.dataset.mov}).then(()=>page==="market"&&renderMarket()); renderMarket(); return; }
   if(t.dataset.sectorClose!==undefined){ sectorOpen=null; industryOpen=null; renderMarket(); return; }
   if(t.dataset.sector){ sectorOpen=sectorOpen===t.dataset.sector?null:t.dataset.sector; industryOpen=null; renderMarket(); if(sectorOpen) setTimeout(()=>$("#mSector")?.scrollIntoView({behavior:"smooth",block:"nearest"}),60); return; }
   if(t.dataset.industry){ industryOpen=industryOpen===t.dataset.industry?null:t.dataset.industry; renderSectorDetail(); return; }
@@ -585,9 +603,13 @@ document.addEventListener("click",e=>{
     else $(`.eday[data-day="${d}"] .emore`)?.focus({preventScroll:true}); return; }
   if(t.dataset.scr){ scrSel=t.dataset.scr; save("scr",scrSel); scrSort={k:null,dir:-1}; renderScreener(); return; }
   if(t.dataset.star){ e.stopPropagation(); const s=t.dataset.star, on=!me?.watch?.includes(s); api("/api/me/watch",{t:s,on}).then(()=>{ if(page==="screener") renderScreener(); else if(page==="market") renderMarket(); }).catch(()=>{}); return; }
-  if(t.dataset.retryX){ t.disabled=true; t.textContent="Loading…"; xget(t.dataset.retryX,JSON.parse(t.dataset.retryP||"{}"),true).then(()=>{ if(t.closest("#drawer")) return renderTab(); ({market:renderMarket,calendar:renderCalendar,screener:renderScreener}[page]||render)(); }); return; }
+  if(t.dataset.retryX){ t.disabled=true; t.textContent="Loading…"; xget(t.dataset.retryX,JSON.parse(t.dataset.retryP||"{}"),true).then(()=>{ if(t.closest("#drawer")) return renderTab(); repaintPage(); }); return; }
 },true);
 /* the stars and inline links inside rows must not also open the row */
 document.addEventListener("click",e=>{ if(e.target.closest("a[data-sel]")) e.preventDefault(); });
 // refresh the market page while it is open
 setInterval(()=>{ if(page==="market"&&!document.hidden){ const m=xpeek("macro"); if(m&&Date.now()-m.at>60e3) xget("macro",{},true).then(()=>page==="market"&&renderMarket()); else if(model) renderMarket(); } },20e3);
+// Calendar and Screener lists left open: draw again once the list is past its freshness window, which fetches it anew
+setInterval(()=>{ if(document.hidden) return;
+  if(page==="calendar"&&calTab!=="earn"&&xstale(xpeek(calTab))) renderCalendar();
+  else if(page==="screener"&&scrSel!=="signals"&&scrRq&&xstale(xpeek(...scrRq))) scrRefresh(); },60e3);

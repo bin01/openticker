@@ -29,7 +29,6 @@ import paths  # noqa: E402
 import workbench  # noqa: E402
 from levels import key_levels, nearest  # noqa: E402
 
-HERE = paths.APP
 SKILLS_DIR = paths.SKILLS
 BIN_DIR = paths.BIN
 WORK_DIR = paths.DATA / "agent-work"     # empty scratch folder the agent runs in, so it can't touch the app
@@ -428,7 +427,7 @@ def _sector_etf(info):
 def sec_technicals(sym, b, info):
     if not b or len(b.get("c") or []) < 60:
         return []
-    d, o, h, l, c, v = b["d"], b["o"], b["h"], b["l"], b["c"], [x or 0 for x in b["v"]]
+    d, h, l, c, v = b["d"], b["h"], b["l"], b["c"], [x or 0 for x in b["v"]]
     n, last = len(c), c[-1]
     L = [f"Last close ${last:,.2f} on {d[-1]}. Computed from {n} daily bars (split-adjusted)."]
 
@@ -553,7 +552,7 @@ WHAT = {"buy": "Open-market buy", "sell": "Sale", "exercise": "Option exercise",
 def sec_insiders(o, price):
     if not o:
         return []
-    tx = o.get("insiders") or []
+    tx = [x for x in o.get("insiders") or [] if x.get("date")]   # Yahoo sometimes sends no date; those can't be placed in time
     today = srv.X.ny_today()
 
     def age(x):
@@ -759,7 +758,7 @@ def stock_context(sym, uid=None, only=None, timeout=25):
 
 def portfolio_context(uid):
     snap = srv.personal.snapshot(uid)
-    L = [f"# Your stocks", f"Data as of {_now_ny()}.", ""]
+    L = ["# Your stocks", f"Data as of {_now_ny()}.", ""]
     pos = {}
     for p in snap["positions"]:
         q = pos.setdefault(p["t"], {"sh": 0.0, "cost": 0.0})
@@ -863,7 +862,7 @@ def fund_context(fund, n=1):
 
 
 def market_context():
-    L = [f"# Market", f"Data as of {_now_ny()}.", ""]
+    L = ["# Market", f"Data as of {_now_ny()}.", ""]
     rows = []
     for f in srv.FUNDS:
         d, arr = _series(f)
@@ -871,7 +870,7 @@ def market_context():
     L += [_table(["Fund", "Name", "1D", "1W", "1M", "YTD"], rows)]
     try:
         m = srv.extra("macro", {})
-        dates, px = m["daily"]["dates"], m["daily"]["px"]
+        px = m["daily"]["px"]
         rows = []
         for sym, (name, kind) in m["names"].items():
             a = _trim(px.get(sym) or [])
@@ -1541,6 +1540,7 @@ class Run:
         self.workspace = workspace if provider in workbench.PROVIDERS else None   # the conversation's workbench folder
         self.proc = None
         self.cancelled = False
+        self._killer = None   # stops a run that takes too long; disarmed once the agent has exited
 
     def cancel(self):
         self.cancelled = True
@@ -1558,10 +1558,15 @@ class Run:
         threading.Thread(target=self._feed, daemon=True).start()
         self._err = []
         threading.Thread(target=lambda: self._err.extend(self.proc.stderr.readlines()[-20:]), daemon=True).start()
-        killer = threading.Timer(600 if self.workspace else 300, self.cancel)   # code takes longer
-        killer.daemon = True
-        killer.start()
+        self._killer = threading.Timer(600 if self.workspace else 300, self.cancel)   # code takes longer
+        self._killer.daemon = True
+        self._killer.start()
         return self.proc
+
+    def _disarm(self):
+        """Stop the time limit once the agent has exited; one still running keeps it, so it's stopped as before."""
+        if self._killer and (not self.proc or self.proc.poll() is not None):
+            self._killer.cancel()
 
     def _feed(self):
         try:
@@ -1572,6 +1577,7 @@ class Run:
 
     def _finish(self):
         code = self.proc.wait() if self.proc else 0
+        self._disarm()
         if self.cancelled:
             return
         if code != 0:
@@ -1594,6 +1600,8 @@ class Run:
         except Exception as e:
             if not self.cancelled:
                 self.emit("error", {"message": f"Something went wrong: {e}"})
+        finally:
+            self._disarm()
         self.emit("done", {})
 
     # Claude Code: headless print mode, streaming JSON. In the workbench it gets a shell and file tools inside its macOS

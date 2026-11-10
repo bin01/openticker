@@ -155,6 +155,89 @@ class NewYorkDate(unittest.TestCase):
         with mock.patch.object(X.pd.Timestamp, "now", lambda tz=None: late.tz_convert(tz)):
             self.assertEqual(X.ny_today(), dt.date(2026, 11, 6))
 
+class HealthBehind(Fresh):
+    """Before today's close comes in, the history row is not ok, but it isn't called stale unless it really is."""
+    def report(self, fetched_ago):
+        S, now = server.S, server.time.time()
+        saved = (S.last_tick, S.last_poll)
+        S.last_tick, S.history_fetched, S.dates = now, now - fetched_ago, ["2000-01-03"]
+        try:
+            with mock.patch.object(server, "market_open", lambda *a: False), \
+                 mock.patch.object(X, "session_hours", lambda d: (dt.time(0, 0), dt.time(0, 0))):
+                if dt.datetime.now(NY).time() < dt.time(0, 31):
+                    self.skipTest("too close to midnight in New York")
+                r = server.health_report()
+        finally:
+            S.last_tick, S.last_poll = saved
+        return next(x for x in r["rows"] if x["name"] == "Daily price history"), r["problems"]
+
+    def test_behind_is_one_problem(self):
+        row, problems = self.report(3600)
+        self.assertFalse(row["ok"])
+        self.assertTrue(any("closing prices haven't come in" in p for p in problems))
+        self.assertFalse(any("over a day" in p for p in problems))
+
+    def test_stale_is_still_reported(self):
+        row, problems = self.report(31 * 3600)
+        self.assertFalse(row["ok"])
+        self.assertTrue(any("over a day" in p for p in problems))
+
+
+class ImportOddRows(Fresh):
+    def post(self, path, body):
+        import io
+        import json
+        h = server.Handler.__new__(server.Handler)
+        raw = json.dumps(body).encode()
+        h.path, h.headers, h.rfile = path, {"Content-Type": "application/json", "Content-Length": str(len(raw))}, io.BytesIO(raw)
+        sent = []
+        h.send = lambda code, b, ctype: sent.append((code, json.loads(b)))
+        with mock.patch.object(server.agent, "may_ask", lambda handler: True):
+            h.do_POST()
+        return sent[0]
+
+    def test_rows_that_are_not_objects_are_skipped(self):
+        code, out = self.post("/api/me/positions/import", {"rows": [None, "AAPL", 5, {"t": "AAPL", "shares": 2, "cost": 250}]})
+        self.assertEqual(code, 200)
+        self.assertEqual((out["imported"], out["skipped"]), (1, ["?", "?", "?"]))
+
+
+class OptionChains(unittest.TestCase):
+    def test_each_expiry_is_downloaded_once(self):
+        exps = ["2026-11-20", "2026-11-27", "2026-12-04"]
+        df = pd.DataFrame({"strike": [100.0], "bid": [1.0], "ask": [1.2], "lastPrice": [1.1], "volume": [10], "openInterest": [20],
+                           "impliedVolatility": [0.3]})
+        t = mock.MagicMock(options=exps, fast_info={"last_price": 100.0})
+        t.option_chain.side_effect = lambda e: mock.Mock(calls=df, puts=df)
+        with mock.patch.object(X.yf, "Ticker", lambda sym: t), mock.patch.object(X, "ny_today", lambda: dt.date(2026, 11, 10)):
+            out = X.options("ABC", earnings_date="2026-11-21")
+        self.assertIsNotNone(out["near"])
+        self.assertIsNotNone(out["chain"])
+        self.assertEqual(sorted(c.args[0] for c in t.option_chain.call_args_list), exps)
+
+    def test_a_failed_download_is_tried_again(self):
+        t = mock.MagicMock(options=["2026-11-20"], fast_info={"last_price": 100.0})
+        t.option_chain.side_effect = RuntimeError("Yahoo said no")
+        with mock.patch.object(X.yf, "Ticker", lambda sym: t), mock.patch.object(X, "ny_today", lambda: dt.date(2026, 11, 10)):
+            out = X.options("ABC")
+        self.assertIsNone(out["near"])
+        self.assertIsNone(out["chain"])
+        self.assertEqual(t.option_chain.call_count, 3)
+
+
+class WorkbenchRemove(unittest.TestCase):
+    def test_removes_the_folder_and_never_raises(self):
+        import workbench
+        d = workbench.SPACES / "chat-test-remove"
+        (d / ".openticker").mkdir(parents=True, exist_ok=True)
+        (d / ".openticker" / "you.json").write_text("{}")
+        workbench.remove("chat-test-remove")
+        self.assertFalse(d.exists())
+        workbench.remove("chat-test-remove")     # already gone
+        workbench.remove("")                     # not a key
+        workbench.remove("../..")
+        self.assertTrue(workbench.SPACES.parent.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

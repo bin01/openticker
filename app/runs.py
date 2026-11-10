@@ -80,16 +80,16 @@ def summary(events, label):
     """What the conversation keeps of an answer: the text the person saw, the work log, which model, any error.
     Same rules the page uses: statuses before "Asking ..." are setup. What the agent wrote before a tool call is a
     note in the work log ({"n": text}); each tool call is a step ({"t", "k", "d"}); the text after the last is the answer."""
-    acc = {"text": "", "steps": [], "tool": False, "thk": False, "by": None, "error": None, "on": False}
+    acc = {"text": "", "steps": [], "thk": False, "by": None, "error": None, "on": False}
     for _, kind, p in events:
         if kind == "status" and not acc["on"]:
             acc["on"] = str(p.get("text", "")).startswith("Asking ")
             continue
         if kind == "reset":
-            acc["text"], acc["tool"], acc["error"] = "", False, None
+            acc["text"], acc["error"] = "", None
         elif kind == "text":
             acc["text"] += p.get("text", "")
-            acc["tool"] = acc["thk"] = False
+            acc["thk"] = False
         elif kind in ("status", "think"):
             if acc["text"].strip():          # what it wrote before this step becomes a note in the log
                 acc["steps"].append({"n": acc["text"].strip()[:1500]})
@@ -113,8 +113,6 @@ def summary(events, label):
                 if p.get("id") and st.get("id") == p["id"]:
                     st["x"] = str(p.get("text", ""))[-1200:]
                     break
-        elif kind == "turn" and acc["tool"]:
-            acc["text"], acc["tool"] = "", False
         elif kind == "meta" and p.get("model"):
             acc["by"] = p["model"]
         elif kind == "error":
@@ -235,7 +233,7 @@ def _finish(lv, label):
     files = workbench.outputs(lv.ws, row["started"]) if lv.ws else []
     lv.append("end", {"secs": secs, "by": acc["by"], "error": error if not acc["text"] else acc["error"], "files": files})
     lv.flush()
-    if row.get("chat_id"):
+    if _chat_kept(row):
         try:
             personal.chat_add(row["user_id"], row["chat_id"], {"role": "assistant", "text": acc["text"], "steps": acc["steps"][:160],
                                                                "by": acc["by"], "secs": secs, "error": error, "files": files, "ts": time.time()})
@@ -248,6 +246,12 @@ def _finish(lv, label):
     agent.srv.log(f"ask via {row['provider']} ({row['spec'].get('skill') or 'question'}) took {secs}s"
                   + (" after a restart" if row.get("resumes") else ""))
     threading.Timer(120, lambda: _drop(row["id"])).start()   # late readers still get it from memory for a bit
+
+
+def _chat_kept(row):
+    """Whether the run's conversation is still there to take its answer. server.ask() makes the conversation with the
+    question before the run starts, so one that's missing now was deleted, and the answer mustn't bring it back."""
+    return bool(row.get("chat_id")) and personal.chat(row["user_id"], row["chat_id"]) is not None
 
 
 def _drop(rid):
@@ -319,8 +323,8 @@ def _close_finished(row, events):
     instead of answering again, and save the answer to its conversation if it didn't get there."""
     end = next(p for _, k, p in reversed(events) if k == "end")
     acc = summary(events, _label(row["provider"]))
-    if row.get("chat_id"):
-        chat = personal.chat(row["user_id"], row["chat_id"]) or {}
+    if _chat_kept(row):
+        chat = personal.chat(row["user_id"], row["chat_id"])
         if not any(m.get("role") == "assistant" and (m.get("ts") or 0) >= row["started"] for m in chat.get("messages") or []):
             personal.chat_add(row["user_id"], row["chat_id"], {"role": "assistant", "text": acc["text"], "steps": acc["steps"][:160],
                                                                "by": acc["by"], "secs": end.get("secs"), "error": end.get("error"),
@@ -345,7 +349,7 @@ def recover():
             # hears it before the run is closed, as in _finish: a stop in between leaves an open run whose log ends,
             # which the next start closes through _close_finished without telling the conversation twice
             personal.run_events_add(row["id"], [((events[-1][0] if events else 0) + 1, "end", {"error": GAVE_UP})])
-            if row.get("chat_id"):
+            if _chat_kept(row):
                 personal.chat_add(row["user_id"], row["chat_id"], {"role": "assistant", "text": "", "steps": [], "by": _label(row["provider"]),
                                                                    "error": GAVE_UP, "ts": time.time()})
             personal.run_set(row["id"], status="error", ended=time.time())

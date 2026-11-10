@@ -3,7 +3,7 @@
 Everything is keyed by user_id. Today there is one local user ("me"); adding sign-in later only
 means resolving a different user_id per request, not reshaping the data.
 
-Storage is a SQLite file at data/app.db next to this file.
+Storage is a SQLite file at data/app.db under OPENTICKER_HOME (see paths.py).
 """
 
 from __future__ import annotations
@@ -13,11 +13,9 @@ import sqlite3
 import subprocess
 import threading
 import time
-from pathlib import Path
 
 import paths  # noqa: E402
 
-HERE = Path(__file__).resolve().parent
 DATA = paths.DATA
 DB_PATH = DATA / "app.db"
 DEFAULT_USER = "me"
@@ -445,6 +443,26 @@ def chat_add(uid, cid, msg):
     else:
         _exec("update chats set updated=? where id=?", (now, cid))
     _exec("insert into chat_msgs(chat_id, ts, body) values(?,?,?)", (cid, now, json.dumps(msg)))
+
+
+def chat_drop_answer(uid, cid):
+    """Asking again: take the answer after the conversation's last question off, so the new one replaces it.
+    Acts only when the last message is Tick's; returns what it took, so a retry that can't start can put it back."""
+    with _lock:
+        c = _conn.execute("select user_id from chats where id=?", (cid,)).fetchone()
+        if not c or c["user_id"] != uid:
+            return []
+        rows = _conn.execute("select id, body from chat_msgs where chat_id=? order by id", (cid,)).fetchall()
+        tail = []
+        for r in reversed(rows):
+            if json.loads(r["body"]).get("role") == "user":
+                break
+            tail.insert(0, r)
+        if not tail or len(tail) == len(rows):
+            return []
+        _conn.execute("delete from chat_msgs where chat_id=? and id>=?", (cid, tail[0]["id"]))
+        _conn.commit()
+    return [json.loads(r["body"]) for r in tail]
 
 
 def chat_delete(uid, cid):

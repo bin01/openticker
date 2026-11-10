@@ -1,6 +1,7 @@
 # Homebrew formula for OpenTicker.
 #
-#   brew install bin01/tap/openticker && openticker
+#   brew tap bin01/openticker https://github.com/bin01/openticker
+#   brew install openticker && openticker
 #
 # It installs a small `openticker` command. The first time you run it, it sets OpenTicker up in ~/.openticker with
 # the same installer as the one-line install (the code, a private Python, the background server, the Mac app),

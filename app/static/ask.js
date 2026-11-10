@@ -21,14 +21,14 @@ Object.assign(IC,{code:'<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>',file
 const TICK="Tick";
 /* skills ship with the server; this copy lets things render before /api/ask/info answers */
 const ASK_SKILLS_FALLBACK=[
-  {name:"stock-snapshot",label:"Quick take",scope:"stock"},{name:"explain-move",label:"Why is it moving?",scope:"stock"},
+  {name:"stock-snapshot",label:"Quick take",scope:"stock"},{name:"company-deep-dive",label:"Deep dive",scope:"stock"},{name:"explain-move",label:"Why is it moving?",scope:"stock"},
   {name:"earnings-preview",label:"Earnings",scope:"stock"},{name:"technical-analysis",label:"Read the chart",scope:"stock"},
   {name:"insider-trades",label:"Insider trades",scope:"stock"},{name:"bull-bear",label:"Bull vs bear",scope:"stock"},
   {name:"analyst-pulse",label:"What analysts say",scope:"stock"},{name:"valuation-check",label:"Is it expensive?",scope:"stock"},
   {name:"portfolio-checkup",label:"Check up on my portfolio",scope:"portfolio"},{name:"week-ahead",label:"What to watch this week",scope:"portfolio"},
   {name:"market-recap",label:"Market recap",scope:"market"},{name:"sector-rotation",label:"Which sectors lead?",scope:"market"},{name:"macro-check",label:"Macro backdrop",scope:"market"}];
 const ASK={info:null,infoAt:0,ctx:{scope:"market",t:null},pinned:false,also:[],conv:[],chat:load("tickChat",""),run:null,
-  prov:load("askProv","claude"),model:load("askModel",""),open:false,view:null,menu:null,mi:0,mood:"idle"};
+  prov:load("askProv","claude"),model:load("askModel",""),open:false,view:null,mi:0,mood:"idle"};
 let askToken=load("askToken","");
 
 /* pairing: the Mac shows a link like http://mac.local:8765/#pair=TOKEN; opening it on the phone stores the token */
@@ -182,7 +182,7 @@ function askShell(){
   });
   $("#askF").onsubmit=async e=>{ e.preventDefault(); const q=Q.value.trim();
     if(ASK.run){ await askStop(); if(!q) return; }   // Enter while Tick works steers: stop, then go again with the new words
-    if(!q) return; Q.value=""; grow(); hidePop(); askSend({q}); };
+    if(!q) return; hidePop(); if(await askSend({q})){ Q.value=""; grow(); paintSend(); } };   // a question that wasn't taken stays in the box
   $("#askClose").onclick=closeAsk;
   $("#askNew").onclick=()=>newChat();
   $("#askHist").onclick=()=>{ ASK.view=ASK.view==="history"?null:"history"; askRender(); };
@@ -239,7 +239,7 @@ async function openAsk(o={}){
   ASK.open=true; save("tickOpen","1"); applyDock();
   if(ASK.view==="history"&&(o.skill||o.q)) ASK.view=null;
   askRender(); await askInfo(); await restoreChat(); askRender();
-  if(o.skill||o.q&&o.send) askSend({skill:o.skill,q:o.q});
+  if(o.skill||o.q&&o.send) askSend({skill:o.skill,q:o.q}).then(ok=>{ if(!ok&&o.q) $("#askQ").value=o.q; });
   else{ if(o.q) $("#askQ").value=o.q; if(innerWidth>760&&o.focus!==false) setTimeout(()=>$("#askQ").focus(),60); }
 }
 function closeAsk(){ ASK.open=false; save("tickOpen","0"); hideMenus(); applyDock(); setTimeout(tickLook,50); }
@@ -275,7 +275,7 @@ document.addEventListener("click",async e=>{
   if(b.hasAttribute("data-hist-new")) return newChat();
   const id=b.dataset.histDel; const li=b.closest("li"); li.classList.add("gone");
   await fetch("/api/ask/chat/delete",{method:"POST",headers:askHeaders(),body:JSON.stringify({id})}).catch(()=>{});
-  if(id===ASK.chat){ ASK.chat=""; save("tickChat",""); ASK.conv=[]; }
+  if(id===ASK.chat){ askLeave(); ASK.chat=""; save("tickChat",""); ASK.conv=[]; }
   setTimeout(()=>historyView(),180);
 });
 
@@ -300,7 +300,7 @@ function askCtxMenu(){
 setInterval(()=>{ if(!ASK.open) return;
   if(!ASK.conv.length&&!ASK.view&&!ASK.run&&noticings(ASK.ctx).length!==(ASK.notes||[]).length) askRender();   // the data arrived after Tick opened
   if(ASK.pinned) return; const c=askDefaultCtx(); if(c.scope!==ASK.ctx.scope||c.t!==ASK.ctx.t){ ASK.ctx=c; renderCtx(); renderPlaceholder(); if(!ASK.conv.length&&!ASK.view) askRender(); } },350);
-function renderPlaceholder(){ const p=askProv(), c=ASK.ctx; const Q=$("#askQ"); if(!Q) return;
+function renderPlaceholder(){ const c=ASK.ctx; const Q=$("#askQ"); if(!Q) return;
   Q.placeholder=ASK.conv.length?`Reply to ${TICK}`:`${c.scope==="stock"?`Ask ${TICK} about ${c.t}`:c.scope==="portfolio"?`Ask ${TICK} about your stocks`:`Ask ${TICK} about the market`}. Type @ to add a stock, / for a playbook.`; }
 
 /* @ and / menus --------------------------------------------------------------------------------------- */
@@ -369,7 +369,7 @@ function noticings(c){
     const breadth=n?up/n:null, narrow=breadth!=null&&((spy>0&&breadth<.45)||(spy<0&&breadth>.55));
     out.push({dir:cls(spy),text:`SPY is ${spy>=0?"up":"down"} <b class="${cls(spy)}">${pct(spy,2).replace(/^[+−]/,"")}</b>${breadth!=null?narrow?`, but only ${Math.round(breadth*100)}% of S&amp;P 500 stocks ${spy>=0?"rose":"fell"}. A narrow day.`:`, and ${Math.round(breadth*100)}% of S&amp;P 500 stocks rose.`:"."}`,act:"Recap the day",go:{scope:"market",skill:"market-recap"}});
   }
-  const er=mine.map(t=>({t,...(EARN?.[t]||{})})).filter(e=>e.date&&e.reported==null&&e.date>=today&&e.date<=soon).sort((a,b)=>a.date<b.date?-1:1)[0];
+  const er=[...own,...watched].map(t=>({t,...(EARN?.[t]||{})})).filter(e=>e.date&&e.reported==null&&e.date>=today&&e.date<=soon).sort((a,b)=>a.date<b.date?-1:1)[0];
   if(er){ out.push({dir:"ev",text:`<b>${esc(er.t)}</b> reports earnings ${day(er.date)}.`,act:"Preview it",go:{scope:"stock",t:er.t,skill:"earnings-preview"}}); }
   return out.slice(0,3);
 }
@@ -419,7 +419,7 @@ function trace(m,i){
   }).join("");
   if(live&&!items.length) body=`<div class="trs now${seen?"":" fresh"}"><i class="sb"></i><span class="sl">${esc(m.status||"Thinking")}</span></div>`;
   const sig=`${items.length}|${live?1:0}|${m.text?1:0}|${items.length?"":esc(m.status||"")}`;
-  if(live) return `<div class="tr going" data-sig="${sig}"><div class="trh"><i class="spin"></i><span class="sl">${m.text?"Writing":"Working"}</span><em class="el" data-since="${m.t0}">${stepClock(m.t0)}</em></div><div class="trb">${body}</div></div>`;
+  if(live) return `<div class="tr" data-sig="${sig}"><div class="trh"><i class="spin"></i><span class="sl">${m.text?"Writing":"Working"}</span><em class="el" data-since="${m.t0}">${stepClock(m.t0)}</em></div><div class="trb">${body}</div></div>`;
   const key=`${i}-tr`;
   return `<details class="tr" data-k="${key}" data-sig="${sig}"${trIsOpen(key,false)?" open":""}><summary>Worked for <b>${dur(m.secs||0)}</b><span class="hn">${nSteps} step${nSteps===1?"":"s"}</span>${ic("chevr",13)}</summary><div class="trb">${body}<button class="trhide" data-trhide="${key}">Hide steps</button></div></details>`;
 }
@@ -464,7 +464,7 @@ function askRender(){
 }
 function amHTML(m,i){
     const live=!m.done, tr=trace(m,i);
-    return `<div class="am a${live?" busy":""}${i>=AM_SEEN?" new":""}" data-i="${i}">
+    return `<div class="am a${i>=AM_SEEN?" new":""}" data-i="${i}">
       ${tr}
       <div class="md">${mdToHtml(m.text,m)}${live&&m.text?`<span class="caret"></span>`:""}</div>${askFiles(m)}
       ${m.error?`<div class="aerr">${esc(m.error)}</div>`:""}
@@ -606,8 +606,12 @@ setInterval(()=>{ if(ASK.setup&&document.visibilityState==="visible") agentsChec
 const agBack=()=>{ if(document.visibilityState!=="visible"||Date.now()-agLast<2000||!ASK.info?.local) return;
   if(ASK.setup||(ASK.info?.providers||[]).some(p=>p.state==="signin"||p.state==="off")||ASK.info&&!askProv()) agentsCheck(); };
 addEventListener("focus",agBack); document.addEventListener("visibilitychange",agBack);
+/* whether phones can reach OpenTicker at all (/api/app): with that off, the pairing link is this Mac's own address */
+async function askApp(){ if(!ASK.app) try{ ASK.app=await (await fetch("/api/app")).json(); }catch(e){} return ASK.app; }
 function askPair(m,info){
-  const pb=m.querySelector("[data-ask-pair]"); if(pb) pb.onclick=e=>{ e.stopPropagation(); const box=$("#pairBox"); box.hidden=false;
+  const pb=m.querySelector("[data-ask-pair]"); if(pb) pb.onclick=async e=>{ e.stopPropagation(); const box=$("#pairBox"); box.hidden=false;
+    if((await askApp())?.phone===false){ box.innerHTML=`<p>Your phone can't reach OpenTicker yet. Turn that on in <button type="button" class="lnk" data-set-phone>Settings, Your phone</button>.</p>`;
+      box.querySelector("[data-set-phone]").onclick=ev=>{ ev.stopPropagation(); hideMenus(); openSettings("phone"); }; return; }
     box.innerHTML=`<p>Open this link on your phone (same Wi-Fi). It pairs the phone so ${TICK} works there too.</p>${pairRow('id="pairCopy"')}<p class="hint">Send it with AirDrop or Messages. Anyone with this link on your Wi-Fi can talk to ${TICK}, so keep it to yourself.</p>`;
     $("#pairCopy").onclick=ev=>{ ev.stopPropagation(); navigator.clipboard?.writeText(info.pair); $("#pairCopy").innerHTML=ic("check",13)+"Copied"; };
     box.querySelector("[data-qr]").onclick=ev=>{ ev.stopPropagation(); qrToggle(ev.currentTarget); }; };
@@ -657,34 +661,39 @@ function askModelMenu(more){
 }
 
 /* streaming ------------------------------------------------------------------------------------------ */
+/* true once the question is taken; false leaves it with the person (an answer is running, or no agent is ready) */
 async function askSend({q,skill,retry}){
-  if(ASK.run) return;
-  if(!askProv()){ await askInfo(true); askRender(); if(!askProv()) return; }
+  if(ASK.run) return false;
+  if(!askProv()){ await askInfo(true); askRender(); if(!askProv()){ if(ASK.info?.allowed!==false) say(ASK.info?"Choose an agent first. Your question is still there.":"Still connecting. Try again in a moment.","err",3200); return false; } }
   if(!ASK.chat){ ASK.chat=newChatId(); save("tickChat",ASK.chat); }
   ASK.view=null;
   const prov=askProv(), c={...ASK.ctx}, also=[...ASK.also], sk=skill?askSkill(skill):null;
   if(sk&&sk.scope!==c.scope&&sk.scope!=="stock"){ c.scope=sk.scope; c.t=null; }
   const shown=q||(sk?(sk.prompt||sk.label).replace("{t}",c.t||"this stock"):"");
   const full=q&&also.length?`${q}\n\n(Also bring in: ${also.join(", ")}. Use openticker for their data.)`:q;
-  const history=ASK.conv.filter(m=>m.text&&!m.error).map(m=>({role:m.role,text:m.text})).slice(-6);
+  const history=(retry?ASK.conv.slice(0,-1):ASK.conv).filter(m=>m.text&&!m.error).map(m=>({role:m.role,text:m.text})).slice(-6);   // asking again: the question is already there
   if(!retry) ASK.conv.push({role:"user",text:shown,ctx:c,skill:sk?.name||null});
   const msg=askLiveMsg(askProvLabel(prov)); ASK.conv.push(msg); ASK.stick=true;
   ASK.also=[];
   const ctl=new AbortController(); ASK.run=ctl; setMood("think"); askRender();
+  askPost(msg,prov,ctl,{provider:prov.id,model:askModelOf(prov)||undefined,effort:(prov.efforts?.length&&askEffortOf(prov))||undefined,scope:c.scope,t:c.t,
+    skill:sk&&!q?sk.name:undefined,q:full||undefined,show:shown,history,chat:ASK.chat,retry:retry?true:undefined});
+  return true;
+}
+async function askPost(msg,prov,ctl,body){
   let first=null;
   try{
-    first=await fetch("/api/ask",{method:"POST",headers:askHeaders(),signal:ctl.signal,body:JSON.stringify({provider:prov.id,model:askModelOf(prov)||undefined,effort:(prov.efforts?.length&&askEffortOf(prov))||undefined,scope:c.scope,t:c.t,
-      skill:sk&&!q?sk.name:undefined,q:full||undefined,show:shown,history,chat:ASK.chat})});
+    first=await fetch("/api/ask",{method:"POST",headers:askHeaders(),signal:ctl.signal,body:JSON.stringify(body)});
     if(!first.ok){ const d=await first.json().catch(()=>({})); throw new Error(d.error||`${TICK} didn't answer.`); }
   }catch(e){ if(e.name!=="AbortError") msg.error=e.message==="Failed to fetch"?"Couldn't reach OpenTicker on your Mac.":e.message; first=null; }
   await askDrive(msg,prov,ctl,first);
 }
 /* An answer is a log on the server (runs.py). The page only reads it: closing, reloading or switching conversations
    never stops the agent, and if the connection drops (OpenTicker restarting) the page reattaches and reads it again. */
-const askLiveMsg=by=>({role:"assistant",text:"",status:"Gathering the data",steps:[],stepAt:[],done:false,by,t0:Date.now()});
+const askLiveMsg=by=>({role:"assistant",text:"",status:"Gathering the data",steps:[],done:false,by,t0:Date.now()});
 function askApply(msg,prov,st,ev,data){
   if(ev==="run"){ msg.run=data.id; msg.t0=data.started*1000; }
-  else if(ev==="text"){ if(!msg.text) msg.textAt=Date.now(); msg.text+=data.text; st.toolSince=st.thk=false; msg.status="Writing"; }
+  else if(ev==="text"){ msg.text+=data.text; st.thk=false; msg.status="Writing"; }
   else if(ev==="think"){ if(msg.text.trim()){ msg.steps.push({n:msg.text.trim()}); msg.text=""; }   // a summary of its thinking, one note per block
     const l=msg.steps[msg.steps.length-1]; if(data.new||!st.thk||!l?.th) msg.steps.push({n:"",th:1});
     msg.steps[msg.steps.length-1].n+=data.text||""; st.thk=true; msg.status="Thinking"; }
@@ -693,8 +702,7 @@ function askApply(msg,prov,st,ev,data){
     if(st.started){ if(msg.text.trim()){ msg.steps.push({n:msg.text.trim()}); msg.text=""; }   // what it wrote before this step is a note in the log
       msg.steps.push({t:data.text,k:data.kind,d:data.detail,id:data.id,at:Date.now()}); }
     else if(/^Asking /.test(data.text)){ st.started=true; msg.status="Reading the numbers"; } }
-  else if(ev==="reset"){ msg.text=""; msg.error=null; st.toolSince=false; }
-  else if(ev==="turn"){ if(st.toolSince){ msg.text=""; st.toolSince=false; } }   // drop "let me check…" narration once the agent has looked something up
+  else if(ev==="reset"){ msg.text=""; msg.error=null; }
   else if(ev==="meta"&&data.model){ msg.by=`${prov?.label||msg.by.split(" · ")[0]} · ${data.model}`; if(prov){ const k=askModelOf(prov); prov.seen={...(prov.seen||{}),[k]:data.model}; } }
   else if(ev==="error") msg.error=data.message;
   else if(ev==="end"){ st.ended=true; msg.secs=data.secs; if(data.by) msg.by=data.by; if(data.error&&!msg.text) msg.error=data.error; if(data.files?.length) msg.files=data.files; }
@@ -714,7 +722,7 @@ async function askRead(r,msg,prov,st,paint){
 }
 async function askDrive(msg,prov,ctl,first){
   let raf=0; const paint=()=>{ if(ASK.run!==ctl) return; if(!raf) raf=requestAnimationFrame(()=>{ raf=0; if(ASK.run!==ctl) return; if(!askPatchLive()) askRender(); else sayStep(msg.status); }); };
-  const st={started:false,toolSince:false,ended:false};
+  const st={started:false,ended:false};
   for(let r=first,tries=0;;){
     try{
       if(!r&&msg.run){ r=await fetch(`/api/ask/run?id=${msg.run}&after=0`,{headers:askHeaders(),signal:ctl.signal}); if(!r.ok) throw new Error("gone"); }
@@ -727,7 +735,7 @@ async function askDrive(msg,prov,ctl,first){
     msg.status="Reconnecting"; paint();
     await new Promise(f=>setTimeout(f,Math.min(600*tries,2500)));
     if(ctl.signal.aborted) break;
-    Object.assign(msg,{text:"",steps:[],stepAt:[],error:null,status:"Reconnecting"}); Object.assign(st,{started:false,toolSince:false});
+    Object.assign(msg,{text:"",steps:[],error:null,status:"Reconnecting"}); st.started=false;
   }
   if(ASK.run!==ctl) return;   // the person moved to another conversation; the answer is saved there
   msg.done=true; msg.status="";
@@ -757,8 +765,8 @@ async function askStop(){
   if(ASK.run===ctl){ ctl.abort(); }
 }
 function askLeave(){ const ctl=ASK.run; if(!ctl) return; ASK.run=null; ctl.abort(); setMood("idle"); }
-function askRetry(){ if(ASK.run) return; const i=ASK.conv.length-1; if(ASK.conv[i]?.role!=="assistant") return; ASK.conv.pop(); const u=ASK.conv[ASK.conv.length-1]; if(!u) return;
-  ASK.ctx=u.ctx||ASK.ctx; askSend(u.skill?{skill:u.skill,retry:true}:{q:u.text,retry:true}); }
+function askRetry(){ if(ASK.run) return; const i=ASK.conv.length-1; if(ASK.conv[i]?.role!=="assistant") return; const a=ASK.conv.pop(), u=ASK.conv[ASK.conv.length-1]; if(!u){ ASK.conv.push(a); return; }
+  ASK.ctx=u.ctx||ASK.ctx; askSend(u.skill?{skill:u.skill,retry:true}:{q:u.text,retry:true}).then(ok=>{ if(!ok){ ASK.conv.push(a); askRender(); } }); }
 /* when an answer lands while Tick is hidden, the header button says so */
 function tickPing(m){ if(ASK.open) return; const b=$("#askOpen"), t=m.error?`${TICK} hit a problem`:`${TICK} has an answer`;
   if(b){ b.classList.add("ping"); b.title=t; }
@@ -790,10 +798,15 @@ function askFiles(m){
   return `<div class="tkfiles">${f.map(x=>askIsImg(x.name)?`<figure class="tkimg"><img src="${esc(askFileURL(x.name))}" alt="${esc(x.name)}" loading="lazy" onerror="this.parentNode.classList.add('bad')"></figure>`
     :`<a class="tkfile" href="${esc(askFileURL(x.name))}" download="${esc(x.name)}">${ic("file",14)}<span>${esc(x.name)}</span><em>${askSize(x.size)}</em></a>`).join("")}</div>`;
 }
+/* the tags this makes are set aside (\0n\0) while bold and italics run, so formatting never reaches into an alt, a src, an href or code */
 function mdInline(s){
-  return s.replace(/!\[([^\]]*)\]\((?:\.\/)?(?:out\/)?([\w][\w .()+-]*\.(?:png|jpe?g|gif|webp))\)/gi,(_,alt,n)=>`<figure class="tkimg"><img src="${esc(askFileURL(n))}" alt="${alt}" loading="lazy" onerror="this.parentNode.classList.add('bad')">${alt?`<figcaption>${alt}</figcaption>`:""}</figure>`)
-     .replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/(^|[\s(])\*([^*\s][^*]*)\*/g,"$1<i>$2</i>")
-     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  const keep=[], put=h=>`\0${keep.push(h)-1}\0`;
+  return s.replace(/\0/g,"").replace(/!\[([^\]]*)\]\((?:\.\/)?(?:out\/)?([\w][\w .()+-]*\.(?:png|jpe?g|gif|webp))\)/gi,(_,alt,n)=>{ alt=alt.replace(/\*+|`/g,"");
+       return put(`<figure class="tkimg"><img src="${esc(askFileURL(n))}" alt="${alt}" loading="lazy" onerror="this.parentNode.classList.add('bad')">${alt?`<figcaption>${alt}</figcaption>`:""}</figure>`); })
+     .replace(/`([^`]+)`/g,(_,c)=>put(`<code>${c}</code>`))
+     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s\0]+)\)/g,(_,t,u)=>put(`<a href="${u}" target="_blank" rel="noopener noreferrer">`)+t+put("</a>"))
+     .replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/(^|[\s(])\*([^*\s][^*]*)\*/g,"$1<i>$2</i>")
+     .replace(/\0(\d+)\0/g,(_,k)=>keep[k]);
 }
 function linkTickers(html,skip){
   if(!base?.px) return html;
@@ -814,7 +827,7 @@ function mdToHtml(src,msg){
       for(i++;i<L.length;i++){ if(/^```\s*$/.test(L[i].trim())){ closed=true; break; } body.push(L[i]); }
       if(lang==="chart"){ const raw=body.join("\n").replace(/&quot;/g,'"').replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&");
         let spec=null; try{ spec=closed?JSON.parse(raw):null; }catch(e){}
-        out.push(spec?`<figure class="tkc" data-c="${esc(encodeURIComponent(JSON.stringify(spec)))}"></figure>`:closed?"":`<figure class="tkc wait"><span>Drawing a chart…</span></figure>`); }
+        out.push(spec?`<figure class="tkc" data-c="${esc(encodeURIComponent(JSON.stringify(spec)))}"></figure>`:closed?"":msg&&!msg.done?`<figure class="tkc wait"><span>Drawing a chart…</span></figure>`:`<pre class="mdpre"><code>${body.join("\n")}</code></pre>`); }   // a finished answer whose chart never closed shows what it wrote
       else out.push(`<pre class="mdpre"><code>${body.join("\n")}</code></pre>`);
       continue; }
     if(/^\|.*\|$/.test(tr)&&i+1<L.length&&/^\|[\s:|-]+\|$/.test(L[i+1].trim())){
@@ -849,7 +862,7 @@ function chTicks(lo,hi,n=4){ if(lo===hi){ lo-=1; hi+=1; } const raw=(hi-lo)/n, p
   const out=[]; for(let v=Math.ceil(lo/st)*st;v<=hi+st*1e-9;v+=st) out.push(+v.toFixed(10)); return out; }
 function chartSpec(c){
   if(!c||!Array.isArray(c.x)||!Array.isArray(c.series)) return null;
-  const S=c.series.filter(s=>s&&Array.isArray(s.values)).slice(0,4).map(s=>({name:String(s.name||""),values:s.values.slice(0,120).map(v=>v==null||v===""?null:+v)}));
+  const S=c.series.filter(s=>s&&Array.isArray(s.values)).slice(0,4).map(s=>({name:String(s.name||""),values:s.values.slice(0,120).map(v=>(typeof v==="number"||typeof v==="string"&&v.trim())&&isFinite(+v)?+v:null)}));   // anything that isn't a number is a gap
   if(!S.length||!c.x.length) return null;
   return {type:c.type==="bar"?"bar":"line",title:String(c.title||""),unit:["%","$","pts"].includes(c.unit)?c.unit:"",x:c.x.slice(0,120).map(String),series:S};
 }
@@ -951,7 +964,7 @@ function tickFloat(){
   const saved=String(load("tickFloat","")).split(",").map(Number); let pos=place(...(saved.length===2&&saved.every(isFinite)?saved:[24,24]));
   addEventListener("resize",()=>{ pos=place(...pos); });
   let drag=null, moved=false;
-  f.addEventListener("pointerdown",e=>{ if(e.button!==0) return; const r=f.getBoundingClientRect(); drag={x:e.clientX,y:e.clientY,r0:pos[0],b0:pos[1]}; moved=false; f.setPointerCapture(e.pointerId); });
+  f.addEventListener("pointerdown",e=>{ if(e.button!==0) return; drag={x:e.clientX,y:e.clientY,r0:pos[0],b0:pos[1]}; moved=false; f.setPointerCapture(e.pointerId); });
   f.addEventListener("pointermove",e=>{ if(!drag) return; const dx=e.clientX-drag.x, dy=e.clientY-drag.y;
     if(!moved&&Math.hypot(dx,dy)<5) return; moved=true; f.classList.add("dragging"); pos=place(drag.r0-dx,drag.b0-dy); });
   const end=()=>{ if(!drag) return; drag=null; f.classList.remove("dragging"); if(moved) save("tickFloat",pos.join(",")); };
@@ -971,7 +984,6 @@ askInfo().then(()=>{ const pref=new URLSearchParams(location.search).get("tick")
 /* ---- Mac app: let the native window match the page (title bar color, light/dark) ---- */
 (function(){
   const h=window.webkit&&webkit.messageHandlers&&webkit.messageHandlers.ot; if(!h) return;
-  document.documentElement.classList.add("in-mac-app");
   const mq=matchMedia("(prefers-color-scheme: dark)");
   const post=()=>{ const t=document.documentElement.dataset.theme; h.postMessage({bg:getComputedStyle(document.body).backgroundColor,dark:t?t==="dark":mq.matches}); };
   post(); mq.addEventListener("change",post);

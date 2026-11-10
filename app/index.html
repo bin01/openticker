@@ -85,7 +85,7 @@ header.bar{position:sticky;top:0;z-index:15;background:color-mix(in srgb,var(--b
 .pcard .t{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .pcard .tk{font:700 16px/1 var(--f-display);letter-spacing:-.01em}
 .pcard .nm{font-size:11.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pcard .r{font:600 26px/1.1 var(--f-mono);margin-top:8px;letter-spacing:-.02em}
+.pcard .r{font:600 26px/1.1 var(--f-mono);margin-top:8px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 .pcard .rw{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-top:8px}.pcard .rw .r{margin-top:0}
 .pcard .px{font:500 15px/1 var(--f-mono);color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
 .pcard .meta{display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-2);margin-top:2px;gap:8px}
@@ -196,7 +196,7 @@ svg .mono{font-family:var(--f-mono)}
 table.mx{border-collapse:separate;border-spacing:2px;width:100%;min-width:560px}
 .mx th{font:600 10.5px/1 var(--f-body);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);padding:4px 6px;text-align:center}
 .mx th.l{text-align:left}
-.mx td{padding:0;height:26px;text-align:center;font:500 11.5px var(--f-mono);border-radius:4px}
+.mx td{padding:0;height:26px;text-align:center;font:500 11.5px var(--f-mono);border-radius:4px;font-variant-numeric:tabular-nums}
 .mx td.l{text-align:left;padding:0 6px;font:600 12.5px var(--f-mono);white-space:nowrap}
 .mx td.l small{font:400 11px var(--f-body);color:var(--ink-3);margin-left:6px}
 .mx td.w{color:var(--ink-2);font-size:11px}
@@ -215,8 +215,8 @@ input[type=search]{font:inherit;padding:7px 10px;border:1px solid var(--rule);bo
 .hc{display:inline-block;padding:2px 6px;border-radius:5px;min-width:64px}
 table.hold{border-collapse:collapse;width:100%;min-width:1060px}
 .hold th,.hold td{padding:7px 9px;text-align:right;border-bottom:1px solid var(--grid);white-space:nowrap}
-.hold th{font:600 10.5px/1.2 var(--f-body);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);cursor:pointer;user-select:none;position:sticky;top:0;background:var(--panel)}
-.hold th:hover{color:var(--ink)}
+.hold th{font:600 10.5px/1.2 var(--f-body);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);user-select:none;position:sticky;top:0;background:var(--panel)}
+.hold th:is([data-sort],.sortable){cursor:pointer}.hold th[data-sort]:hover{color:var(--ink)}
 .hold th.l,.hold td.l{text-align:left}
 .hold td.name{color:var(--ink-2);max-width:200px;overflow:hidden;text-overflow:ellipsis}
 .hold td.sector{color:var(--ink-3);font-size:12px;max-width:150px;overflow:hidden;text-overflow:ellipsis}
@@ -236,8 +236,8 @@ table.hold{border-collapse:collapse;width:100%;min-width:1060px}
 /* drawer */
 .scrim{position:fixed;inset:0;background:rgba(10,12,11,.32);opacity:0;pointer-events:none;transition:opacity .2s;z-index:30}
 .scrim.open{opacity:1;pointer-events:auto}
-.drawer{position:fixed;top:0;right:0;bottom:0;width:min(600px,100vw);background:var(--panel);border-left:1px solid var(--rule);box-shadow:-20px 0 40px rgba(0,0,0,.12);transform:translateX(104%);transition:transform .25s cubic-bezier(.2,.8,.2,1);z-index:31;overflow-y:scroll;padding:20px 22px 40px;padding-right:max(22px,env(safe-area-inset-right,0px))}
-.drawer.open{transform:none}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(600px,100vw);background:var(--panel);border-left:1px solid var(--rule);box-shadow:-20px 0 40px rgba(0,0,0,.12);transform:translateX(104%);visibility:hidden;transition:transform .25s cubic-bezier(.2,.8,.2,1),visibility 0s .25s;z-index:31;overflow-y:scroll;padding:20px 22px 40px;padding-right:max(22px,env(safe-area-inset-right,0px))}
+.drawer.open{transform:none;visibility:visible;transition:transform .25s cubic-bezier(.2,.8,.2,1)}
 .dr-h{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .dr-h h3{margin:0;font:700 28px/1 var(--f-display);letter-spacing:-.02em}
 .dr-h .nm{color:var(--ink-2);margin-top:4px}
@@ -332,7 +332,6 @@ table.hz{width:100%;border-collapse:collapse;font-size:13px}
 .acts .frm{flex-basis:100%}
 .mya{display:flex;flex-wrap:wrap;gap:6px;flex-basis:100%}
 .mya .lnk{padding:0 0 0 4px;color:var(--ink-3)}
-.segsep{width:1px;background:var(--rule);margin:4px 2px}
 .bell{position:relative;width:34px;padding:0;font-size:14px}
 .bell .bd{position:absolute;top:-6px;right:-6px;background:var(--down);color:#fff;border-radius:999px;font:700 10px/16px var(--f-body);min-width:16px;padding:0 4px;font-style:normal}
 .evs{list-style:none;margin:0 -8px;padding:0}
@@ -403,15 +402,15 @@ tr:hover .lotb{color:var(--ink-2)}
 @media (max-width:600px){
   .mine-tw{display:none}
   .pcards{display:grid;gap:8px;margin-top:4px}
-  .pcard{display:flex;flex-direction:column;padding:4px;border:1px solid var(--rule);border-radius:12px;background:var(--panel);color:var(--ink)}
+  .poscard{display:flex;flex-direction:column;min-width:0;padding:4px;border:1px solid var(--rule);border-radius:12px;background:var(--panel);color:var(--ink)}
   .pcmain{display:flex;flex-direction:column;gap:5px;padding:8px 10px;border:0;border-radius:9px;background:none;color:inherit;text-align:left;font:inherit;cursor:pointer}
   .pcmain:active{background:var(--grid)}
-  .pcard .lotx{margin:4px 6px 6px;padding:8px 10px 6px}
-  .pcard .lotx svg,#drMine .lotx svg{display:block;width:14px;height:14px;margin:0}
-  .pcard .lx,#drMine .lx{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 30px;grid-template-areas:"s c x" "d g g";row-gap:6px;padding:6px 0;border-top:1px solid var(--grid)}
-  .pcard .lxh,#drMine .lxh{grid-template-areas:"s c x";border-top:0;padding-bottom:0}.pcard .lxh span:nth-child(3),.pcard .lxh span:nth-child(4),#drMine .lxh span:nth-child(3),#drMine .lxh span:nth-child(4){display:none}
-  :is(.pcard,#drMine) .lx>:nth-child(1){grid-area:s}:is(.pcard,#drMine) .lx>:nth-child(2){grid-area:c}:is(.pcard,#drMine) .lx>:nth-child(3){grid-area:d}:is(.pcard,#drMine) .lx>:nth-child(4){grid-area:g;text-align:right;padding-right:6px}:is(.pcard,#drMine) .lx>:nth-child(5){grid-area:x}
-  :is(.pcard,#drMine) .lxh+.lx{border-top:0}
+  .poscard .lotx{margin:4px 6px 6px;padding:8px 10px 6px}
+  .poscard .lotx svg,#drMine .lotx svg{display:block;width:14px;height:14px;margin:0}
+  .poscard .lx,#drMine .lx{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 30px;grid-template-areas:"s c x" "d g g";row-gap:6px;padding:6px 0;border-top:1px solid var(--grid)}
+  .poscard .lxh,#drMine .lxh{grid-template-areas:"s c x";border-top:0;padding-bottom:0}.poscard .lxh span:nth-child(3),.poscard .lxh span:nth-child(4),#drMine .lxh span:nth-child(3),#drMine .lxh span:nth-child(4){display:none}
+  :is(.poscard,#drMine) .lx>:nth-child(1){grid-area:s}:is(.poscard,#drMine) .lx>:nth-child(2){grid-area:c}:is(.poscard,#drMine) .lx>:nth-child(3){grid-area:d}:is(.poscard,#drMine) .lx>:nth-child(4){grid-area:g;text-align:right;padding-right:6px}:is(.poscard,#drMine) .lx>:nth-child(5){grid-area:x}
+  :is(.poscard,#drMine) .lxh+.lx{border-top:0}
   .toast{bottom:calc(76px + env(safe-area-inset-bottom))}
   .lx input{height:34px;font-size:15px}
   .wmain{grid-template-columns:58px minmax(0,1fr) auto;row-gap:2px}.wmain .wn{grid-column:1/3;grid-row:2;font-size:12px;color:var(--ink-3)}.wmain .wp{grid-column:3;grid-row:1}.wmain .wc{grid-column:3;grid-row:2;font-size:12px}.wmain .wh{display:none}.wl .wh2{display:none}
@@ -479,7 +478,6 @@ tr:hover .lotb{color:var(--ink-2)}
 #ts:focus+.skbd,#ts:not(:placeholder-shown)+.skbd{display:none}
 #ts{width:320px;height:34px;border-radius:10px;padding:0 44px 0 12px;font-size:14px}
 .toolbar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding-block:0 10px}
-.toolbar[hidden]{display:none}
 .pulse.n2{grid-template-columns:repeat(2,minmax(0,1fr))}.pulse.n1{grid-template-columns:minmax(0,1fr)}
 
 .page{display:flex;flex-direction:column;gap:16px;margin-top:20px}
@@ -539,7 +537,7 @@ tr:hover .lotb{color:var(--ink-2)}
 .lvbody{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:20px;align-items:start}
 .lvchart{min-width:0;touch-action:pan-y}.lvchart svg{display:block;width:100%;height:auto}
 .lvside{border-left:1px solid var(--rule);padding-left:18px;display:flex;flex-direction:column;gap:10px;min-height:0}
-#lvLad.scr{-webkit-mask-image:linear-gradient(transparent,#000 14px,#000 calc(100% - 14px),transparent);mask-image:linear-gradient(transparent,#000 14px,#000 calc(100% - 14px),transparent)}
+#lvLad.lvfade{-webkit-mask-image:linear-gradient(transparent,#000 14px,#000 calc(100% - 14px),transparent);mask-image:linear-gradient(transparent,#000 14px,#000 calc(100% - 14px),transparent)}
 .lvside>.lbl{padding-left:8px}
 #lvLad{position:relative;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;margin-right:-8px;padding-right:8px;scrollbar-width:thin}
 .lvlad{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
@@ -751,7 +749,7 @@ th.sortable{color:var(--ink-2)}th.sortable:hover{color:var(--accent)}
 .drawer.full #drPane{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 40px;align-content:start}
 .drawer.full #drPane>*{grid-column:1/-1}
 .drawer.full #drPane>.dr-sec.half{grid-column:auto}
-.rtrend .rt{display:grid;grid-template-columns:96px minmax(0,1fr) 30px;gap:10px;align-items:center;padding:4px 0;font-size:12px}
+.rtrend .rtrow{display:grid;grid-template-columns:96px minmax(0,1fr) 30px;gap:10px;align-items:center;padding:4px 0;font-size:12px}
 .rbar{display:flex;height:14px;border-radius:4px;overflow:hidden;background:var(--grid);gap:1px}
 .rbar i{display:block;height:100%}
 .rtrend .meter-l{justify-content:flex-start;gap:14px;margin-left:106px!important;flex-wrap:wrap}
@@ -860,7 +858,6 @@ html{overflow-y:scroll}
 .tabbar{display:none}
 @media (max-width:760px){
   .tabbar{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:0;right:0;bottom:0;z-index:20;background:color-mix(in srgb,var(--panel) 90%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--rule);padding:6px 4px max(8px,env(safe-area-inset-bottom,0px))}
-  .tabbar a{display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px 0;color:var(--ink-3);text-decoration:none;font:600 10.5px/1.1 var(--f-body)}
   .tabbar>a,.tabbar>button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px 0;color:var(--ink-3);text-decoration:none;font:600 10.5px/1.1 var(--f-body);border:0;background:none;cursor:pointer;-webkit-tap-highlight-color:transparent}
   .tabbar>a.on,.tabbar>button.on{color:var(--ink)}.tabbar>a.on .ic,.tabbar>button.on .ic{color:var(--accent)}
   .tbmenu{position:absolute;right:max(8px,env(safe-area-inset-right,0px));bottom:calc(100% + 8px);min-width:190px;display:flex;flex-direction:column;padding:6px;background:var(--panel);border:1px solid var(--rule);border-radius:14px;box-shadow:var(--shadow)}
@@ -1407,7 +1404,6 @@ body[data-page="mine"] section.keys{display:none}
 #drKf .rng{background:color-mix(in srgb,var(--ink-3) 28%,transparent)}
 #drKf .rng{margin-right:8px;vertical-align:1px}#drKf .kfw{grid-column:span 2}
 #drKf .kf-h{font:600 10.5px/1 var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
-.drawer.full #drKf{grid-template-columns:repeat(4,minmax(0,1fr))}
 @media (max-width:520px){#drKf{grid-template-columns:1fr 1fr}#drKf .v{font-size:14px}}
 .stats>.stat:last-child:nth-child(odd){grid-column:1/-1}   /* an odd card spans the row instead of leaving a hole */
 .mx-wrap.more-right,.sublinks.more-right,.dtabs.more-right,.snav.more-right,.scr-list.more-right{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 36px),transparent)}
@@ -1457,7 +1453,7 @@ const IC={search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',lev
   market:'<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 6-7"/>', funds:'<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
   mine:'<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
   calendar:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>', screener:'<path d="M3 6h18M6 12h12M10 18h4"/>',
-  arrow:'<path d="M5 12h14M13 6l6 6-6 6"/>', clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   /* section and tab icons, from Lucide (ISC license, see app/static/LICENSE-lucide.txt) */
   grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>',
   bars:'<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 16h8M7 11h12M7 6h3"/>',
@@ -1520,7 +1516,7 @@ function startIndex(dates,h){
 }
 function firstValid(a,i){ if(!a) return null; for(let k=i;k<a.length;k++) if(a[k]!=null) return {k,v:a[k]}; return null; }
 function lastValid(a){ if(!a) return null; for(let k=a.length-1;k>=0;k--) if(a[k]!=null) return a[k]; return null; }
-function ret(a,i0){ const s=firstValid(a,i0), e=lastValid(a); return s&&e?{r:e/s.v-1,late:s.k>i0}:{r:null,late:false}; }
+function ret(a,i0){ const s=firstValid(a,i0), e=lastValid(a); return {r:s&&e?e/s.v-1:null}; }
 function avgLast(a,n){ let s=0,c=0; for(let k=a.length-1;k>=0&&c<n;k--) if(a[k]!=null){s+=a[k];c++;} return c>=n*0.8?s/c:null; }
 /* moving averages: the popular four, where the price sits against them, and the latest 50/200-day cross */
 const MAS=[[20,"about a month"],[50,"about a quarter"],[100,"about five months"],[200,"about ten months"]];
@@ -1561,9 +1557,9 @@ function compute(){
   const f=base.funds[fund], i0=idx(hz), ff=facts(fund), R=ff?.rets[hz];
   const sectors=base.sectors||{};
   let rows=f.holdings.map(h=>{
-    const F=facts(h.t)||{rets:{}}; const {r,late}=ret(base.px[h.t],i0);
+    const F=facts(h.t)||{rets:{}}; const {r}=ret(base.px[h.t],i0);
     const ex={}; HZ.forEach(k=>ex[k]=F.rets[k]!=null&&ff.rets[k]!=null?F.rets[k]-ff.rets[k]:null);   // plain difference, so +23.3% vs −2.0% reads +25.3
-    return {...F,t:h.t,n:h.n,w:h.w,r,late,ex,exh:ex[hz],sector:sectors[h.t]||"Unclassified"};
+    return {...F,t:h.t,n:h.n,w:h.w,r,ex,exh:ex[hz],sector:sectors[h.t]||"Unclassified"};
   });
   const sumW=rows.reduce((a,x)=>a+x.w,0);
   const raw=rows.map(x=>x.r==null?x.w:x.w/(1+x.r)), rs=raw.reduce((a,b)=>a+b,0);
@@ -1613,7 +1609,7 @@ function renderControls(){
   if($("#horizons")) $("#horizons").innerHTML=HZ.map(k=>`<button aria-pressed="${k===hz}" data-h="${k}">${k}</button>`).join("");
 }
 function buildShell(){
-  const mine=page==="mine";
+  const mine=page==="mine"; query="";   // a filter belongs to the box it was typed in, and a new shell starts with an empty one
   $("#app").innerHTML=`
   <section class="pulse" id="pulse"></section>
   <nav class="subnav" id="subnav"><div class="sublinks">${mine?`<a href="#s-brief" class="on">${ic("brief",14)}Brief</a><a href="#s-mine">${ic("mine",14)}Positions</a><a href="#s-xray">${ic("xray",14)}X-ray</a><a href="#s-overview">${ic("trend",14)}Performance</a>`:`<a href="#s-overview" class="on">${ic("trend",14)}Overview</a>`}<a href="#s-map">${ic("grid",14)}Map &amp; drivers</a><a href="#s-earn">${ic("earnings",14)}Earnings</a>${mine?"":`<a href="#s-leaders">${ic("award",14)}Leadership</a>`}<a href="#s-holdings">${ic("list",14)}Holdings</a></div><div class="seg sm" id="horizons" role="group" aria-label="Time range"></div></nav>
@@ -1802,7 +1798,7 @@ function renderTape(){
 
 /* ======================= KPIs ======================= */
 function renderKpis(){
-  const m=model,s=m.st, d0=base.dates[m.i0], d1=base.dates[base.dates.length-1], fw=fund==="Portfolio"?"your portfolio":fund==="Watchlist"?"your watchlist":"the fund";
+  const m=model,s=m.st, fw=fund==="Portfolio"?"your portfolio":fund==="Watchlist"?"your watchlist":"the fund";
   document.querySelectorAll(".fw").forEach(e=>e.textContent=fw); document.querySelectorAll(".fws").forEach(e=>e.textContent=fw+"'s");
   $("#kpis").innerHTML=`
    <div><div class="lbl">Average stock</div><div class="kv ${cls(s.ew)}">${pct(s.ew)}</div><div class="ks">Equal-weight, ${s.ew-m.R>=0?"ahead of":"behind"} ${fw} by ${Math.abs((s.ew-m.R)*100).toFixed(1)} points</div></div>
@@ -1967,7 +1963,7 @@ function renderRotation(){
     const tail=`<g class="tail${tailed.has(r.t)?" on":""}"><polyline points="${line}" fill="none" stroke="${c}" stroke-width="1.5" stroke-opacity=".7" stroke-linejoin="round"/>${P.slice(0,-1).map(p=>`<circle cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="1.8" fill="${c}" fill-opacity=".7"/>`).join("")}</g>`;
     const was=r.path[0];
     const QN={"var(--up)":"Leading","var(--warn)":"Weakening","var(--accent)":"Improving","var(--down)":"Lagging"};
-    s+=`<g data-sel="${esc(r.t)}" data-tip="${esc(`<b>${r.t}</b> · ${r.n}<br><b>${QN[c]}</b> · strength ${h[0].toFixed(1)}, momentum ${h[1].toFixed(1)}<br>${tailN===1?"A day":tailWords[0].toUpperCase()+tailWords.slice(1)} ago: ${QN[quadColor(was)].toLowerCase()}${r.ex[hz]!=null?`<br>${hz==="YTD"?"Year to date":hz}: ${pct(r.ex[hz])} vs ${esc(vs)}`:""}<br>Weight ${r.w.toFixed(2)}%`)}">${tail}<circle class="hd" cx="${X(h[0]).toFixed(1)}" cy="${Y(h[1]).toFixed(1)}" r="${rad(r.w).toFixed(1)}" fill="${c}" fill-opacity="${on?.95:.6}" stroke="${on?"var(--ink)":"var(--panel)"}" stroke-width="${on?2:1.2}"/></g>`; });
+    s+=`<g data-sel="${esc(r.t)}" data-tip="${esc(`<b>${esc(r.t)}</b> · ${esc(r.n)}<br><b>${QN[c]}</b> · strength ${h[0].toFixed(1)}, momentum ${h[1].toFixed(1)}<br>${tailN===1?"A day":tailWords[0].toUpperCase()+tailWords.slice(1)} ago: ${QN[quadColor(was)].toLowerCase()}${r.ex[hz]!=null?`<br>${hz==="YTD"?"Year to date":hz}: ${pct(r.ex[hz])} vs ${esc(vs)}`:""}<br>Weight ${r.w.toFixed(2)}%`)}">${tail}<circle class="hd" cx="${X(h[0]).toFixed(1)}" cy="${Y(h[1]).toFixed(1)}" r="${rad(r.w).toFixed(1)}" fill="${c}" fill-opacity="${on?.95:.6}" stroke="${on?"var(--ink)":"var(--panel)"}" stroke-width="${on?2:1.2}"/></g>`; });
   // labels: biggest names first, each where it overlaps no dot, label or quadrant name; skipped if nowhere fits
   const dots=pts.map(r=>{ const k=rad(r.w)+1, h=head(r); return {t:r.t,b:[X(h[0])-k,Y(h[1])-k,2*k,2*k]}; });
   const over=(b,o)=>b[0]<o[0]+o[2]&&b[0]+b[2]>o[0]&&b[1]<o[1]+o[3]&&b[1]+b[3]>o[1];
@@ -2093,9 +2089,9 @@ async function loadDetail(t,force){
   try{ const d=await (await fetch("/api/stock?t="+encodeURIComponent(t))).json(); detailCache[t]={...d,at:Date.now()}; }
   catch(e){ detailCache[t]={t,info:{},news:[],infoError:"Couldn't reach the local server.",at:Date.now()-9*60e3}; }
   done();
-  if(drawerOpen&&sel===t) renderDetail();
   // Yahoo hiccup: keep any company data we already had, and quietly try again while the stock stays open
   const d=detailCache[t]; if(c?.info&&Object.keys(c.info).length&&d.infoError){ d.info=c.info; delete d.infoError; }
+  if(drawerOpen&&sel===t) renderDetail();
   if((d.infoError||d.newsError)&&!force) setTimeout(()=>{ if(drawerOpen&&sel===t) loadDetail(t,true); },20e3);
 }
 async function loadChart(t,rng){
@@ -2117,7 +2113,7 @@ function renderDrawer(){
   const rng=curRange(); if((rng==="1D"||rng==="5D")){ const c=chartCache[sel+"|"+rng+"|"+r.bench]; if(c&&!c.loading&&Date.now()-c.at>60e3) loadChart(sel,rng); }
 }
 function drawerShell(r){
-  const sec=(o,h,id,inner,cls="")=>`<div class="dr-sec" style="order:${o}"><h4${id?` id="${id}H"`:""}>${h}</h4>${inner}</div>`;
+  const sec=(o,h,id,inner)=>`<div class="dr-sec" style="order:${o}"><h4${id?` id="${id}H"`:""}>${h}</h4>${inner}</div>`;
   $("#drawer").innerHTML=`<div class="dr-in">
    <div class="dr-h"><div><h3>${esc(r.t)}</h3><div class="nm" id="drNm">${esc(r.n)} · ${esc(r.sector)}</div></div><div class="dr-btns"><button class="x" id="fullDr" aria-label="Toggle full screen" title="${full?"Exit full screen":"Full screen"} (F)">${ic(full?"shrink":"expand",15)}</button><button class="x" id="closeDr" aria-label="Close" title="Close (Esc)">${ic("close",16)}</button></div></div>
    <div class="dr-price" id="drPrice"></div>
@@ -2304,7 +2300,7 @@ function renderAnalyst(r,d,id="drAnalyst"){
   const m=i.recommendationMean, last=r.last;
   const lo=Math.min(i.targetLowPrice??last,last), hi=Math.max(i.targetHighPrice??last,last), X=v=>((v-lo)/(hi-lo||1)*100).toFixed(1)+"%";
   el.innerHTML=`<div class="an">
-    <div><div class="lbl">Consensus</div><div class="v ${recCls(m)}">${recLabel(i)}</div><div class="ks">${i.numberOfAnalystOpinions||"?"} analysts${m?` · ${m.toFixed(2)} on a 1 (strong buy) to 5 (sell) scale`:""}</div>
+    <div><div class="lbl">Consensus</div><div class="v ${recCls(m)}">${esc(recLabel(i))}</div><div class="ks">${i.numberOfAnalystOpinions||"?"} analysts${m?` · ${m.toFixed(2)} on a 1 (strong buy) to 5 (sell) scale`:""}</div>
       ${m?`<div class="gauge"><i style="left:calc(${((m-1)/4*100).toFixed(1)}% - 5px)"></i></div><div class="meter-l"><span>Strong buy</span><span>Hold</span><span>Sell</span></div>`:""}</div>
     ${i.targetMeanPrice?`<div><div class="lbl">12-month price target</div><div class="v">${money(i.targetMeanPrice)} <span class="${cls(i.targetMeanPrice/last-1)}" style="font-size:13px">${pct(i.targetMeanPrice/last-1,1)} from here</span></div>
       <div class="tgt"><span class="band" style="left:${X(i.targetLowPrice??i.targetMeanPrice)};right:calc(100% - ${X(i.targetHighPrice??i.targetMeanPrice)})"></span><i class="mean" style="left:${X(i.targetMeanPrice)}" title="Average target"></i><i class="now" style="left:${X(last)}" title="Price now"></i></div>
@@ -2424,7 +2420,7 @@ document.addEventListener("click",e=>{
   if(b.dataset.go){ goTicker(b.dataset.go); return; }
   if(b.id==="bell"){ openAlerts(); return; }
   if(b.dataset.alOpen){ closeAlerts(); openDrawer(b.dataset.alOpen); return; }
-  if(b.dataset.alDel){ api("/api/me/alert/delete",{id:+b.dataset.alDel}).catch(()=>{}); return; }
+  if(b.dataset.alDel){ api("/api/me/alert/delete",{id:+b.dataset.alDel}).catch(()=>toast("Couldn't delete that alert. Try again.")); return; }
   if(b.id==="scrim"){ closeAlerts(); return closeDrawer(); }
   if(b.dataset.cr){ chartRange=b.dataset.cr; drawPriceChart(); loadChart(sel,chartRange); return; }
   if(b.dataset.retry){ loadDetail(sel,true); return; }
@@ -2515,16 +2511,20 @@ function closeAlerts(){ $("#side2").classList.remove("open"); if(!drawerOpen) $(
 function tidyCo(x){ return String(x||"").replace(/,? (?:Inc\.?|Corporation|Corp\.?)(?=[\s.,;]|$)/g,"").replace(/\bNasdaq-100\b/g,"Nasdaq\u2011100").replace(/ +\./g,".").replace(/EPS estimate \$([\d.]+)\./,"Analysts expect $$$1 a share."); }
 function ruleText(a){ const k=me.kinds[a.kind]||a.kind; return k.replace("{value}",a.value!=null?(+a.value).toLocaleString("en-US"):"?"); }
 function scopeText(a){ return a.t?a.t:{watch:"Watchlist",portfolio:"Portfolio",both:"Watchlist and portfolio"}[a.scope]||a.scope; }
-function randTopic(){ const c="abcdefghijkmnpqrstuvwxyz23456789"; let s="openticker-"; const r=crypto.getRandomValues(new Uint8Array(12)); r.forEach(x=>s+=c[x%c.length]); return s; }
+let topic0=null;   // the suggested topic, made once, so the one you copy to your phone is the one that's saved
+function randTopic(){ if(topic0) return topic0; const c="abcdefghijkmnpqrstuvwxyz23456789"; let s="openticker-"; const r=crypto.getRandomValues(new Uint8Array(12)); r.forEach(x=>s+=c[x%c.length]); return topic0=s; }
 function renderAlertsPanel(){
   if(!me) return; const el=$("#side2"), ev=me.events||[], st=me.settings||{};
+  // the panel redraws as alerts come in (every 30 s); what you've typed or picked, and where you were, stay
+  const a=document.activeElement, fid=el.contains(a)?a.id:null, s0=a?.selectionStart, s1=a?.selectionEnd;
+  const kept=["alKind","alScope","alT","alV","ntTopic"].map(id=>el.querySelector("#"+id)).filter(i=>i&&typedIn(i)).map(i=>[i.id,i.value]);
   el.innerHTML=`<div class="dr-in">
    <div class="dr-h"><div><h3>Alerts</h3><div class="nm">Checked every 30 seconds while OpenTicker is running on your Mac.</div></div><button class="x" id="closeAl" aria-label="Close">×</button></div>
    <div class="dr-sec"><h4>Recent</h4>${ev.length?`<ul class="evs">${ev.slice(0,30).map(e=>`<li class="${e.read?"":"new"}"><button class="lnk-row" ${e.t?`data-al-open="${esc(e.t)}"`:""}><b>${esc(tidyCo(e.title))}</b><span>${esc(tidyCo(e.body))}</span><small>${ago(e.ts)}</small></button></li>`).join("")}</ul>`:`<p class="hint" style="margin:0">Nothing yet. Alerts appear here as your rules trigger.</p>`}</div>
    <div class="dr-sec"><h4>Rules</h4><table class="hz rules"><tbody>${me.alerts.map(a=>`<tr><td><label class="sw2"><input type="checkbox" data-al-tog="${a.id}" ${a.active?"checked":""}> ${esc(ruleText(a))}</label></td><td class="l" style="color:var(--ink-3)">${esc(scopeText(a))}</td><td style="width:28px"><button class="lnk" data-al-del="${a.id}" aria-label="Delete rule">✕</button></td></tr>`).join("")}</tbody></table>
-     <form class="frm" id="alForm"><select id="alKind">${Object.entries(me.kinds).map(([k,v])=>`<option value="${k}">${esc(v.replace("{value}","…").replace("$…","a price"))}</option>`).join("")}</select>
-       <select id="alScope"><option value="both">Watchlist and portfolio</option><option value="watch">Watchlist</option><option value="portfolio">Portfolio</option><option value="one">One ticker…</option></select>
-       <input id="alT" placeholder="Ticker" maxlength="10" hidden><input id="alV" type="number" step="any" placeholder="Value" hidden>
+     <form class="frm" id="alForm"><select id="alKind" aria-label="What to watch for">${Object.entries(me.kinds).map(([k,v])=>`<option value="${k}">${esc(v.replace("{value}","…").replace("$…","a price"))}</option>`).join("")}</select>
+       <select id="alScope" aria-label="Which stocks"><option value="both">Watchlist and portfolio</option><option value="watch">Watchlist</option><option value="portfolio">Portfolio</option><option value="one">One ticker…</option></select>
+       <input id="alT" placeholder="Ticker" aria-label="Ticker" maxlength="10" hidden><input id="alV" type="number" step="any" placeholder="Value" aria-label="Price, or percent move" hidden>
        <button class="btn">Add rule</button><span class="err" id="alErr"></span></form></div>
    <div class="dr-sec"><h4>Phone notifications</h4>
      <p class="hint" style="margin:0 0 8px">Uses <a href="https://ntfy.sh" target="_blank" rel="noopener">ntfy</a>, a free push app. Install it on your phone, tap <b>+</b>, and subscribe to the topic below. Anyone who knows a topic name can read it, so keep the random one.</p>
@@ -2533,13 +2533,15 @@ function renderAlertsPanel(){
    <div class="dr-sec"><h4>This browser</h4><p class="hint" style="margin:0 0 8px">Show alerts as notifications here while the dashboard is open.${location.protocol==="http:"&&!/^(localhost|127\.)/.test(location.hostname)?" Phones only allow this on https pages, so use ntfy there.":""}</p>
      <button class="btn ${notifyOn?"ghost":""}" id="brNot">${notifyOn?"Turn off":"Turn on"}</button></div></div>`;
   $("#closeAl").onclick=closeAlerts;
+  kept.forEach(([id,v])=>{ $("#"+id).value=v; });
   const kind=$("#alKind"), scope=$("#alScope");
   const sync=()=>{ const k=kind.value, one=scope.value==="one"||k==="above"||k==="below"; if(k==="above"||k==="below") scope.value="one"; $("#alT").hidden=!one; $("#alV").hidden=!["move","above","below"].includes(k); $("#alV").placeholder=k==="move"?"% move, e.g. 5":"Price"; };
   kind.onchange=sync; scope.onchange=sync; sync();
-  $("#alForm").onsubmit=async e=>{ e.preventDefault(); const k=kind.value, one=!$("#alT").hidden; try{ await api("/api/me/alert",{kind:k,scope:one?null:scope.value,t:one?$("#alT").value.trim():null,value:$("#alV").hidden?null:$("#alV").value}); }catch(x){ $("#alErr").textContent=x.message; } };
-  $("#ntForm").onsubmit=async e=>{ e.preventDefault(); try{ await api("/api/me/settings",{ntfyTopic:$("#ntTopic").value.trim(),ntfyServer:st.ntfyServer}); }catch(x){ $("#ntErr").textContent=x.message; } };
+  if(fid){ const n=document.getElementById(fid); if(n&&!n.hidden&&n!==a){ n.focus({preventScroll:true}); try{ if(s0!=null) n.setSelectionRange(s0,s1); }catch(e){} } }
+  $("#alForm").onsubmit=async e=>{ e.preventDefault(); const k=kind.value, one=!$("#alT").hidden; try{ await api("/api/me/alert",{kind:k,scope:one?null:scope.value,t:one?$("#alT").value.trim():null,value:$("#alV").hidden?null:$("#alV").value}); const f=$("#alForm"); if(f){ f.reset(); $("#alKind").onchange(); } }catch(x){ $("#alErr").textContent=x.message; } };
+  $("#ntForm").onsubmit=async e=>{ e.preventDefault(); try{ await api("/api/me/settings",{ntfyTopic:$("#ntTopic").value.trim(),ntfyServer:st.ntfyServer}); topic0=null; }catch(x){ $("#ntErr").textContent=x.message; } };
   $("#ntTest")&&($("#ntTest").onclick=async()=>{ try{ await api("/api/me/test-push"); $("#ntErr").textContent="Sent. Check your phone."; $("#ntErr").className="ok"; }catch(x){ $("#ntErr").textContent=x.message; } });
-  $("#ntOff")&&($("#ntOff").onclick=()=>api("/api/me/settings",{ntfyTopic:"",ntfyServer:st.ntfyServer}).catch(()=>{}));
+  $("#ntOff")&&($("#ntOff").onclick=()=>api("/api/me/settings",{ntfyTopic:"",ntfyServer:st.ntfyServer}).catch(()=>toast("Couldn't turn off phone notifications. Try again.")));
   $("#brNot").onclick=async()=>{ if(!notifyOn&&"Notification" in window){ const p=await Notification.requestPermission(); if(p!=="granted") return; } notifyOn=!notifyOn; save("notify",notifyOn?"1":"0"); renderAlertsPanel(); };
 }
 
@@ -2566,20 +2568,20 @@ function renderMine(){
   rows.sort((a,b)=>b.value-a.value);
   const usd=(x,sg)=>x==null?"–":(x=Math.round(x*100)/100,0)||(sg?(x>0?"+":x<0?"−":""):(x<0?"−":""))+"$"+Math.abs(x).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
   const sample=(me.positions||[]).length&&(me.positions||[]).every(p=>p.note==="sample");
-  el.innerHTML=`${sample?`<div class="sbanner"><span><b>This is a sample portfolio.</b> Look around, then bring in your own. Importing or adding a position clears the sample.</span><button class="btn" id="sImp">Import yours</button><button class="btn ghost" id="sClr">Clear sample</button></div>`:""}<div class="ph"><div><h2>${ic("mine")}${sample?"Sample portfolio":"Your portfolio"}</h2><div class="hint">${rows.length} positions at live prices. Contribution and the charts below treat today's shares as held for the whole period.</div></div><div class="phb" ${sample?"hidden":""}>${(me.links||[]).length?"":`<button class="btn ghost" id="pLink" title="Monarch, Interactive Brokers, Robinhood or another MCP server">${ic("link",14)}Link a brokerage</button>`}<button class="btn ghost" id="pImp" title="Read a positions CSV from Fidelity, Schwab, Vanguard, E*TRADE and others">Import a file</button></div></div>${sample?"":linksLine()}
+  el.innerHTML=`${sample?`<div class="sbanner"><span><b>This is a sample portfolio.</b> Look around, then bring in your own. Importing or adding a position clears the sample.</span><button class="btn" id="sImp">Import yours</button><button class="btn ghost" id="sClr">Clear sample</button></div>`:""}<div class="ph"><div><h2>${ic("mine")}${sample?"Sample portfolio":"Your portfolio"}</h2><div class="hint">${rows.length} position${rows.length===1?"":"s"} at live prices. Contribution and the charts below treat today's shares as held for the whole period.</div></div><div class="phb" ${sample?"hidden":""}>${(me.links||[]).length?"":`<button class="btn ghost" id="pLink" title="Monarch, Interactive Brokers, Robinhood or another MCP server">${ic("link",14)}Link a brokerage</button>`}<button class="btn ghost" id="pImp" title="Read a positions CSV from Fidelity, Schwab, Vanguard, E*TRADE and others">Import a file</button></div></div>${sample?"":linksLine()}
    <div class="kf mine-k"><div><div class="lbl">Value</div><div class="v">${usd(V)}</div></div>
      <div><div class="lbl">Today</div><div class="v ${cls(D)}">${usd(D,1)}</div><div class="ks ${cls(D)}">${pct(V-D?D/(V-D):null)}</div>${XD!=null?`<div class="ks">${xLab} <span class="num ${cls(XD)}">${usd(XD,1)} · ${pct(V?XD/V:null)}</span></div>`:""}</div>
      <div><div class="lbl">Total gain</div><div class="v ${cls(V-C)}">${usd(V-C,1)}</div><div class="ks ${cls(V-C)}">${pct(C?V/C-1:null)} on ${usd(C)} cost</div></div></div>
    <div class="tbl-wrap mine-tw"><table class="hold mine-t"><thead><tr><th class="l">Ticker</th><th>Shares</th><th>Avg cost</th><th>Price</th><th>Value</th><th>Weight</th><th>Today</th><th>Total gain</th><th><span class="vh">Edit</span></th></tr></thead><tbody>${rows.map(r=>`<tr data-sel="${esc(r.t)}" class="${lotOpen.has(r.t)?"lot-on":""}">
      <td class="l tk">${esc(r.t)}${srcTag(r.t)}</td><td class="num">${(+r.shares.toFixed(4)).toLocaleString("en-US")}</td><td class="num">${money(r.avg)}</td><td class="num ${flashes[r.t]||""}">${money(r.last)}</td><td class="num">${usd(r.value)}</td><td class="num">${V?(r.value/V*100).toFixed(1):"–"}%</td>
      <td class="num ${cls(r.day)}">${usd(r.day,1)} <small>${pct(r.dayPct,1)}</small>${r.x?`<span class="xh" title="${r.x.lab} ${money(r.x.p)} at ${extTime(r.x.ts)}">${r.x.lab} <span class="${cls(r.x.chg)}">${pct(r.x.chg,1)}</span></span>`:""}</td><td class="num ${cls(r.pl)}">${usd(r.pl,1)} <small>${pct(r.plPct,1)}</small></td><td class="num ed-c">${lotBtn(r)}</td></tr>${lotOpen.has(r.t)?`<tr class="lotx-row"><td colspan="9">${lotEditor(r.t,"p")}</td></tr>`:""}`).join("")}</tbody></table></div>
-   <div class="pcards">${rows.map(r=>`<div class="pcard ${lotOpen.has(r.t)?"open":""}"><button type="button" class="pcmain" data-sel="${esc(r.t)}"><div class="pc1"><b>${esc(r.t)}${srcTag(r.t)}</b><span class="num">${usd(r.value)}</span></div>
-     <div class="pc2"><span class="num">${(+r.shares.toFixed(4)).toLocaleString("en-US")} shares at ${money(r.last)}</span><span class="num ${cls(r.day)}">${usd(r.day,1)} today</span></div>
+   <div class="pcards">${rows.map(r=>`<div class="poscard ${lotOpen.has(r.t)?"open":""}"><button type="button" class="pcmain" data-sel="${esc(r.t)}"><div class="pc1"><b>${esc(r.t)}${srcTag(r.t)}</b><span class="num">${usd(r.value)}</span></div>
+     <div class="pc2"><span class="num">${sharesTxt(r.shares)} at ${money(r.last)}</span><span class="num ${cls(r.day)}">${usd(r.day,1)} today</span></div>
      ${r.x?`<div class="pc2"><span>${r.x.lab} ${money(r.x.p)}</span><span class="num ${cls(r.xd)}">${usd(r.xd,1)} <small>${pct(r.x.chg,1)}</small></span></div>`:""}
      <div class="pc2"><span>Total gain</span><span class="num ${cls(r.pl)}">${usd(r.pl,1)} <small>${pct(r.plPct,1)}</small></span></div></button>${lotOpen.has(r.t)?lotEditor(r.t,"c"):`<div class="pc3">${lotBtn(r)}</div>`}</div>`).join("")}</div>
-   <form class="frm" id="pForm" style="margin-top:12px"><b style="font-size:13px">Add a position</b><input id="pT" placeholder="Ticker" maxlength="10" style="width:90px" required><input id="pS" type="number" step="any" min="0" placeholder="Shares" style="width:100px" required><input id="pC" type="number" step="any" min="0" placeholder="Cost per share" style="width:130px" required><input id="pD" type="date" aria-label="Date bought (optional)"><button class="btn">Add</button><span class="err" id="pErr"></span></form>`;
+   <form class="frm" id="pForm" style="margin-top:12px"><b style="font-size:13px">Add a position</b><input id="pT" data-fk="pT" placeholder="Ticker" aria-label="Ticker" maxlength="10" style="width:90px" required><input id="pS" data-fk="pS" type="number" step="any" min="0" placeholder="Shares" aria-label="Shares" style="width:100px" required><input id="pC" data-fk="pC" type="number" step="any" min="0" placeholder="Cost per share" aria-label="Cost per share" style="width:130px" required><input id="pD" data-fk="pD" type="date" aria-label="Date bought (optional)"><button class="btn">Add</button><span class="err" id="pErr"></span></form>`;
   $("#pForm").onsubmit=posSubmit("p"); $("#pImp").onclick=pickBrokerFile; $("#pLink")&&($("#pLink").onclick=()=>openSettings("accounts")); bindLinksLine();
-  if(sample){ $("#sImp").onclick=pickBrokerFile; $("#sClr").onclick=()=>api("/api/me/positions/clear-sample").catch(()=>{}); }
+  if(sample){ $("#sImp").onclick=pickBrokerFile; $("#sClr").onclick=()=>api("/api/me/positions/clear-sample").catch(()=>toast("Couldn't clear the sample. Try again.")); }
 }
 /* where a position comes from, once any account is linked: "Monarch", or "Monarch + yours" */
 function srcTag(t){
@@ -2587,7 +2589,7 @@ function srcTag(t){
   const S=[...new Set(lots(t).map(p=>p.source||""))], n=S.filter(Boolean).map(linkName);
   return n.length?`<small class="src">${esc(n.join(" + ")+(S.includes("")?" + yours":""))}</small>`:"";
 }
-function posSubmit(px,t0){ return async e=>{ e.preventDefault(); try{ await api("/api/me/position",{t:t0||$("#"+px+"T").value.trim(),shares:$("#"+px+"S").value,cost:$("#"+px+"C").value,opened:$("#"+px+"D").value}); }catch(x){ $("#"+px+"Err").textContent=x.message; } }; }
+function posSubmit(px,t0){ return async e=>{ e.preventDefault(); const f=e.target; try{ await api("/api/me/position",{t:t0||$("#"+px+"T").value.trim(),shares:$("#"+px+"S").value,cost:$("#"+px+"C").value,opened:$("#"+px+"D").value}); (f.isConnected?f:$("#"+f.id))?.reset(); }catch(x){ $("#"+px+"Err").textContent=x.message; } }; }
 const SAMPLE=[["AAPL",20,150],["MSFT",10,310],["NVDA",30,48],["AMZN",15,135],["GOOGL",12,125],["JPM",10,150],["JNJ",8,155],["COST",3,610],["XOM",12,105],["VOO",10,410]];
 const STARTERS=["AAPL","NVDA","MSFT","AMZN","GOOGL","META","TSLA","AVGO","JPM","COST"];
 function renderEmptyMine(){
@@ -2596,7 +2598,7 @@ function renderEmptyMine(){
    <p class="hint lead">Your watchlist and portfolio stay private to your Mac. On the Mac, open Settings, then Your phone, then QR code, and scan it with this phone's camera. Market data works without pairing.</p></section>`; return; }
   $("#app").innerHTML=w?`<section class="panel empty" id="emptyMine"><h2>Start a watchlist</h2>
    <p class="hint lead">Follow the stocks you care about. Each day you get a brief of what changed for them: big moves, upgrades and downgrades, price-target changes, insider buying, unusual options and earnings ahead. Alerts can reach your phone.</p>
-   <form class="frm" id="eForm"><input id="eT" placeholder="Ticker, e.g. NVDA" maxlength="10" required><button class="btn">Add to watchlist</button><span class="err" id="eErr"></span></form>
+   <form class="frm" id="eForm"><input id="eT" placeholder="Ticker, e.g. NVDA" aria-label="Ticker" maxlength="10" required><button class="btn">Add to watchlist</button><span class="err" id="eErr"></span></form>
    <div class="lbl" style="margin-top:18px">Or pick a few to start with</div>
    <div class="chips" id="eStart">${STARTERS.map(t=>`<button type="button" class="chip-t" data-start="${t}" aria-pressed="false">${t}</button>`).join("")}</div>
    <button class="btn" id="eStartGo" hidden style="margin-top:12px"></button>
@@ -2609,7 +2611,7 @@ function renderEmptyMine(){
      <button type="button" class="start" id="eSample"><span class="si">${ic("funds",18)}</span><span><b>Try a sample portfolio</b><small>Ten well-known stocks and funds, so you can look around first. Clear it whenever you like.</small></span></button>
    </div>
    <div class="lbl" style="margin-top:22px">Or add a position by hand</div>
-   <form class="frm" id="eForm"><input id="eT" placeholder="Ticker" maxlength="10" style="width:100px" required><input id="eS" type="number" step="any" min="0" placeholder="Shares" style="width:110px" required><input id="eC" type="number" step="any" min="0" placeholder="Cost per share" style="width:140px" required><input id="eD" type="date" aria-label="Date bought (optional)"><button class="btn">Add position</button><span class="err" id="eErr"></span></form></section>`;
+   <form class="frm" id="eForm"><input id="eT" placeholder="Ticker" aria-label="Ticker" maxlength="10" style="width:100px" required><input id="eS" type="number" step="any" min="0" placeholder="Shares" aria-label="Shares" style="width:110px" required><input id="eC" type="number" step="any" min="0" placeholder="Cost per share" aria-label="Cost per share" style="width:140px" required><input id="eD" type="date" aria-label="Date bought (optional)"><button class="btn">Add position</button><span class="err" id="eErr"></span></form></section>`;
   if(w){
     $("#eForm").onsubmit=async e=>{ e.preventDefault(); try{ await api("/api/me/watch",{t:$("#eT").value.trim(),on:true}); }catch(x){ $("#eErr").textContent=x.message; } };
     const picked=()=>[...document.querySelectorAll("#eStart .on")].map(b=>b.dataset.start), go=$("#eStartGo");
@@ -2706,14 +2708,18 @@ function openImport(P,name){
    leave the field, and removals offer Undo. render() keeps focus and what you typed, so live prices don't interrupt. */
 const lotOpen=new Set(), lotDraft={};
 const splitTickers=v=>[...new Set(String(v).toUpperCase().split(/[\s,;]+/).map(x=>x.trim().replace(/\//g,".")).filter(Boolean))];
+const typedIn=i=>i.tagName==="SELECT"?![...i.options].some(o=>o.selected&&o.defaultSelected):i.value!==i.defaultValue;
 function keepFocus(fn){
   const a=document.activeElement, k=a?.dataset?.fk, v=a?.value, s0=a?.selectionStart, s1=a?.selectionEnd, ty=a?.type;
+  // what's typed in a form's other fields (Add a position) comes back too, not just the field you're in
+  const kept=[...document.querySelectorAll("form [data-fk]")].filter(i=>i!==a&&typedIn(i)).map(i=>[i.dataset.fk,i.value]);
   fn();
+  kept.forEach(([fk,x])=>{ const n=document.querySelector(`[data-fk="${CSS.escape(fk)}"]`); if(n&&n.value!==x) n.value=x; });
   if(!k) return; const n=document.querySelector(`[data-fk="${CSS.escape(k)}"]`); if(!n||n===a) return;
   if(v!=null){ if(ty&&n.type!==ty) n.type=ty; n.value=v; } n.focus({preventScroll:true}); try{ if(s0!=null) n.setSelectionRange(s0,s1); }catch(e){}
 }
 const numTxt=x=>x==null||x===""?"":String(+(+x).toFixed(6));
-function lotBtn(r){ const open=lotOpen.has(r.t); return `<button type="button" class="lotb" data-lot-open="${esc(r.t)}" aria-expanded="${open}" title="Change shares, cost or date">${open?"Done":`${ic("edit",13)}${r.lots>1?r.lots+" lots":"Edit"}`}</button>`; }
+function lotBtn(r){ const open=lotOpen.has(r.t); return `<button type="button" class="lotb" data-lot-open="${esc(r.t)}" aria-expanded="${open}" title="Change shares, cost or date">${open?"Done":`${ic("edit",13)}${r.lots>1?r.lots+" purchases":"Edit"}`}</button>`; }
 function lotEditor(t,ctx){
   const L=lots(t), last=lastValid(base?.px[t]||[]), d=lotDraft[t];
   const dateIn=(id,v)=>`<input data-lot-f="opened" data-fk="${ctx}:${id}:opened" type="${v?"date":"text"}" value="${esc(v||"")}" placeholder="Add date" aria-label="Date bought">`;
@@ -2772,7 +2778,7 @@ document.addEventListener("click",e=>{
   if(b.dataset.lotOpen){ const t=b.dataset.lotOpen; if(lotOpen.has(t)){ lotOpen.delete(t); delete lotDraft[t]; } else lotOpen.add(t);
     refreshMine(); if(lotOpen.has(t)) document.querySelector(`.lotx[data-lot-t="${CSS.escape(t)}"] input`)?.focus({preventScroll:true}); return; }
   if(b.dataset.lotAdd){ const t=b.dataset.lotAdd, last=lastValid(base?.px[t]||[]); lotDraft[t]={shares:"",cost:last?last.toFixed(2):"",opened:""};
-    const ctx=b.closest("#drMine")?"d":b.closest(".pcard")?"c":"p"; refreshMine(); document.querySelector(`[data-fk="${ctx}:new:shares"]`)?.focus(); return; }
+    const ctx=b.closest("#drMine")?"d":b.closest(".poscard")?"c":"p"; refreshMine(); document.querySelector(`[data-fk="${ctx}:new:shares"]`)?.focus(); return; }
   if(b.dataset.lotDel){ const box=b.closest(".lotx"), t=box.dataset.lotT;
     if(b.dataset.lotDel==="new"){ delete lotDraft[t]; refreshMine(); return; }
     const p=(me.positions||[]).find(x=>x.id===+b.dataset.lotDel); if(!p) return;
@@ -2780,7 +2786,7 @@ document.addEventListener("click",e=>{
     api("/api/me/positions/save",{lots:[],delete:[p.id]}).then(()=>toast(`Removed ${sharesTxt(p.shares)} of ${t}`,()=>api("/api/me/positions/save",{lots:[{t,shares:p.shares,cost:p.cost,opened:p.opened}]}).catch(x=>toast(x.message)))).catch(x=>toast(x.message));
     return; }
   if(b.dataset.unwatch){ const t=b.dataset.unwatch; b.closest(".wr")?.remove();
-    api("/api/me/watch",{t,on:false}).then(()=>toast(`Removed ${t} from your watchlist`,()=>api("/api/me/watch",{t,on:true}).catch(x=>toast(x.message)))).catch(x=>toast(x.message)); }
+    api("/api/me/watch",{t,on:false}).then(()=>toast(`Removed ${t} from your watchlist`,()=>api("/api/me/watch",{t,on:true}).catch(x=>toast(x.message)))).catch(()=>{ refreshMine(); toast(`Couldn't remove ${t}. Try again.`); }); }
 },true);
 
 /* earnings calendar for the selected fund */
@@ -2801,9 +2807,11 @@ function drawerMine(r){
   const el=$("#drAct"); if(!el||!me) return;
   const on=me.watch.includes(r.t), L=lots(r.t), my=me.alerts.filter(a=>a.t===r.t), afOpen=$("#drAF")&&!$("#drAF").hidden, formOpen=$("#drPF")&&!$("#drPF").hidden;
   el.innerHTML=`<button class="btn ${on?"":"ghost"}" id="drW" aria-pressed="${on}">${ic("star",14,on)}${on?"Watching":"Watch"}</button><button class="btn ghost" id="drP">${ic("plus",14)}Position</button><button class="btn ghost" id="drA">${ic("bell",14)}Price alert</button><button class="btn ghost askact" data-ask-scope="stock" data-ask-t="${esc(r.t)}" title="Ask Tick about ${esc(r.t)} (A)">${typeof tickFace==="function"?tickFace(16):ic("spark",14)}Ask Tick</button>
-    <form class="frm" id="drAF" ${afOpen?"":"hidden"}><select id="drAK"><option value="above">Rises above</option><option value="below">Falls below</option><option value="move">Moves at least (%)</option></select><input id="drAV" type="number" step="any" placeholder="${money(r.last)}" style="width:110px" required><button class="btn">Add</button><span class="err" id="drAErr"></span></form>
+    <form class="frm" id="drAF" ${afOpen?"":"hidden"}><select id="drAK" aria-label="When to alert"><option value="above">Rises above</option><option value="below">Falls below</option><option value="move">Moves at least (%)</option></select><input id="drAV" type="number" step="any" placeholder="${money(r.last)}" aria-label="Price, or percent move" style="width:110px" required><button class="btn">Add</button><span class="err" id="drAErr"></span></form>
     ${my.length?`<div class="mya">${my.map(a=>`<span class="chip">${esc(ruleText(a))}<button class="lnk" data-al-del="${a.id}" aria-label="Delete alert">✕</button></span>`).join("")}</div>`:""}`;
-  $("#drW").onclick=()=>api("/api/me/watch",{t:r.t,on:!on}).catch(()=>{});
+  $("#drW").onclick=()=>{ const b=$("#drW"), was=[b.className,b.getAttribute("aria-pressed"),b.innerHTML], want=was[1]!=="true";   // show it at once; put it back if the save fails
+    b.className="btn "+(want?"":"ghost"); b.setAttribute("aria-pressed",want); b.innerHTML=`${ic("star",14,want)}${want?"Watching":"Watch"}`;
+    api("/api/me/watch",{t:r.t,on:want}).catch(()=>{ if(b.isConnected){ [b.className]=was; b.setAttribute("aria-pressed",was[1]); b.innerHTML=was[2]; } toast("Couldn't save that. Try again."); }); };
   $("#drA").onclick=()=>{ $("#drAF").hidden=!$("#drAF").hidden; };
   $("#drAF").onsubmit=async e=>{ e.preventDefault(); try{ await api("/api/me/alert",{kind:$("#drAK").value,t:r.t,value:$("#drAV").value}); }catch(x){ $("#drAErr").textContent=x.message; } };
   $("#drP").onclick=()=>{ const f=$("#drPF"); f.hidden=!f.hidden; $("#drMineSec").hidden=false; if(!f.hidden) $("#dS").focus(); };
@@ -2811,10 +2819,10 @@ function drawerMine(r){
   const sec=$("#drMineSec"), box=$("#drMine"); if(!sec) return;
   const last=r.last, sh=L.reduce((a,p)=>a+p.shares,0), cost=L.reduce((a,p)=>a+p.shares*p.cost,0);
   sec.hidden=!L.length&&!formOpen;
-  box.innerHTML=(L.length?`<div class="stats"><div class="stat"><div class="lbl">Value</div><div class="v">${money(sh*last)}</div><div class="ks">${(+sh.toFixed(4))} shares at ${money(cost/sh)} avg</div></div>
+  box.innerHTML=(L.length?`<div class="stats"><div class="stat"><div class="lbl">Value</div><div class="v">${money(sh*last)}</div><div class="ks">${sharesTxt(sh)} at ${money(cost/sh)} avg</div></div>
      <div class="stat"><div class="lbl">Total gain</div><div class="v ${cls(sh*last-cost)}">${pct(cost?sh*last/cost-1:null)}</div><div class="ks ${cls(sh*last-cost)}">${(sh*last-cost)>=0?"+":"−"}${money(Math.abs(sh*last-cost))}</div></div></div>
      ${lotEditor(r.t,"d")}`:"")+
-    `<form class="frm" id="drPF" ${formOpen?"":"hidden"}><input id="dS" type="number" step="any" min="0" placeholder="Shares" style="width:100px" required><input id="dC" type="number" step="any" min="0" placeholder="Cost per share" value="${last?last.toFixed(2):""}" style="width:130px" required><input id="dD" type="date" aria-label="Date bought (optional)"><button class="btn">Add lot</button><span class="err" id="dErr"></span></form>`;
+    `<form class="frm" id="drPF" ${formOpen?"":"hidden"}><input id="dS" type="number" step="any" min="0" placeholder="Shares" aria-label="Shares" style="width:100px" required><input id="dC" type="number" step="any" min="0" placeholder="Cost per share" aria-label="Cost per share" value="${last?last.toFixed(2):""}" style="width:130px" required><input id="dD" type="date" aria-label="Date bought (optional)"><button class="btn">Add purchase</button><span class="err" id="dErr"></span></form>`;
   $("#drPF").onsubmit=posSubmit("d",r.t);
 }
 async function loadEarnHist(t){
@@ -2865,7 +2873,7 @@ $("#ts").addEventListener("keydown",e=>{
 });
 $("#ts").addEventListener("focus",e=>{ if(!e.target.value.trim()){ sItems=quickItems(); sIdx=-1; } showResults(); });
 
-document.addEventListener("change",e=>{ const id=e.target.dataset?.alTog; if(id) api("/api/me/alert/toggle",{id:+id,on:e.target.checked}).catch(()=>{}); });
+document.addEventListener("change",e=>{ const i=e.target, id=i.dataset?.alTog; if(id) api("/api/me/alert/toggle",{id:+id,on:i.checked}).catch(()=>{ i.checked=!i.checked; toast("Couldn't change that alert. Try again."); }); });
 
 /* ======================= data plumbing ======================= */
 /* issuers' holdings files use legal names in odd case ("Jpmorgan Chase + Co", "Procter + Gamble Co/The"); show them as people write them */
@@ -2873,9 +2881,9 @@ const NAME_FIX={Jpmorgan:"JPMorgan","Amazon.Com":"Amazon.com",Exxonmobil:"ExxonM
   Pepsico:"PepsiCo","Mcdonald S":"McDonald's",Crowdstrike:"CrowdStrike",Intl:"International",Of:"of",And:"and",The:"the",Kkr:"KKR",Mclennan:"McLennan","Coca Cola":"Coca-Cola",
   "Sherwin Williams":"Sherwin-Williams",Paypal:"PayPal",Autozone:"AutoZone",Blackrock:"BlackRock",Servicenow:"ServiceNow",Doordash:"DoorDash",Fedex:"FedEx",Ebay:"eBay",
   Iqvia:"IQVIA",Hca:"HCA",Csx:"CSX",Cvs:"CVS",Ibm:"IBM",Amd:"AMD",Asml:"ASML",Tsmc:"TSMC",Nxp:"NXP",Cme:"CME",Ppg:"PPG",Dte:"DTE",Aes:"AES",Nrg:"NRG",Ptc:"PTC",Lkq:"LKQ",
-  Dupont:"DuPont",Mckesson:"McKesson",Hp:"HP",Ups:"UPS",Usa:"USA",Us:"US",Ii:"II",Iii:"III",Ai:"AI",Nvr:"NVR",Ametek:"AMETEK",Tjx:"TJX",Cbre:"CBRE",Bny:"BNY",Ebay:"eBay",
-  Gamestop:"GameStop",Linkedin:"LinkedIn",Moderna:"Moderna",Smurfit:"Smurfit",Fortinet:"Fortinet",Synopsys:"Synopsys",Arista:"Arista",Applovin:"AppLovin",Datadog:"Datadog",
-  Mongodb:"MongoDB",Gopro:"GoPro",Marketaxess:"MarketAxess",Onsemi:"onsemi",Globalfoundries:"GlobalFoundries",Microchip:"Microchip",Robinhood:"Robinhood",Coinbase:"Coinbase"};
+  Dupont:"DuPont",Mckesson:"McKesson",Hp:"HP",Ups:"UPS",Usa:"USA",Us:"US",Ii:"II",Iii:"III",Ai:"AI",Nvr:"NVR",Ametek:"AMETEK",Tjx:"TJX",Cbre:"CBRE",Bny:"BNY",
+  Gamestop:"GameStop",Linkedin:"LinkedIn",Applovin:"AppLovin",
+  Mongodb:"MongoDB",Gopro:"GoPro",Marketaxess:"MarketAxess",Onsemi:"onsemi",Globalfoundries:"GlobalFoundries"};
 function niceName(n,keepClass=true){
   if(!n||/[a-z]/.test(n)===false&&n.length<6) return n;
   n=String(n).replace(/\s+/g," ").trim().replace(/\s*\+\s*/g," & ").replace(/\bAt & T\b/,"AT&T").replace(/\bS & P\b/,"S&P").replace(/\bM & T\b/,"M&T").replace(/\bP G & E\b/,"PG&E").replace(/\/The\b/,"");
@@ -2915,7 +2923,7 @@ function setStatus(L){
   if(age!=null&&age<90){dot.className="dot on";st.textContent=`Live · updated ${t}`;}
   else if(L.lastPoll&&L.now-L.lastPoll<180){dot.className="dot warn";st.textContent=`Stream quiet, polling · ${t}`;}
   else if(L.open){const last=Math.max(L.lastTick||0,L.lastPoll||0);dot.className="dot warn";st.textContent=last?`Prices delayed · last update ${new Date(last*1000).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}`:"Market open · waiting for prices";}
-  else{dot.className="dot";st.textContent=`Market closed · as of ${shortDate(L.date)} close`;}
+  else{dot.className="dot";st.textContent=L.date?`Market closed · as of ${shortDate(L.date)} close`:"Market closed";}
   dot.title=st.textContent;   // the text hides on narrow headers; the dot still explains itself on hover
 }
 poll(); setInterval(poll,3000); setInterval(loadMe,30000);

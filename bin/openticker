@@ -13,7 +13,7 @@ App
   openticker open                    open the app window (or your browser)
   openticker stop | restart | status
   openticker logs                    follow the server log
-  openticker pair                    link for using the app and Ask from your phone
+  openticker pair                    link for using the app and Tick from your phone
   openticker setup [--lan]           first-run setup: background service, Mac app, agent skills
   openticker update                  pull the latest version and restart
   openticker doctor                  check Python, the service, the Mac app and your AI agents
@@ -38,7 +38,7 @@ Change it (with Claude Code, Codex or any coding agent; see AGENTS.md)
   openticker edit ["what you want"]  open your coding agent in OpenTicker's code
   openticker check                   fast checks after a change, including the tests
   openticker test [-v]               the tests: the math behind every number
-  openticker shot [page|TICKER] [--dark] [--phone] [--no-tick]
+  openticker shot [page|TICKER] [--dark|--light] [--phone] [--no-tick] [--out FILE]
                                      screenshot a page with headless Chrome and print the file
 
 Agents
@@ -259,7 +259,7 @@ def start(c=None, quiet=False, wait=40):
         if c.get("lan"):
             ip = lan_ip()
             if ip:
-                print(f"    {dim('On your Wi-Fi:')} http://{ip}:{c['port']}  {dim('(run openticker pair for Ask on your phone)')}")
+                print(f"    {dim('On your Wi-Fi:')} http://{ip}:{c['port']}  {dim('(run openticker pair for Tick on your phone)')}")
 
 
 def stop(quiet=False):
@@ -494,9 +494,9 @@ def cmd_setup(args):
         pass
     ready = [a["label"] for a in agents if a.get("state") == "ready"]
     if ready:
-        ok("Ask is ready with " + ", ".join(ready))
+        ok("Tick is ready with " + ", ".join(ready))
     else:
-        warn("No AI agent found yet. Open Ask (press /) in the app to connect Claude Code, Codex, OpenCode or Ollama.")
+        warn("No AI agent found yet. Open Tick (press A) in the app to connect Claude Code, Codex, OpenCode or Ollama.")
     print(f"\n  Open it any time with {_c('1', 'openticker open')}" + (" or from Applications." if MAC else "."))
     if "--no-open" not in args:
         cmd_open([])
@@ -512,7 +512,6 @@ def cmd_update(args):
     stashed and put back. If they clash with the update, nothing changes and we say which files."""
     if not (ROOT / ".git").exists():
         die("this copy wasn't installed with git; reinstall with the one-line installer")
-    head = git("rev-parse", "HEAD").stdout.strip()
     r = git("pull", "--rebase", "--autostash")
     if r.returncode != 0:
         clash = [ln[3:] for ln in git("status", "--porcelain").stdout.splitlines() if ln[:2] in ("UU", "AA", "DU", "UD")]
@@ -557,7 +556,7 @@ def cmd_doctor(args):
             for a in info.get("providers") or []:
                 st = a.get("state")
                 f = ok if st == "ready" else warn if st in ("signin", "off") else (lambda s: print(f"  {dim('·')} {dim(s)}"))
-                f(f"{a['label']}: " + {"ready": "ready" + (f" ({a.get('model')})" if a.get("model") else ""),
+                f(f"{a['label']}: " + {"ready": "ready" + (f" ({a.get('configured')})" if a.get("configured") else ""),
                                        "signin": a.get("why") or "installed, not signed in", "off": "installed, not running",
                                        "missing": "not installed"}.get(st, st))
         except Exception as e:
@@ -626,7 +625,8 @@ def cmd_check(args):
     skills are complete, and the running server answers."""
     import ast
     fails, notes = [], []
-    for f in sorted(APP.glob("*.py")):
+    sources = [f for d in (APP, APP / "sdk", ROOT / "tests", ROOT / ".claude" / "formal") if d.is_dir() for f in sorted(d.glob("*.py"))]
+    for f in sources:
         try:
             compile(f.read_text(), str(f), "exec")
         except SyntaxError as e:
