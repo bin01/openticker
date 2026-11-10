@@ -157,6 +157,8 @@ openticker calendar
 | `openticker check` | Fast checks after a change, including the tests |
 | `openticker test [-v]` | Just the tests: the math behind every number |
 | `openticker shot [page\|TICKER] [--dark\|--light] [--phone] [--out FILE]` | Screenshot a page and print where it saved |
+| `openticker accounts` | Your linked brokerages and when they last synced |
+| `openticker sync` | Sync linked brokerages now (they also sync after each trading day's close) |
 | `openticker skills [install]` | List the playbooks, or install them for your agents |
 | `openticker mcp` | Run as an MCP server |
 
