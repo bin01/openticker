@@ -297,7 +297,7 @@ function renderInsights(){
   const el=$("#drIns"); if(!el) return;
   const r=stockRow(sel); if(!r) return;
   const items=stockInsights(r);
-  el.innerHTML=items.length?insightList(items.slice(0,7)):`<div class="sk" style="height:90px"></div>`;
+  patch(el,items.length?insightList(items.slice(0,7)):`<div class="sk" style="height:90px"></div>`);   // in place: runs on every price tick while the stock is open
 }
 function stockInsights(r){
   const t=r.t, out=[], info=detailCache[t]?.info||{}, A=xpeek("analysts",{t})?.data, O=xpeek("ownership",{t})?.data, OP=xpeek("options",{t})?.data, F=xpeek("financials",{t})?.data, E=xpeek("etf",{t})?.data;
