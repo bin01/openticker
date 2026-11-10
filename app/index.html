@@ -451,7 +451,7 @@ tr:hover .lotb{color:var(--ink-2)}
 .eah{display:flex;align-items:center;gap:8px;padding:2px 4px 8px;font:500 12px var(--f-body);color:var(--ink-3)}.eah b{font-weight:600;color:var(--ink)}
 .eax{margin-left:auto;display:grid;place-items:center;width:26px;height:26px;border:0;border-radius:7px;background:none;color:var(--ink-3);cursor:pointer}.eax:hover{background:var(--grid);color:var(--ink)}
 .eall .eits{columns:240px;column-gap:18px}.eall .eit{break-inside:avoid}
-.eit b{font-size:12.5px;overflow:hidden;text-overflow:ellipsis}.eit .et{color:var(--ink-3)}.eit .ew{color:var(--ink-3)}
+.eit b{font-size:12.5px;overflow:hidden;text-overflow:ellipsis}.eit .et{color:var(--ink-3)}.ii{color:var(--ink-3)}.ii .ic,.et .ic{display:inline-block;vertical-align:-1px}.eit .ew{color:var(--ink-3)}
 .eit .ks{margin:0;grid-column:4/6;text-align:right;white-space:nowrap}.eit>span.up,.eit>span.down,.eit>span.flat,.eit>span.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .tip{position:fixed;pointer-events:none;z-index:40;background:var(--ink);color:var(--bg);font-size:12px;padding:8px 10px;border-radius:8px;max-width:280px;line-height:1.45;opacity:0;transition:opacity .08s;box-shadow:var(--shadow)}
 .note{color:var(--ink-3);font-size:12px;max-width:100ch;line-height:1.55}
@@ -1011,9 +1011,10 @@ body.tick-moving,body.tick-moving *{cursor:grabbing!important;user-select:none!i
 .pop button small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 
 /* Tick himself: a rounded candle with a wick, two eyes with a glint, and a smile he saves for good news */
-.tick{display:inline-grid;place-items:center;width:var(--s);height:var(--s);flex:none;--tk:#2fb877;--tk-2:#1f9a5f}
-:root[data-theme="dark"] .tick{--tk:#4fd494;--tk-2:#2fae70}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .tick{--tk:#4fd494;--tk-2:#2fae70}}
+:root{--tk:#2fb877;--tk-2:#1f9a5f}
+:root[data-theme="dark"]{--tk:#4fd494;--tk-2:#2fae70}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--tk:#4fd494;--tk-2:#2fae70}}
+.tick{display:inline-grid;place-items:center;width:var(--s);height:var(--s);flex:none}
 .tick svg{overflow:visible;display:block}
 .tick .tk-w{stroke:var(--tk-2);stroke-width:2.4;stroke-linecap:round;fill:none}
 .tick .tk-bd{fill:var(--tk);transition:fill .3s}
@@ -1238,7 +1239,7 @@ body.tick-docked .live{margin-left:auto}
 .tr>summary>.ic,.trg>summary>.ic:last-child,.trs>summary>.ic:last-child{color:var(--ink-3);flex:none;transition:transform .2s}
 .tr[open]>summary>.ic,.trg[open]>summary>.ic:last-child,.trs[open]>summary>.ic:last-child{transform:rotate(90deg)}
 .trh{color:var(--ink)}
-.trh .spin,.trs.now .sb::before{content:"";width:12px;height:12px;flex:none;border-radius:50%;background:conic-gradient(from 0deg,transparent 0 30%,#2fb877);
+.trh .spin,.trs.now .sb::before{content:"";width:12px;height:12px;flex:none;border-radius:50%;background:conic-gradient(from 0deg,transparent 0 30%,var(--tk));
   -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2px),#000 calc(100% - 1.5px));mask:radial-gradient(farthest-side,transparent calc(100% - 2px),#000 calc(100% - 1.5px));animation:spin .9s linear infinite}
 .trh .sl,.trs.now .sl{background:linear-gradient(90deg,var(--ink) 0 38%,var(--ink-3) 50%,var(--ink) 62% 100%);background-size:260% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:tkshine 2.2s linear infinite}
 .trh .el,.trs .el{font:500 12px var(--f-body);font-style:normal;color:var(--ink-3);font-variant-numeric:tabular-nums}
@@ -1264,7 +1265,7 @@ body.tick-docked .live{margin-left:auto}
 .trs>summary .el+.ic{margin-left:6px}
 .trs>summary .sl+.ic{margin-left:auto}
 .trs.now{color:var(--ink)}
-.trs.now .sb{border-color:color-mix(in srgb,#2fb877 45%,var(--tk-line))}
+.trs.now .sb{border-color:color-mix(in srgb,var(--tk) 45%,var(--tk-line))}
 .trd{margin:7px 0 3px 33px;min-width:0}
 .trd pre{margin:0;padding:9px 11px;max-height:280px;overflow:auto;border-radius:9px;background:var(--grid);font:500 11.5px/1.55 var(--f-code);
   color:var(--ink);white-space:pre-wrap;word-break:break-word}
@@ -1337,7 +1338,7 @@ body.tick-docked .live{margin-left:auto}
 .md th{font-weight:600;color:var(--ink-3);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
 .tkl{display:inline;border:0;background:none;padding:0;font:inherit;font-weight:inherit;color:inherit;cursor:pointer;text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--ink) 30%,transparent);text-underline-offset:3px;text-decoration-thickness:1px}
 .tkl:hover{text-decoration-color:currentColor}
-.caret{display:inline-block;width:7px;height:15px;background:#2fb877;vertical-align:-2px;margin-left:2px;border-radius:2px;animation:blink 1s steps(2) infinite}
+.caret{display:inline-block;width:7px;height:15px;background:var(--tk);vertical-align:-2px;margin-left:2px;border-radius:2px;animation:blink 1s steps(2) infinite}
 @keyframes blink{50%{opacity:0}}
 .af{display:flex;align-items:center;gap:2px;margin-top:2px;font-size:12px;color:var(--ink-3)}
 .af .ib{width:28px;height:28px;border:0;background:none;border-radius:8px;color:var(--ink-3);cursor:pointer;display:grid;place-items:center;transition:background .15s,color .15s}
@@ -1494,7 +1495,7 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const sgn=x=>x>0?"+":x<0?"−":"";
 const pct=(x,d=2)=>{ if(x==null||!isFinite(x)) return "–"; const s=Math.abs(x*100).toFixed(d); return (+s?sgn(x):"")+s+"%"; };   // no sign on a move that rounds to zero
-const pp=(x,d=2)=>x==null||!isFinite(x)?"–":sgn(x)+Math.abs(x).toFixed(d)+" pp";
+const pp=(x,d=2,u=" pts")=>x==null||!isFinite(x)?"–":sgn(x)+Math.abs(x).toFixed(d)+u;   // percentage points
 const cls=x=>x==null?"flat":x>0?"up":x<0?"down":"flat";
 const clsR=(x,d=2)=>x==null?"flat":cls(+(x*100).toFixed(d));   // the color of the number as shown: −0.04% shows as 0.0%, so it isn't red
 const money=x=>x==null?"–":"$"+(x>=1e5?x.toLocaleString("en-US",{maximumFractionDigits:0}):x.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}));   // cents up to $100k, so a column of prices lines up
@@ -1565,7 +1566,7 @@ function compute(){
   const raw=rows.map(x=>x.r==null?x.w:x.w/(1+x.r)), rs=raw.reduce((a,b)=>a+b,0);
   rows.forEach((x,i)=>{x.w0=raw[i]*sumW/rs; x.c=x.r==null?0:x.w0*x.r;});
   const sumC=rows.reduce((a,x)=>a+x.c,0), Rpp=R==null?null:R*100;
-  if(!f.complete&&Rpp!=null) rows.push({t:"Other",n:"Rest of fund (not itemised)",w:100-sumW,w0:100-sumW,r:null,c:Rpp-sumC,exh:null,ex:{},rets:{},sector:"Other",other:true});
+  if(!f.complete&&Rpp!=null) rows.push({t:"Other",n:"Rest of fund (not itemized)",w:100-sumW,w0:100-sumW,r:null,c:Rpp-sumC,exh:null,ex:{},rets:{},sector:"Other",other:true});
   rows.forEach(x=>x.share=Rpp?x.c/Rpp:null);
   const ranked=rows.filter(r=>!r.other&&r.r!=null).sort((a,b)=>a.r-b.r);
   ranked.forEach((r,i)=>r.rs=Math.round(1+98*i/Math.max(1,ranked.length-1)));
@@ -1624,7 +1625,7 @@ function buildShell(){
     <div class="panel"><div class="ph"><div><h2>${ic("bars")}<span id="barsTitle">What moved the fund</span></h2><div class="hint">Contribution to <span class="fws">the fund's</span> return in percentage points (start weight × return).</div></div></div><div id="bars"></div></div>
   </section>
   <section class="row even" id="s-leaders">
-    <div class="panel"><div class="ph"><div><h2>${ic("award")}Leadership across time frames</h2><div class="hint">The <span id="mxN">20</span> largest holdings. Each cell is the stock's return relative to <span class="fw">the fund</span> over that period, so green means it led. RS is its return rank within <span class="fw">the fund</span> for the selected range (99 = best).</div></div></div><div class="mx-wrap" id="matrix"></div></div>
+    <div class="panel"><div class="ph"><div><h2>${ic("award")}Leadership across time frames</h2><div class="hint">The <span id="mxN">20</span> largest holdings. Each cell is the stock's return relative to <span class="fw">the fund</span> over that period, so green means it led. Rank is where its return places it within <span class="fw">the fund</span> for the selected range (99 = best).</div></div></div><div class="mx-wrap" id="matrix"></div></div>
     <div class="panel"><div class="ph"><div><h2>${ic("scatter")}<span id="rotTitle">Relative rotation</span></h2><div class="hint" id="rotHint"></div></div></div><div id="rotation"></div></div>
   </section>
   <section class="panel" id="s-holdings"><div class="ph"><div><h2>${ic("list")}All holdings</h2><div class="hint" id="tblHint"></div></div><div class="tools"><div class="filters" id="filters"></div><input type="search" id="q" placeholder="Filter by name or sector" aria-label="Filter holdings"></div></div><div class="tbl-wrap"><table class="hold" id="tbl"></table></div><div id="moreWrap"></div></section>
@@ -1684,8 +1685,8 @@ function renderRead(){
   const m=model, s=m.st; if(m.R==null){$("#read").innerHTML="";return;}
   const gap=s.ew-m.R; let tag, lead;
   if(Math.abs(gap)<0.005){tag=m.R>=0?"Broad advance":"Broad decline"; lead=`the average holding moved about as much (${pct(s.ew,1)}), so the move is broad-based`;}
-  else if(gap<0){tag=m.R>=0?"Narrow rally":"Heavyweights led down"; lead=`the average holding returned ${pct(s.ew,1)}, so the largest names ${m.R>=0?"carried the fund":"did most of the damage"}`;}
-  else {tag=m.R>=0?"Broad rally":"Heavyweights lagged"; lead=`the average holding did better at ${pct(s.ew,1)}, so the largest names ${m.R>=0?"held the fund back":"dragged it down"}`;}
+  else if(gap<0){tag=m.R>=0?"Narrow rally":"Heavyweights led down"; lead=`the average holding returned ${pct(s.ew,1)}, so the largest stocks ${m.R>=0?"carried the fund":"did most of the damage"}`;}
+  else {tag=m.R>=0?"Broad rally":"Heavyweights lagged"; lead=`the average holding did better at ${pct(s.ew,1)}, so the largest stocks ${m.R>=0?"held the fund back":"dragged it down"}`;}
   const spy=isPseudo(fund)?series(base.px.SPY,m.i0,1e6).pop():null;
   if(spy){ const g=m.R-spy[1], pts=Math.abs(g*100).toFixed(1);
     tag=Math.abs(g)<0.005?"In line with the S&P 500":g>0?"Ahead of the S&P 500":"Behind the S&P 500";
@@ -1803,11 +1804,11 @@ function renderKpis(){
   $("#kpis").innerHTML=`
    <div><div class="lbl">Average stock</div><div class="kv ${cls(s.ew)}">${pct(s.ew)}</div><div class="ks">Equal-weight, ${s.ew-m.R>=0?"ahead of":"behind"} ${fw} by ${Math.abs((s.ew-m.R)*100).toFixed(1)} points</div></div>
    <div><div class="lbl">Breadth</div><div class="kv">${s.up}<span class="ks"> / ${s.n} up</span></div><div class="meter"><i style="width:${s.up/s.n*100}%;background:var(--up)"></i><i style="flex:1;background:var(--down);opacity:.75"></i></div></div>
-   <div><div class="lbl">Beating ${fw==="the fund"?fund:fw}</div><div class="kv">${s.beat.length}<span class="ks"> names</span></div><div class="ks">${Math.round(s.beatW*100)}% of ${fw} by weight</div></div>
+   <div><div class="lbl">Beating ${fw==="the fund"?fund:fw}</div><div class="kv">${s.beat.length}<span class="ks"> stocks</span></div><div class="ks">${Math.round(s.beatW*100)}% of ${fw} by weight</div></div>
    <div><div class="lbl">Trend</div><div class="duo"><span>50-day</span><div class="meter"><i style="width:${s.above50*100}%;background:var(--accent)"></i></div><span class="num">${Math.round(s.above50*100)}%</span><span>200-day</span><div class="meter"><i style="width:${s.above200*100}%;background:var(--accent)"></i></div><span class="num">${Math.round(s.above200*100)}%</span></div><div class="ks">Holdings above their average</div></div>
    <div><div class="lbl">Concentration</div>${(()=>{ const sh=m.Rpp?Math.round(s.top5/m.Rpp*100):null; const t10=m.rows.filter(r=>!r.other).length>10?` · top 10 hold ${Math.round(s.top10w)}%`:"";
       const word=sh==null?"–":sh>=60?"Narrow":sh>=35?"Moderate":"Broad";   // a plain word first, the number in the line below
-      return sh!=null&&sh>100?`<div class="kv">Narrow</div><div class="ks">5 names moved more than ${fw} as a whole; the rest pulled the other way${t10}</div>`:`<div class="kv">${word}</div><div class="ks">${sh!=null?`5 names drove ${sh}% of the move`:"No move to explain yet"}${t10}</div>`; })()}</div>
+      return sh!=null&&sh>100?`<div class="kv">Narrow</div><div class="ks">5 stocks moved more than ${fw} as a whole; the rest pulled the other way${t10}</div>`:`<div class="kv">${word}</div><div class="ks">${sh!=null?`5 stocks drove ${sh}% of the move`:"No move to explain yet"}${t10}</div>`; })()}</div>
    <div><div class="lbl">52-week extremes</div><div class="kv"><span class="${s.nearHi?"up":""}">${s.nearHi}</span><span class="ks"> near highs</span></div><div class="ks"><span class="${s.nearLo?"down":""} num">${s.nearLo}</span> near lows · within 2%</div></div>`;
 }
 function isLive(d){ return liveInfo&&liveInfo.lastTick&&(Date.now()/1000-liveInfo.lastTick)<600&&d===liveInfo.date; }
@@ -1882,7 +1883,7 @@ function renderBars(){
   $("#barsTitle").textContent=`What moved ${isPseudo(fund)?"your "+fund.toLowerCase():fund} · ${hz}`;
 }
 function tipFor(r){
-  if(r.other) return `<b>Rest of fund</b><br>${r.w.toFixed(1)}% of assets not itemised by the data source<br>Contribution ${pp(r.c)}`;
+  if(r.other) return `<b>Rest of fund</b><br>${r.w.toFixed(1)}% of assets not itemized by the data source<br>Contribution ${pp(r.c)}`;
   return `<b>${esc(r.t)}</b> · ${esc(r.n)}<br>${esc(r.sector)}<br>${hz} ${pct(r.r)} · vs fund ${pct(r.exh)}<br>Weight ${r.w.toFixed(2)}% · contribution <b>${pp(r.c)}</b>${r.offHi!=null?`<br>${pct(r.offHi,1)} from 52-wk high`:""}`;
 }
 
@@ -1892,7 +1893,7 @@ function cellFg(v,h){ if(v==null) return "var(--ink-3)"; return Math.abs(v/(HEAT
 function renderMatrix(){
   const top=model.rows.filter(r=>!r.other).sort((a,b)=>b.w-a.w).slice(0,20);
   const fr=model.ff.rets; if($("#mxN")) $("#mxN").textContent=top.length;
-  let s=`<table class="mx"><thead><tr><th class="l">Stock</th><th>Wt %</th>${HZ.map(h=>`<th class="${h===hz?"cur":""}">${h}</th>`).join("")}<th>RS</th></tr>
+  let s=`<table class="mx"><thead><tr><th class="l">Stock</th><th>Wt %</th>${HZ.map(h=>`<th class="${h===hz?"cur":""}">${h}</th>`).join("")}<th title="Return rank within the fund for this range, 1 to 99 (99 is best)">Rank</th></tr>
     <tr><td class="l" style="color:var(--ink-3);font-weight:500">${fund} return</td><td></td>${HZ.map(h=>`<td class="num ${cls(fr[h])}" style="font-size:11px">${pct(fr[h],1)}</td>`).join("")}<td></td></tr></thead><tbody>`;
   top.forEach(r=>{
     s+=`<tr data-sel="${esc(r.t)}"><td class="l">${esc(r.t)}<small>${r.n===r.t?"":esc(trunc(r.n.replace(/ Class [A-C]$/,""),22))}</small></td><td class="w num">${r.w.toFixed(1)}</td>${HZ.map(h=>{const v=r.ex[h];return `<td data-tip="${esc(`<b>${r.t}</b> ${h}: ${pct(r.rets[h])}<br>${fund}: ${pct(fr[h])}<br>Relative: <b>${pct(v)}</b>`)}" style="background:${cellBg(v,h)};color:${cellFg(v,h)};${h===hz?"box-shadow:inset 0 0 0 1.5px var(--ink)":""}">${v==null?"–":(v>0?"+":"−")+Math.abs(v*100).toFixed(Math.abs(v)<.1?1:0)}</td>`;}).join("")}<td><span class="rs" style="background:${r.rs>=70?"var(--up-soft)":r.rs<=30?"var(--down-soft)":"var(--grid)"};color:${r.rs>=70?"var(--up)":r.rs<=30?"var(--down)":"var(--ink-2)"}">${r.rs??"–"}</span></td></tr>`;
@@ -1955,7 +1956,7 @@ function renderRotation(){
   niceTicks(100-xm,100+xm,4).forEach(t=>{s+=`<text x="${X(t)}" y="${H-B2+16}" font-size="${ts}" text-anchor="middle" class="mono" fill="var(--ink-3)">${fmt(t)}</text>`;});
   niceTicks(100-ym,100+ym,4).forEach(t=>{s+=`<text x="${L-6}" y="${Y(t)+4}" font-size="${ts}" text-anchor="end" class="mono" fill="var(--ink-3)">${fmt(t)}</text>`;});
   s+=`<line x1="${X(100)}" x2="${X(100)}" y1="${T}" y2="${H-B2}" stroke="var(--ink-3)"/><line x1="${L}" x2="${W-R}" y1="${Y(100)}" y2="${Y(100)}" stroke="var(--ink-3)"/>`;
-  s+=`<text x="${(L+W-R)/2}" y="${H-4}" font-size="${ts}" text-anchor="middle" fill="var(--ink-3)">Relative strength vs ${esc(vs)} (RS-Ratio) →</text><text transform="rotate(-90)" x="${-(T+(H-T-B2)/2)}" y="12" font-size="${ts}" text-anchor="middle" fill="var(--ink-3)">Momentum (RS-Momentum) →</text>`;
+  s+=`<text x="${(L+W-R)/2}" y="${H-4}" font-size="${ts}" text-anchor="middle" fill="var(--ink-3)">Strength vs ${esc(vs)} →</text><text transform="rotate(-90)" x="${-(T+(H-T-B2)/2)}" y="12" font-size="${ts}" text-anchor="middle" fill="var(--ink-3)">Momentum →</text>`;
   const tailed=new Set(sel?[sel]:[]);
   [...pts].reverse().forEach(r=>{ const on=r.t===sel, h=head(r), c=quadColor(h);
     const P=r.path;
@@ -1992,7 +1993,7 @@ function passes(r){
 function renderTable(){
   const m=model; if(!m) return;
   $("#filters").innerHTML=FILTERS.map(([k,l])=>`<button data-filter="${k}" aria-pressed="${k===filter}">${l.replace("fund",isPseudo(fund)?fund.toLowerCase():fund)}</button>`).join("");
-  const cols=[["t","Ticker","l"],["n","Name","l"],["sector","Sector","l"],["last","Price"],["chg","Today"],["w","Weight"],["r",hz],["exh",`vs ${fund}`],["c","Contribution"],["rs","RS"],["pos","52-wk range"],["vs200","vs 200-day"],["spark",`${hz} trend`]];
+  const cols=[["t","Ticker","l"],["n","Name","l"],["sector","Sector","l"],["last","Price"],["chg","Today"],["w","Weight"],["r",hz],["exh",`vs ${fund}`],["c","Contribution"],["rs","Rank"],["pos","52-wk range"],["vs200","vs 200-day"],["spark",`${hz} trend`]];
   let rows=m.rows.filter(passes);
   rows.sort((a,b)=>{const x=a[sortKey],y=b[sortKey]; if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1; return (typeof x==="string"?x.localeCompare(y):x-y)*sortDir;});
   const total=rows.length; if(!showAll&&!query) rows=rows.slice(0,40);
@@ -2018,7 +2019,7 @@ function chipBg(v){ if(v==null) return "transparent"; const p=Math.round(clamp(M
 function renderNote(){
   const m=model, gap=m.Rpp!=null?m.Rpp-m.sumC:null;
   if(isPseudo(fund)){ $("#note").innerHTML=`How this is computed. ${fund==="Portfolio"?"Your portfolio is valued at live prices with the shares you entered. Its history assumes you held today's shares for the whole period, so it shows what drove your current holdings rather than your actual past trades.":"Your watchlist is treated as an equal-weight basket, rebalanced daily."} Contribution is start-of-period weight × return, as for the funds. Prices come from Yahoo Finance.`; return; }
-  $("#note").innerHTML=`How this is computed. Contribution is start-of-period weight × return. Start weights are backed out from today's published weights and each stock's return, so they add up to the fund's return without needing historical holdings. ${m.f.complete?`For ${fund} over ${hz}, contributions sum to ${pp(m.sumC)} against the fund's ${pp(m.Rpp)}; the ${pp(gap)} gap is cash, fees, dividends and any rebalancing during the period.`:`The data source only itemises the top ${m.f.holdings.length} holdings of ${fund} (${m.sumW.toFixed(0)}% of assets); the rest is one "Other" line equal to the fund's return minus the itemised contributions.`} "Average stock" is the equal-weighted mean return of the holdings. Moving averages and 52-week ranges use daily closes adjusted for splits and dividends. Prices stream from Yahoo Finance during regular hours.`;
+  $("#note").innerHTML=`How this is computed. Contribution is start-of-period weight × return. Start weights are backed out from today's published weights and each stock's return, so they add up to the fund's return without needing historical holdings. ${m.f.complete?`For ${fund} over ${hz}, contributions sum to ${pp(m.sumC,2," percentage points")} against the fund's ${pp(m.Rpp,2,"")}; the gap of ${pp(gap,2,"")} is cash, fees, dividends and any rebalancing during the period.`:`The data source only itemizes the top ${m.f.holdings.length} holdings of ${fund} (${m.sumW.toFixed(0)}% of assets); the rest is one "Other" line equal to the fund's return minus the itemized contributions.`} "Average stock" is the equal-weighted mean return of the holdings. Moving averages and 52-week ranges use daily closes adjusted for splits and dividends. Prices stream from Yahoo Finance during regular hours.`;
 }
 
 /* ======================= drawer ======================= */
@@ -2154,8 +2155,8 @@ function drawerShell(r){
 function drawerLive(r){
   const fund=r.bench, fr=benchModel(fund).ff.rets, inFunds=FUND_LIST.filter(k=>base.funds[k]?.holdings.some(h=>h.t===r.t));
   const X=extOf(r.t);
-  $("#drPrice").innerHTML=!X?`<span class="p ${flashes[r.t]||""}">${money(r.last)}</span><span class="num ${cls(r.chg)}">${pct(r.chg)} today</span>`:
-    `<div class="pq"><div class="pr"><span class="p">${money(r.last)}</span><span class="num ${cls(r.chg)}">${pct(r.chg)}${X.s==="post"?" today":""}</span></div><div class="pw">${X.s==="post"?"At the close, 4:00 pm":"Last close"}</div></div>
+  $("#drPrice").innerHTML=!X?`<span class="p ${flashes[r.t]||""}">${money(r.last)}</span><span class="num ${cls(r.chg)}">${pct(r.chg)} ${sessWhen()}</span>`:
+    `<div class="pq"><div class="pr"><span class="p">${money(r.last)}</span><span class="num ${cls(r.chg)}">${pct(r.chg)}${X.s==="post"?" "+sessWhen():""}</span></div><div class="pw">${X.s==="post"?"At the close, 4:00 pm":"Last close"}</div></div>
      <div class="pq pqx"><div class="pr"><span class="pe">${ic(X.s==="pre"?"sun":"moon",14)}${money(X.p)}</span><span class="num ${cls(X.chg)}">${pct(X.chg)}</span></div><div class="pw">${X.lab}, ${extTime(X.ts)}</div></div>`;
   const badges=[];
   if(r.offHi!=null&&r.offHi>-0.02) badges.push(`<span class="chip up">Near 52-wk high</span>`);
@@ -2163,11 +2164,11 @@ function drawerLive(r){
   if(r.vs50!=null&&r.vs200!=null) badges.push(r.vs50>0&&r.vs200>0?`<span class="chip up">Uptrend · above 50 &amp; 200-day</span>`:r.vs50<0&&r.vs200<0?`<span class="chip down">Downtrend · below 50 &amp; 200-day</span>`:`<span class="chip">Trend turning · ${r.vs50>0?"above":"below"} 50-day, ${r.vs200>0?"above":"below"} 200-day</span>`);
   if(r.ex["3M"]!=null&&r.ex["1M"]!=null){ const q=r.ex["3M"]>=0?(r.ex["1M"]>=0?"Leading":"Weakening"):(r.ex["1M"]>=0?"Improving":"Lagging"); badges.push(`<span class="chip">${q} vs ${fund}</span>`); }
   $("#drBadges").innerHTML=badges.join("");
-  $("#drFund").innerHTML=!r.held?`<p class="hint" style="margin:0;grid-column:1/-1">${FUND_LIST.includes(r.t)?`${esc(r.t)} is one of the four funds, so it's compared with ${fund}${benchWhy(fund,r)}.`:`${esc(r.t)} isn't held in ${FUND_LIST.slice(0,-1).join(", ")} or ${FUND_LIST.at(-1)}, so it's compared with ${fund}${benchWhy(fund,r)}, a stand-in for the whole market.`}</p>`:`
+  $("#drFund").innerHTML=!r.held?`<p class="hint" style="margin:0;grid-column:1/-1">${FUND_LIST.includes(r.t)?`${esc(r.t)} is one of the funds OpenTicker follows, so it's compared with ${fund}${benchWhy(fund,r)}.`:`${esc(r.t)} isn't held in ${FUND_LIST.slice(0,-1).join(", ")} or ${FUND_LIST.at(-1)}, so it's compared with ${fund}${benchWhy(fund,r)}, a stand-in for the whole market.`}</p>`:`
      <div class="stat"><div class="lbl">Weight</div><div class="v">${r.w.toFixed(2)}%</div></div>
      <div class="stat"><div class="lbl">${hz} contribution</div><div class="v ${cls(r.c)}">${pp(r.c)}</div></div>
      <div class="stat"><div class="lbl">Share of ${fund}'s move</div><div class="v">${r.share==null?"–":Math.round(r.share*100)+"%"}</div></div>
-     <div class="stat"><div class="lbl">RS rank (${hz})</div><div class="v">${r.rs??"–"} / 99</div></div>`;
+     <div class="stat"><div class="lbl">Return rank (${hz})</div><div class="v">${r.rs??"–"} / 99</div></div>`;
   $("#drRet").innerHTML=`<table class="hz"><thead><tr><th>Range</th><th>${esc(r.t)}</th><th>${fund}</th><th>Relative</th></tr></thead><tbody>
      ${HZ.map(h=>`<tr style="${h===hz?"font-weight:600":""}"><td>${h}</td><td class="num ${cls(r.rets[h])}">${pct(r.rets[h])}</td><td class="num ${cls(fr[h])}">${pct(fr[h])}</td><td class="num ${cls(r.ex[h])}">${pct(r.ex[h])}</td></tr>`).join("")}</tbody></table>`;
   $("#drPos").innerHTML=`
@@ -2196,7 +2197,7 @@ function renderPeers(r){
   if(r.sector==="Unclassified"||all.length<(r.held?2:1)){ $("#drPeers").innerHTML=`<p class="hint" style="margin:0">${r.sector==="Unclassified"?"Sector not loaded yet for this stock.":`No other ${esc(r.sector)} stocks in ${fund}.`}</p>`; return; }
   const sumR=all.reduce((a,x)=>a+(x.r??0)*x.w,0)/sw;
   $("#drPeersH").textContent=`${r.sector} peers in ${fund}`;
-  $("#drPeers").innerHTML=`<p class="hint" style="margin:0 0 8px">${r.held?`#${rank} of ${all.length}`:`${esc(r.t)} isn't in ${fund}. Its ${all.length}`} ${esc(r.sector)} names by weight. The sector is ${sw.toFixed(1)}% of ${fund} and returned ${pct(sumR)} over ${hz} (weighted).</p>
+  $("#drPeers").innerHTML=`<p class="hint" style="margin:0 0 8px">${r.held?`#${rank} of ${all.length}`:`${esc(r.t)} isn't in ${fund}. Its ${all.length}`} ${esc(r.sector)} stocks by weight. The sector is ${sw.toFixed(1)}% of ${fund} and returned ${pct(sumR)} over ${hz} (weighted).</p>
    <table class="hz peers"><thead><tr><th>Stock</th><th>Weight</th><th>Today</th><th>${hz}</th><th>vs ${fund}</th></tr></thead><tbody>${
    list.map(x=>`<tr data-sel="${esc(x.t)}" class="${x.t===r.t?"me":""}"><td><b class="mono">${esc(x.t)}</b> <span class="pn">${esc(trunc(x.n,22))}</span></td><td class="num">${x.w.toFixed(2)}%</td><td class="num ${cls(x.chg)}">${pct(x.chg,1)}</td><td class="num ${cls(x.r)}">${pct(x.r,1)}</td><td class="num ${cls(x.exh)}">${pct(x.exh,1)}</td></tr>`).join("")}</tbody></table>`;
 }
@@ -2222,14 +2223,14 @@ function renderDetail(){
   const cell=(l,v,k,c="")=>`<div class="stat"><div class="lbl">${l}</div><div class="v ${c}">${v}</div>${k?`<div class="ks">${k}</div>`:""}</div>`;
   $("#drVal").innerHTML=Object.keys(i).length?[
     cell("P/E (trailing)",mult(i.trailingPE)), cell("P/E (forward)",mult(i.forwardPE)), cell("PEG",i.trailingPegRatio??i.pegRatio?(i.trailingPegRatio??i.pegRatio).toFixed(2):"–"),
-    cell("Price / sales",mult(i.priceToSalesTrailing12Months)), cell("EV / EBITDA",mult(i.enterpriseToEbitda)), cell("Price / book",mult(i.priceToBook)),
+    cell("Price / sales",mult(i.priceToSalesTrailing12Months)), cell("EV / EBITDA",mult(i.enterpriseToEbitda),"value per $1 of operating profit"), cell("Price / book",mult(i.priceToBook)),
     cell("Dividend yield",i.dividendRate&&r.last?(i.dividendRate/r.last*100).toFixed(2)+"%":i.dividendYield!=null?i.dividendYield.toFixed(2)+"%":"–",i.dividendRate?"$"+i.dividendRate.toFixed(2)+" a year":""), cell("Beta",i.beta!=null?i.beta.toFixed(2):"–"), cell("Short interest",pc(i.shortPercentOfFloat),"of shares that trade"),
     cell("Enterprise value",big(i.enterpriseValue),"market cap plus debt, minus cash"), cell("Payout ratio",i.payoutRatio!=null?pc(i.payoutRatio,0):"–","of earnings paid as dividends"), cell("Insiders own",pc(i.heldPercentInsiders),"of the shares")].join(""):err;
   $("#drGrow").innerHTML=Object.keys(i).length?[
-    cell("Revenue growth",pct(i.revenueGrowth,1),"year over year, last quarter",cls(i.revenueGrowth)), cell("Earnings growth",pct(i.earningsGrowth??i.earningsQuarterlyGrowth,1),"year over year, last quarter",cls(i.earningsGrowth??i.earningsQuarterlyGrowth)), cell("Revenue (TTM)",big(i.totalRevenue)),
+    cell("Revenue growth",pct(i.revenueGrowth,1),"year over year, last quarter",cls(i.revenueGrowth)), cell("Earnings growth",pct(i.earningsGrowth??i.earningsQuarterlyGrowth,1),"year over year, last quarter",cls(i.earningsGrowth??i.earningsQuarterlyGrowth)), cell("Revenue",big(i.totalRevenue),"past 12 months"),
     cell("Gross margin",pc(i.grossMargins)), cell("Operating margin",pc(i.operatingMargins)), cell("Net margin",pc(i.profitMargins)),
-    cell("Return on equity",pc(i.returnOnEquity)), cell("Free cash flow",big(i.freeCashflow),"trailing 12 months"), cell("Debt / equity",i.debtToEquity!=null?(i.debtToEquity/100).toFixed(2):"–"),
-    cell("Cash",big(i.totalCash),"cash and short-term investments"), cell("Total debt",big(i.totalDebt)), cell("Net income (TTM)",big(i.netIncomeToCommon),"profit over the last 12 months",cls(i.netIncomeToCommon))].join(""):"";
+    cell("Return on equity",pc(i.returnOnEquity)), cell("Free cash flow",big(i.freeCashflow),"past 12 months"), cell("Debt / equity",i.debtToEquity!=null?(i.debtToEquity/100).toFixed(2):"–"),
+    cell("Cash",big(i.totalCash),"cash and short-term investments"), cell("Total debt",big(i.totalDebt)), cell("Net income",big(i.netIncomeToCommon),"profit over the past 12 months",cls(i.netIncomeToCommon))].join(""):"";
   // news
   const news=d.news||[];
   $("#drNews").innerHTML=news.length?`<ul class="news">${news.map(n=>{const u=safeUrl(n.link), th=safeUrl(n.thumb);return `<li>${th?`<img src="${esc(th)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:""}<div><a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a><div class="ks">${esc(n.publisher||"")}${n.time?" · "+ago(n.time):""}</div></div></li>`;}).join("")}</ul>`
@@ -2400,7 +2401,9 @@ function applyHl(){ document.querySelectorAll(".hl").forEach(e=>e.classList.remo
 document.addEventListener("mouseover",e=>{ const t=e.target.closest?.("#app [data-sel], #tape [data-sel]")?.dataset.sel||null; if(t!==hlT){ hlT=t; applyHl(); } });
 const THEMES=["auto","light","dark"]; let theme=load("theme","auto");
 { const q=new URLSearchParams(location.search).get("theme"); if(THEMES.includes(q)) theme=q; }   // ?theme=dark for screenshots; not saved
-function applyTheme(){ if(theme==="auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme=theme; const tb=$("#theme"); tb.innerHTML=ic({auto:"auto",light:"sun",dark:"moon"}[theme],17); tb.title=`Theme: ${{auto:"matches your system",light:"light",dark:"dark"}[theme]}. Click to change.`; }
+const tcs=[...document.querySelectorAll('meta[name="theme-color"]')]; tcs.forEach(m=>m.dataset.c=m.content);   // the phone's browser bar follows the chosen theme
+function applyTheme(){ if(theme==="auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme=theme;
+  tcs.forEach(m=>m.content=theme==="auto"?m.dataset.c:tcs.find(x=>x.media.includes(theme))?.dataset.c||m.dataset.c); const tb=$("#theme"); tb.innerHTML=ic({auto:"auto",light:"sun",dark:"moon"}[theme],17); tb.title=`Theme: ${{auto:"matches your system",light:"light",dark:"dark"}[theme]}. Click to change.`; }
 $("#theme").addEventListener("click",()=>{ theme=THEMES[(THEMES.indexOf(theme)+1)%3]; save("theme",theme); applyTheme(); });
 applyTheme();
 function setupNav(){
@@ -2456,11 +2459,16 @@ let me=null, EARN={}, earnAt=0, earnHist={}, lastEventId=+load("lastEvent","0"),
 const isPseudo=k=>k in PSEUDO;
 // a paired phone proves itself on every call for the person's own data (server.py private_ok)
 const meHeaders=(h={})=>{ const t=load("askToken",""); return t?{...h,"X-Ask-Token":t}:h; };
+let baseWant=null;   // tickers a save just added that /api/base has no prices for yet: poll() fetches it again until they come, for up to a minute
+const myTickers=()=>[...(me?.watch||[]),...(me?.positions||[]).map(p=>p.t)];
 async function api(path,body){
   const r=await fetch(path,{method:"POST",headers:meHeaders({"Content-Type":"application/json"}),body:JSON.stringify(body||{})});
   const d=await r.json().catch(()=>({error:"The server didn't answer."}));
   if(!r.ok) throw new Error(d.error||"Something went wrong.");
-  me=d; afterMe(); return d;
+  const had=new Set(myTickers()); me=d; afterMe();
+  const add=base?myTickers().filter(t=>!had.has(t)&&!base.px[t]):[]; if(add.length) baseWant={T:add,until:Date.now()+60e3};
+  if(base) render();   // show the change now, not at the next poll; render keeps what's being typed
+  return d;
 }
 async function loadMe(){ try{ const r=await fetch("/api/me",{headers:meHeaders()});
   me=r.status===403?{watch:[],positions:[],alerts:[],events:[],unread:0,kinds:{},settings:{},locked:true}:await r.json(); afterMe(); }catch(e){} }
@@ -2509,7 +2517,11 @@ function openAlerts(){ $("#side2").classList.add("open"); $("#scrim").classList.
 function closeAlerts(){ $("#side2").classList.remove("open"); if(!drawerOpen) $("#scrim").classList.remove("open"); $("#side2").setAttribute("aria-hidden","true"); }
 /* older alerts were written with legal names ("Nvidia Corp is at…"); say them the way the app does */
 function tidyCo(x){ return String(x||"").replace(/,? (?:Inc\.?|Corporation|Corp\.?)(?=[\s.,;]|$)/g,"").replace(/\bNasdaq-100\b/g,"Nasdaq\u2011100").replace(/ +\./g,".").replace(/EPS estimate \$([\d.]+)\./,"Analysts expect $$$1 a share."); }
-function ruleText(a){ const k=me.kinds[a.kind]||a.kind; return k.replace("{value}",a.value!=null?(+a.value).toLocaleString("en-US"):"?"); }
+const kindText=k=>me.kinds[k]||k;
+/* a crossing alert whose level the price is already past waits for it to cross back, so say so at once */
+function passedNote(k,t,v,last){ v=+v; if(!(k==="above"||k==="below")||!t||!(v>0)||last==null) return; const up=k==="above";
+  if(up?last>v:last<v) toast(`${t} is already ${up?"above":"below"} $${v.toLocaleString("en-US")}, so this alert will fire the next time it crosses back ${up?"above":"below"}.`); }
+function ruleText(a){ const k=kindText(a.kind); return k.replace("{value}",a.value!=null?(+a.value).toLocaleString("en-US"):"?"); }
 function scopeText(a){ return a.t?a.t:{watch:"Watchlist",portfolio:"Portfolio",both:"Watchlist and portfolio"}[a.scope]||a.scope; }
 let topic0=null;   // the suggested topic, made once, so the one you copy to your phone is the one that's saved
 function randTopic(){ if(topic0) return topic0; const c="abcdefghijkmnpqrstuvwxyz23456789"; let s="openticker-"; const r=crypto.getRandomValues(new Uint8Array(12)); r.forEach(x=>s+=c[x%c.length]); return topic0=s; }
@@ -2522,7 +2534,7 @@ function renderAlertsPanel(){
    <div class="dr-h"><div><h3>Alerts</h3><div class="nm">Checked every 30 seconds while OpenTicker is running on your Mac.</div></div><button class="x" id="closeAl" aria-label="Close">×</button></div>
    <div class="dr-sec"><h4>Recent</h4>${ev.length?`<ul class="evs">${ev.slice(0,30).map(e=>`<li class="${e.read?"":"new"}"><button class="lnk-row" ${e.t?`data-al-open="${esc(e.t)}"`:""}><b>${esc(tidyCo(e.title))}</b><span>${esc(tidyCo(e.body))}</span><small>${ago(e.ts)}</small></button></li>`).join("")}</ul>`:`<p class="hint" style="margin:0">Nothing yet. Alerts appear here as your rules trigger.</p>`}</div>
    <div class="dr-sec"><h4>Rules</h4><table class="hz rules"><tbody>${me.alerts.map(a=>`<tr><td><label class="sw2"><input type="checkbox" data-al-tog="${a.id}" ${a.active?"checked":""}> ${esc(ruleText(a))}</label></td><td class="l" style="color:var(--ink-3)">${esc(scopeText(a))}</td><td style="width:28px"><button class="lnk" data-al-del="${a.id}" aria-label="Delete rule">✕</button></td></tr>`).join("")}</tbody></table>
-     <form class="frm" id="alForm"><select id="alKind" aria-label="What to watch for">${Object.entries(me.kinds).map(([k,v])=>`<option value="${k}">${esc(v.replace("{value}","…").replace("$…","a price"))}</option>`).join("")}</select>
+     <form class="frm" id="alForm"><select id="alKind" aria-label="What to watch for">${Object.keys(me.kinds).map(k=>`<option value="${k}">${esc(kindText(k).replace("{value}","…").replace("$…","a level"))}</option>`).join("")}</select>
        <select id="alScope" aria-label="Which stocks"><option value="both">Watchlist and portfolio</option><option value="watch">Watchlist</option><option value="portfolio">Portfolio</option><option value="one">One ticker…</option></select>
        <input id="alT" placeholder="Ticker" aria-label="Ticker" maxlength="10" hidden><input id="alV" type="number" step="any" placeholder="Value" aria-label="Price, or percent move" hidden>
        <button class="btn">Add rule</button><span class="err" id="alErr"></span></form></div>
@@ -2538,7 +2550,7 @@ function renderAlertsPanel(){
   const sync=()=>{ const k=kind.value, one=scope.value==="one"||k==="above"||k==="below"; if(k==="above"||k==="below") scope.value="one"; $("#alT").hidden=!one; $("#alV").hidden=!["move","above","below"].includes(k); $("#alV").placeholder=k==="move"?"% move, e.g. 5":"Price"; };
   kind.onchange=sync; scope.onchange=sync; sync();
   if(fid){ const n=document.getElementById(fid); if(n&&!n.hidden&&n!==a){ n.focus({preventScroll:true}); try{ if(s0!=null) n.setSelectionRange(s0,s1); }catch(e){} } }
-  $("#alForm").onsubmit=async e=>{ e.preventDefault(); const k=kind.value, one=!$("#alT").hidden; try{ await api("/api/me/alert",{kind:k,scope:one?null:scope.value,t:one?$("#alT").value.trim():null,value:$("#alV").hidden?null:$("#alV").value}); const f=$("#alForm"); if(f){ f.reset(); $("#alKind").onchange(); } }catch(x){ $("#alErr").textContent=x.message; } };
+  $("#alForm").onsubmit=async e=>{ e.preventDefault(); const k=kind.value, one=!$("#alT").hidden, T=one?$("#alT").value.trim():null, V=$("#alV").hidden?null:$("#alV").value; try{ await api("/api/me/alert",{kind:k,scope:one?null:scope.value,t:T,value:V}); T&&passedNote(k,T.toUpperCase(),V,lastValid(base?.px[T.toUpperCase()]||[])); const f=$("#alForm"); if(f){ f.reset(); $("#alKind").onchange(); } }catch(x){ $("#alErr").textContent=x.message; } };
   $("#ntForm").onsubmit=async e=>{ e.preventDefault(); try{ await api("/api/me/settings",{ntfyTopic:$("#ntTopic").value.trim(),ntfyServer:st.ntfyServer}); topic0=null; }catch(x){ $("#ntErr").textContent=x.message; } };
   $("#ntTest")&&($("#ntTest").onclick=async()=>{ try{ await api("/api/me/test-push"); $("#ntErr").textContent="Sent. Check your phone."; $("#ntErr").className="ok"; }catch(x){ $("#ntErr").textContent=x.message; } });
   $("#ntOff")&&($("#ntOff").onclick=()=>api("/api/me/settings",{ntfyTopic:"",ntfyServer:st.ntfyServer}).catch(()=>toast("Couldn't turn off phone notifications. Try again.")));
@@ -2807,13 +2819,13 @@ function drawerMine(r){
   const el=$("#drAct"); if(!el||!me) return;
   const on=me.watch.includes(r.t), L=lots(r.t), my=me.alerts.filter(a=>a.t===r.t), afOpen=$("#drAF")&&!$("#drAF").hidden, formOpen=$("#drPF")&&!$("#drPF").hidden;
   el.innerHTML=`<button class="btn ${on?"":"ghost"}" id="drW" aria-pressed="${on}">${ic("star",14,on)}${on?"Watching":"Watch"}</button><button class="btn ghost" id="drP">${ic("plus",14)}Position</button><button class="btn ghost" id="drA">${ic("bell",14)}Price alert</button><button class="btn ghost askact" data-ask-scope="stock" data-ask-t="${esc(r.t)}" title="Ask Tick about ${esc(r.t)} (A)">${typeof tickFace==="function"?tickFace(16):ic("spark",14)}Ask Tick</button>
-    <form class="frm" id="drAF" ${afOpen?"":"hidden"}><select id="drAK" aria-label="When to alert"><option value="above">Rises above</option><option value="below">Falls below</option><option value="move">Moves at least (%)</option></select><input id="drAV" type="number" step="any" placeholder="${money(r.last)}" aria-label="Price, or percent move" style="width:110px" required><button class="btn">Add</button><span class="err" id="drAErr"></span></form>
+    <form class="frm" id="drAF" ${afOpen?"":"hidden"}><select id="drAK" aria-label="When to alert"><option value="above">Crosses above</option><option value="below">Crosses below</option><option value="move">Moves at least (%)</option></select><input id="drAV" type="number" step="any" placeholder="${money(r.last)}" aria-label="Price, or percent move" style="width:110px" required><button class="btn">Add</button><span class="err" id="drAErr"></span></form>
     ${my.length?`<div class="mya">${my.map(a=>`<span class="chip">${esc(ruleText(a))}<button class="lnk" data-al-del="${a.id}" aria-label="Delete alert">✕</button></span>`).join("")}</div>`:""}`;
   $("#drW").onclick=()=>{ const b=$("#drW"), was=[b.className,b.getAttribute("aria-pressed"),b.innerHTML], want=was[1]!=="true";   // show it at once; put it back if the save fails
     b.className="btn "+(want?"":"ghost"); b.setAttribute("aria-pressed",want); b.innerHTML=`${ic("star",14,want)}${want?"Watching":"Watch"}`;
     api("/api/me/watch",{t:r.t,on:want}).catch(()=>{ if(b.isConnected){ [b.className]=was; b.setAttribute("aria-pressed",was[1]); b.innerHTML=was[2]; } toast("Couldn't save that. Try again."); }); };
   $("#drA").onclick=()=>{ $("#drAF").hidden=!$("#drAF").hidden; };
-  $("#drAF").onsubmit=async e=>{ e.preventDefault(); try{ await api("/api/me/alert",{kind:$("#drAK").value,t:r.t,value:$("#drAV").value}); }catch(x){ $("#drAErr").textContent=x.message; } };
+  $("#drAF").onsubmit=async e=>{ e.preventDefault(); const k=$("#drAK").value, v=$("#drAV").value; try{ await api("/api/me/alert",{kind:k,t:r.t,value:v}); passedNote(k,r.t,v,r.last); }catch(x){ $("#drAErr").textContent=x.message; } };
   $("#drP").onclick=()=>{ const f=$("#drPF"); f.hidden=!f.hidden; $("#drMineSec").hidden=false; if(!f.hidden) $("#dS").focus(); };
   // your position
   const sec=$("#drMineSec"), box=$("#drMine"); if(!sec) return;
@@ -2840,7 +2852,7 @@ function renderEarnHist(){
   const rx=rows.map(x=>reaction(sel,x.date,x.hour)), valid=rx.filter(v=>v!=null), avg=valid.length?valid.reduce((a,v)=>a+Math.abs(v),0)/valid.length:null;
   const beats=rows.filter(x=>x.surprise!=null&&x.surprise>0).length;
   el.innerHTML=`<p class="hint" style="margin:0 0 8px">Beat estimates ${beats} of the last ${rows.length} times.${avg!=null?` The stock moved ${pct(avg,1).replace("+","±")} on average the session after.`:""}</p>
-   <table class="hz"><thead><tr><th>Reported</th><th>EPS est.</th><th>Actual</th><th>Surprise</th><th>Next session</th></tr></thead><tbody>${rows.map((x,i)=>`<tr><td>${new Date(x.date+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"2-digit",timeZone:"UTC"})} <small style="color:var(--ink-3)">${x.hour<12?"☀":"☾"}</small></td><td class="num">${x.epsEst!=null?"$"+x.epsEst.toFixed(2):"–"}</td><td class="num">$${x.eps.toFixed(2)}</td><td class="num ${cls(x.surprise)}">${x.surprise!=null?pct(x.surprise/100,1):"–"}</td><td class="num ${cls(rx[i])}">${pct(rx[i],1)}</td></tr>`).join("")}</tbody></table>`;
+   <table class="hz"><thead><tr><th>Reported</th><th>EPS est.</th><th>Actual</th><th>Surprise</th><th>Next session</th></tr></thead><tbody>${rows.map((x,i)=>`<tr><td>${new Date(x.date+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"2-digit",timeZone:"UTC"})} <small class="ii" title="${x.hour<12?"Before the open":"After the close"}">${ic(x.hour<12?"sun":"moon",11)}</small></td><td class="num">${x.epsEst!=null?"$"+x.epsEst.toFixed(2):"–"}</td><td class="num">$${x.eps.toFixed(2)}</td><td class="num ${cls(x.surprise)}">${x.surprise!=null?pct(x.surprise/100,1):"–"}</td><td class="num ${cls(rx[i])}">${pct(rx[i],1)}</td></tr>`).join("")}</tbody></table>`;
 }
 
 /* ======================= ticker search ======================= */
@@ -2884,30 +2896,42 @@ const NAME_FIX={Jpmorgan:"JPMorgan","Amazon.Com":"Amazon.com",Exxonmobil:"ExxonM
   Dupont:"DuPont",Mckesson:"McKesson",Hp:"HP",Ups:"UPS",Usa:"USA",Us:"US",Ii:"II",Iii:"III",Ai:"AI",Nvr:"NVR",Ametek:"AMETEK",Tjx:"TJX",Cbre:"CBRE",Bny:"BNY",
   Gamestop:"GameStop",Linkedin:"LinkedIn",Applovin:"AppLovin",
   Mongodb:"MongoDB",Gopro:"GoPro",Marketaxess:"MarketAxess",Onsemi:"onsemi",Globalfoundries:"GlobalFoundries"};
+const NAME_RX=Object.entries(NAME_FIX).map(([k,v])=>[new RegExp(`(^|\\s)${k.replace(/[.]/g,"\\.")}(?=\\s|$)`,"g"),v]);   // built once: a base load names every holding
 function niceName(n,keepClass=true){
   if(!n||/[a-z]/.test(n)===false&&n.length<6) return n;
   n=String(n).replace(/\s+/g," ").trim().replace(/\s*\+\s*/g," & ").replace(/\bAt & T\b/,"AT&T").replace(/\bS & P\b/,"S&P").replace(/\bM & T\b/,"M&T").replace(/\bP G & E\b/,"PG&E").replace(/\/The\b/,"");
   let cl=""; n=n.replace(/\s+(?:Cl|Class)\s+([A-C])(?:\s+Shares)?$|\s+([A-C])$/,(m,a,b)=>{ cl=` Class ${a||b}`; return ""; });
   for(let k=0;k<3;k++) n=n.replace(/[\s,]+(Inc|Corp|Corporation|Co|Cos|Company|Ltd|Plc|Lp|Nv|Sa|Ag)\.?$/i,"");
   n=n.replace(/\s*&$/,"");
-  Object.entries(NAME_FIX).forEach(([k,v])=>{ n=n.replace(new RegExp(`(^|\\s)${k.replace(/[.]/g,"\\.")}(?=\\s|$)`,"g"),(m,p)=>p+v); });
+  NAME_RX.forEach(([rx,v])=>{ n=n.replace(rx,(m,p)=>p+v); });
   n=n.replace(/^(\w)/,c=>c.toUpperCase()).replace(/^ExxonMobil Holdings$/,"Exxon Mobil");
   return keepClass?n+cl:n;
 }
 /* Yahoo's sector names, said the way the Market page says them */
 const SECTOR_NAME={"Financial Services":"Financials","Consumer Cyclical":"Consumer discretionary","Consumer Defensive":"Consumer staples","Healthcare":"Health care",
   "Basic Materials":"Materials","Communication Services":"Communication","Real Estate":"Real estate","Etf":"Funds","Equity":"Other"};
-async function getBase(){ const r=await fetch("/api/base");
-  if(r.status===503){ const w=await r.json().catch(()=>({})), h=$("#bootStep"); if(h&&w.step) h.textContent=w.step+"…"; return; }   // first launch, still downloading
+async function getBase(){ const r=await fetch("/api/base"); baseAt=Date.now();
+  if(r.status===503){ const w=await r.json().catch(()=>({})), h=$("#bootStep"); if(h&&w.step) h.textContent=w.step+"…"; return false; }   // first launch, still downloading
   const b=await r.json(); for(const t in b.sectors||{}){ const v=b.sectors[t]; if(typeof v==="string"&&SECTOR_NAME[v]) b.sectors[t]=SECTOR_NAME[v]; } { const H=Object.values(b.funds||{}).flatMap(f=>f.holdings||[]), seen=new Map();   // a share class only matters when a company has two
-    H.forEach(h=>{ const k=niceName(h.n,false); if(!seen.has(k)) seen.set(k,new Set()); seen.get(k).add(h.t); });
-    H.forEach(h=>{ const k=niceName(h.n,false); h.n=seen.get(k).size>1?niceName(h.n):k; }); } if(!me) await loadMe(); base=b; for(const k in startCache) delete startCache[k]; buildPseudo(); if(!base.funds[fund]) fund="SPY"; render();
+    const K=H.map(h=>niceName(h.n,false)); H.forEach((h,i)=>{ if(!seen.has(K[i])) seen.set(K[i],new Set()); seen.get(K[i]).add(h.t); });
+    H.forEach((h,i)=>{ h.n=seen.get(K[i]).size>1?niceName(h.n):K[i]; }); } if(!me) await loadMe(); base=b; for(const k in startCache) delete startCache[k]; return true; }
+function drawBase(){ buildPseudo(); if(!base.funds[fund]) fund="SPY"; render();
   if(!hashDone){ hashDone=true; if(hashT) openDrawer(hashT); else setHash(); } }
-async function poll(){
+let polling=false, drawn=false, baseAt=0;
+const warn=t=>{ $("#dot").className="dot warn"; $("#status").textContent=t; $("#dot").title=t; };
+async function poll(){ if(polling) return; polling=true; try{ await poll0(); }finally{ polling=false; } }   // a slow answer never overlaps the next
+async function poll0(){
+  let L, fresh=false;
   try{
-    const L=await (await fetch("/api/live")).json(); liveInfo=L;
+    L=await (await fetch("/api/live")).json(); liveInfo=L;
+    const want=base&&baseWant&&baseWant.until>Date.now()&&baseWant.T.some(t=>!base.px[t]); if(base&&!want) baseWant=null;
+    if(!base||L.v!==base.v||want&&Date.now()-baseAt>6e3) fresh=await getBase();
+  }catch(e){ warn("Can't reach OpenTicker on this Mac. Run openticker start in Terminal."); return; }
+  if(!base) return;
+  // a drawing error isn't the server's fault: say so, and draw the whole page again at the next poll
+  try{
     const xs=JSON.stringify(L.ext||{}), extNew=xs!==extSig; if(extNew){ extSig=xs; EXT=L.ext||{}; }
-    if(!base||L.v!==base.v) await getBase();
+    if(fresh||!drawn){ drawn=false; drawBase(); drawn=true; }
     if(L.iv&&L.iv!==intraAt){ intraAt=L.iv; loadIntra(L.iv); }
     else{
       let changed=extNew; const fl={};
@@ -2915,7 +2939,7 @@ async function poll(){
       if(changed){ flashes=fl; if(!document.hidden&&Date.now()-lastRender>4000) render(); }
     }
     setStatus(L);
-  }catch(e){ $("#dot").className="dot warn"; $("#status").textContent="Can't reach OpenTicker on this Mac. Run openticker start in Terminal."; }
+  }catch(e){ console.error(e); drawn=false; warn("Something went wrong showing this page. Reload to try again."); }
 }
 function setStatus(L){
   const age=L.lastTick?Math.round(L.now-L.lastTick):null,dot=$("#dot"),st=$("#status");
@@ -2926,7 +2950,8 @@ function setStatus(L){
   else{dot.className="dot";st.textContent=L.date?`Market closed · as of ${shortDate(L.date)} close`:"Market closed";}
   dot.title=st.textContent;   // the text hides on narrow headers; the dot still explains itself on hover
 }
-poll(); setInterval(poll,3000); setInterval(loadMe,30000);
+// start once every script below has run, so a render never reaches for a function that isn't loaded yet
+document.addEventListener("DOMContentLoaded",()=>{ poll(); setInterval(poll,3000); setInterval(loadMe,30000); },{once:true});
 </script>
 <script src="/static/stock-tabs.js"></script>
 <script src="/static/insights.js"></script>

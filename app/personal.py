@@ -50,8 +50,8 @@ create table if not exists links(id text primary key, user_id text, provider tex
 # Alert kinds. "scope" rules apply to a group of tickers; "t" rules to one ticker.
 KINDS = {
     "move":     "Daily move of at least {value}%",
-    "above":    "Price rises above ${value}",
-    "below":    "Price falls below ${value}",
+    "above":    "Price crosses above ${value}",
+    "below":    "Price crosses below ${value}",
     "high52":   "New 52-week high",
     "low52":    "New 52-week low",
     "ma200":    "Crosses its 200-day average",

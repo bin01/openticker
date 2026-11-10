@@ -95,6 +95,10 @@ function dayLabel(d,today=nyToday()){
   if(d===shiftDays(today,-1)) return "Yesterday";
   return new Date(d+"T12:00:00Z").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",timeZone:"UTC"});
 }
+/* the session the day's numbers come from: "today" while it's today's, otherwise its day (a weekend, a holiday, the morning before the open) */
+function sessDay(){ const d=base?.dates?.at(-1), t=nyToday(); if(liveInfo?.open||!d||d===t) return "today";
+  const n=Math.round((Date.parse(t)-Date.parse(d))/864e5); return n===1?"yesterday":n<7?new Date(d+"T12:00:00Z").toLocaleDateString("en-US",{weekday:"long",timeZone:"UTC"}):null; }
+const sessWhen=()=>{ const s=sessDay(); return s==="today"||s==="yesterday"?s:s?"on "+s:"in the last session"; };
 const errBox=(msg,name,params)=>{ const later=name&&xRetrying.has(name+"|"+JSON.stringify(params||{}));
   return `<div class="errbox">${later?`<i class="spin" aria-hidden="true"></i>`:""}<span>${esc(msg)}</span>${name?`<button class="lnk" data-retry-x="${esc(name)}" data-retry-p="${esc(JSON.stringify(params||{}))}">Try now</button>`:""}</div>`; };
 const sk=(h=120)=>`<div class="sk" style="height:${h}px"></div>`;
@@ -195,17 +199,17 @@ function marketInsights(v){
   if(b&&sp){ const share=b.up/b.n, gap=b.ew-sp.rets["1D"];
     const tone=share>0.6?"up":share<0.4?"down":"";
     const what=share>0.65?"Broad strength":share<0.35?"Broad weakness":Math.abs(gap)>0.004?(gap<0?"Narrow move, carried by the giants":"The average stock is doing better than the index"):"Mixed under the surface";
-    ins.push({tone,html:`<b>${what}.</b> ${b.up} of ${b.n} S&amp;P 500 stocks are up; the average stock ${verb} ${pct(b.ew)}. Biggest swing factors: ${b.top.map(x=>`<a href="#" data-sel="${x.t}">${x.t}</a> ${pct(x.chg,1)}`).join(", ")}.`}); }
+    ins.push({tone,html:`<b>${what}.</b> ${b.up} of ${b.n} S&amp;P 500 stocks ${open?"are":"were"} up; the average stock ${verb} ${pct(b.ew)}. Biggest swing factors: ${b.top.map(x=>`<a href="#" data-sel="${x.t}">${x.t}</a> ${pct(x.chg,1)}`).join(", ")}.`}); }
   const secs=(v.sectors||[]).map(([s,n])=>({s,n,r:q[s]?.rets["1D"]})).filter(x=>x.r!=null).sort((a,b)=>b.r-a.r);
   if(secs.length>2) ins.push({tone:"",html:`<b>${secs[0].n} leads</b> (${pct(secs[0].r,1)}) and <b>${secs[secs.length-1].n.toLowerCase()} lags</b> (${pct(secs[secs.length-1].r,1)}). ${secs.filter(x=>x.r>0).length} of ${secs.length} sectors are up.`});
   const vix=q["^VIX"], tnx=q["^TNX"];
   if(vix&&tnx){ const vl=vix.last, vd=vix.prev?vl-vix.prev:null, y=rateVal(tnx.last), yp=rateVal(tnx.prev);
     const mood=vl<15?"calm":vl<20?"normal":vl<28?"nervous":"fearful";
-    ins.push({tone:vl>=20?"down":"",html:`<b>Volatility is ${mood}:</b> the VIX ${verb} ${vl.toFixed(1)}${vd!=null?` (${vd>=0?"+":"−"}${Math.abs(vd).toFixed(1)})`:""}. The 10-year Treasury yield ${verb} ${y.toFixed(2)}%${yp!=null?`, ${Math.round((y-yp)*100)>=0?"up":"down"} ${Math.abs(Math.round((y-yp)*100))} bp`:""}.`}); }
+    ins.push({tone:vl>=20?"down":"",html:`<b>Volatility is ${mood}:</b> the VIX ${verb} ${vl.toFixed(1)}${vd!=null&&Math.abs(vd)>=0.05?` (${vd>=0?"+":"−"}${Math.abs(vd).toFixed(1)})`:""}. The 10-year Treasury yield ${verb} ${y.toFixed(2)}%${yp!=null?Math.abs(y-yp)<0.005?", unchanged":`, ${y-yp>=0?"up":"down"} ${Math.abs(y-yp).toFixed(2)} percentage points`:""}.`}); }
   const oil=q["CL=F"], gold=q["GC=F"], btc=q["BTC-USD"];
   if(oil&&gold) ins.push({tone:"",html:`Oil ${pct(oil.rets["1D"],1)}, gold ${pct(gold.rets["1D"],1)}${btc?`, bitcoin ${pct(btc.rets["1D"],1)}`:""}. The dollar index ${q["DX-Y.NYB"]?pct(q["DX-Y.NYB"].rets["1D"],1):"–"}.`});
   const my=myToday();
-  if(my?.hasPos) ins.push({tone:cls(my.D),html:`<b>Your portfolio ${verb} ${pct(my.dayPct)} today</b> (${my.D>=0?"+":"−"}${money(Math.abs(my.D))})${my.own[0]?`, with <a href="#" data-sel="${my.own[0].t}">${my.own[0].t}</a> moving most (${pct(my.own[0].chg,1)})`:""}.`});
+  if(my?.hasPos) ins.push({tone:cls(my.D),html:`<b>Your portfolio ${verb} ${pct(my.dayPct)} ${sessWhen()}</b> (${my.D>=0?"+":"−"}${money(Math.abs(my.D))})${my.own[0]?`, with <a href="#" data-sel="${my.own[0].t}">${my.own[0].t}</a> moving most (${pct(my.own[0].chg,1)})`:""}.`});
   // what's next
   const ev=xpeek("econ")?.data||[], today=nyToday();
   const nextEv=ev.filter(e=>e.date>=today&&e.actual==null&&MAJOR_EV.test(e.event)).slice(0,3);
@@ -220,15 +224,16 @@ const MAJOR_EV=/CPI|PPI|payroll|unemployment rate|GDP|FOMC|fed funds|retail sale
 const MKT_LEVELS=["^GSPC","^IXIC","^DJI","^RUT"];
 function mktLevels(){
   MKT_LEVELS.forEach(s=>{ const el=document.querySelector(`[data-tlv="${CSS.escape(s)}"]`); if(!el) return;
-    const fill=()=>{ const c=xpeek("levels",lvQ(s)), x=document.querySelector(`[data-tlv="${CSS.escape(s)}"]`); if(!x) return;
+    const q={t:s,iv:"1d"};   // daily bars here, whatever bar size the Levels page was left on
+    const fill=()=>{ const c=xpeek("levels",q), x=document.querySelector(`[data-tlv="${CSS.escape(s)}"]`); if(!x) return;
       x.innerHTML=c?.data?lvTag(lvVerdict(s,c.data,lvLast(s,c.data))):""; };   // the same price the Levels page reads, so the two always agree
-    const c=xpeek("levels",lvQ(s)); fill(); if(!c?.data&&!c?.error||xstale(c)) xget("levels",lvQ(s)).then(fill); });
+    const c=xpeek("levels",q); fill(); if(!c?.data&&!c?.error||xstale(c)) xget("levels",q).then(fill); });
 }
 const TILE_GROUPS=[["Stocks",["^GSPC","^IXIC","^DJI","^RUT","ES=F","NQ=F"],"trend"],["Rates, volatility and the dollar",["^TNX","^FVX","^IRX","^VIX","DX-Y.NYB"],"percent"],["Commodities and crypto",["CL=F","GC=F","BTC-USD"],"coins"]];
 function tileValue(sym,v){
   const kind=v?.names?.[sym]?.[1], x=v.q[sym];
-  if(kind==="rate"){ const y=rateVal(x.last), p=rateVal(x.prev); const bp=p!=null?Math.round((y-p)*100):null; return {val:y.toFixed(2)+"%",chg:bp==null?"":`${bp>=0?"+":"−"}${Math.abs(bp)} bp`,c:bp}; }
-  if(kind==="vol") return {val:x.last.toFixed(2),chg:x.prev?`${x.last-x.prev>=0?"+":"−"}${Math.abs(x.last-x.prev).toFixed(2)}`:"",c:x.prev?-(x.last-x.prev):null};
+  if(kind==="rate"){ const y=rateVal(x.last), p=rateVal(x.prev); const d=p!=null?y-p:null, z=d!=null&&Math.abs(d)<0.005; return {val:y.toFixed(2)+"%",chg:d==null?"":z?"unchanged":`${d>=0?"+":"−"}${Math.abs(d).toFixed(2)} pts`,c:z?null:d}; }   // the change in percentage points
+  if(kind==="vol"){ const d=x.prev?x.last-x.prev:null, z=d!=null&&Math.abs(d)<0.005; return {val:x.last.toFixed(2),chg:d==null?"":z?"unchanged":`${d>=0?"+":"−"}${Math.abs(d).toFixed(2)}`,c:d==null||z?null:-d}; }
   const dp=x.last>=1000?0:2, val=x.last.toLocaleString("en-US",{minimumFractionDigits:dp,maximumFractionDigits:dp});
   if(x.overnight!=null) return {val,chg:`${pct(x.overnight)} <small>since close</small>`,c:x.overnight};
   return {val,chg:pct(x.rets["1D"]),c:x.rets["1D"]};
@@ -237,11 +242,11 @@ function renderMarket(){
   const app=$("#app");
   if(!$("#mkt")){
     app.innerHTML=`<div id="mkt" class="page">
-      <section class="hero mhero"><div><div class="eyebrow" id="mEyebrow">Market today</div><h1 class="ptitle" id="mTitle">Reading the tape…</h1><div id="mIns">${sk(150)}</div></div>
-        <div class="mside"><div class="lbl">Your stocks today</div><div id="mMine">${sk(160)}</div></div></section>
+      <section class="hero mhero"><div><div class="eyebrow" id="mEyebrow"></div><h1 class="ptitle" id="mTitle">Reading the tape…</h1><div id="mIns">${sk(150)}</div></div>
+        <div class="mside"><div class="lbl" id="mMineL">Your stocks today</div><div id="mMine">${sk(160)}</div></div></section>
       <section id="mTiles"></section>
       <section class="panel"><div class="ph"><div><h2>${ic("layers")}Sectors</h2><div class="hint">The 11 S&amp;P sector funds. Pick one to see its industries and biggest companies.</div></div><div class="seg sm" id="mRng"></div></div><div id="mSectors">${sk(260)}</div><div id="mSector"></div></section>
-      <section class="row even"><div class="panel"><div class="ph"><div><h2>${ic("updown")}Movers</h2><div class="hint">US stocks with the biggest moves and the most trading today.</div></div><div class="seg sm" id="mMovSeg"></div></div><div id="mMovers">${sk(300)}</div></div>
+      <section class="row even"><div class="panel"><div class="ph"><div><h2>${ic("updown")}Movers</h2><div class="hint">US stocks with the biggest moves and the most trading <span class="mWhen">today</span>.</div></div><div class="seg sm" id="mMovSeg"></div></div><div id="mMovers">${sk(300)}</div></div>
         <div class="panel"><div class="ph"><div><h2>${ic("landmark")}Economic calendar</h2><div class="hint">US data releases. Times are New York.</div></div><a class="lnk" href="#calendar" data-page="calendar" data-cal="econ">Full calendar ›</a></div><div id="mEcon">${sk(300)}</div></div></section></div>`;
     loadMarket();
   }
@@ -249,7 +254,8 @@ function renderMarket(){
   if(err&&!v){ $("#mIns").innerHTML=errBox(err,"macro"); return; }
   if(!v) return;
   const st=v.status||{}, sp=v.q["^GSPC"];
-  $("#mEyebrow").innerHTML=`<span>Market today</span><span>·</span><span class="chip ${st.status==="open"?"up":""}">${st.status==="open"?"● Open":"Closed"}</span>${statusNote(st)?`<span class="hint" style="margin:0">${esc(statusNote(st))}</span>`:""}`;
+  const sd=st.status==="open"?"today":sessDay(); document.querySelectorAll("#mkt .mWhen").forEach(x=>x.textContent=sessWhen()); $("#mMineL").textContent="Your stocks "+sessWhen();
+  $("#mEyebrow").innerHTML=`<span>${sd==="today"?"Market today":sd?sd[0].toUpperCase()+sd.slice(1)+"'s session":"The last session"}</span><span>·</span><span class="chip ${st.status==="open"?"up":""}">${st.status==="open"?"● Open":"Closed"}</span>${statusNote(st)?`<span class="hint" style="margin:0">${esc(statusNote(st))}</span>`:""}`;
   $("#mTitle").innerHTML=sp?.rets?.["1D"]!=null?`S&amp;P 500 <span class="${cls(sp.rets["1D"])}">${pct(sp.rets["1D"])}</span>`:st.status==="open"?"The market is open":"The market is closed";   // no S&P quote from Yahoo: don't leave the loading line up
   $("#mIns").innerHTML=insightList(marketInsights(v));
   // your stocks
@@ -263,7 +269,7 @@ function renderMarket(){
   // tiles
   $("#mTiles").innerHTML=TILE_GROUPS.map(([g,syms,icn])=>`<div class="tgrp" style="--n:${syms.filter(s=>v.q[s]).length}"><div class="lbl">${ic(icn,12)}${g}</div><div class="tiles">${syms.filter(s=>v.q[s]).map(s=>{ const t=tileValue(s,v), col=t.c==null?"var(--ink-3)":t.c>=0?"var(--up)":"var(--down)";
       const inner=`<div class="tn">${esc(v.names[s]?.[0]||s)}</div><div class="tv num">${t.val}</div><div class="tc num ${t.c==null?"":t.c>=0?"up":"down"}">${t.chg}</div><div class="tsp">${miniSpark(v.q[s].spark,140,30,col)}</div>`;
-      return MKT_LEVELS.includes(s)?`<button type="button" class="mtile lv" data-levels="${s}" title="Support and resistance for ${esc(v.names[s]?.[0]||s)}">${inner}<div class="tlv" data-tlv="${s}"></div></button>`:`<div class="mtile">${inner}</div>`; }).join("")}</div></div>`).join("");
+      return MKT_LEVELS.includes(s)?`<button type="button" class="mtile" data-levels="${s}" title="Support and resistance for ${esc(v.names[s]?.[0]||s)}">${inner}<div class="tlv" data-tlv="${s}"></div></button>`:`<div class="mtile">${inner}</div>`; }).join("")}</div></div>`).join("");
   mktLevels();
   // sectors
   $("#mRng").innerHTML=MKT_RANGES.map(k=>`<button data-mr="${k}" aria-pressed="${k===mktRange}">${k}</button>`).join("");
@@ -271,7 +277,7 @@ function renderMarket(){
   const spR=sp?.rets[mktRange], mx=Math.max(...secs.map(x=>Math.abs(x.r)),Math.abs(spR||0))||0.01;
   const spX=spR!=null?(50+spR/mx*50):null;
   $("#mSectors").innerHTML=`<div class="sbars">${spX!=null?`<div class="sbhead" aria-hidden="true"><span></span><span class="strk"><b style="left:${spX.toFixed(1)}%;transform:translateX(${spX<12?"-10%":spX>88?"-90%":"-50%"})">S&amp;P 500 ${pct(spR,1)}</b></span><span></span></div>`:""}${secs.map(x=>`<button class="sbar ${sectorOpen===x.key?"on":""}" data-sector="${x.key}" data-sname="${esc(x.n)}"><span class="sn">${esc(x.n)}<small class="mono">${x.s}</small></span><span class="strk"><span class="szero"></span><i style="${x.r>=0?"left:50%":"right:50%"};width:${(Math.abs(x.r)/mx*50).toFixed(1)}%;background:${x.r>=0?"var(--up)":"var(--down)"}"></i>${spX!=null?`<em style="left:${spX.toFixed(1)}%" title="S&amp;P 500 ${pct(spR)}"></em>`:""}</span><span class="num ${cls(x.r)}">${pct(x.r,1)}</span></button>`).join("")}</div>
-    ${spR!=null?`<p class="hint" style="margin:8px 0 0">The blue line is the S&amp;P 500 ${mktRange==="1D"?"today":"over "+mktRange}. Sectors that end to its right did better than the market, to its left worse.</p>`:""}`;
+    ${spR!=null?`<p class="hint" style="margin:8px 0 0">The blue line is the S&amp;P 500 ${mktRange==="1D"?sessWhen():"over "+mktRange}. Sectors that end to its right did better than the market, to its left worse.</p>`:""}`;
   renderSectorDetail();
   // movers
   const ms=load("movers","day_gainers");
@@ -289,7 +295,7 @@ function sectorMovers(name){
   if(rows.length<4) return "";
   rows.sort((a,b)=>b.r-a.r);
   const k=Math.min(6,Math.floor(rows.length/2)), up=rows.slice(0,k), down=rows.slice(-k).reverse();
-  const when=mktRange==="1D"?"today":mktRange==="YTD"?"this year":"over "+mktRange, sp=facts("SPY")?.rets?.[mktRange];
+  const when=mktRange==="1D"?sessWhen():mktRange==="YTD"?"this year":"over "+mktRange, sp=facts("SPY")?.rets?.[mktRange];
   const li=x=>`<li data-sel="${esc(x.t)}"><b class="mono">${esc(x.t)}</b><span>${esc(niceName(x.n||""))}</span><span></span><span class="num ${cls(x.r)}">${pct(x.r,1)}</span></li>`;
   const avg=rows.reduce((a,x)=>a+x.r,0)/rows.length, nUp=rows.filter(x=>x.r>0).length;
   return `<p class="sdsum">${nUp} of ${rows.length} ${esc(name.toLowerCase())} companies in the S&amp;P 500 are up ${when}; the average one moved ${pct(avg,1)}${sp!=null?`, against ${pct(sp,1)} for the whole index`:""}.</p>
@@ -365,7 +371,7 @@ function econList(rows,compact){
   const fmt=v=>v==null?"–":(v<0?"−":"")+(Math.abs(v)>=1000?Math.abs(v).toLocaleString("en-US"):String(+Math.abs(+v).toFixed(2)));
   return [...by].map(([d,list])=>`<div class="eg"><div class="egh ${d===today?"today":""}">${dayLabel(d,today)}</div><table class="hz econ"><tbody>${list.map(e=>{ const surprise=e.actual!=null&&e.expected!=null?e.actual-e.expected:null;
     return `<tr class="${e.actual==null?"pending":""}"><td class="l mono ks" style="width:64px;white-space:nowrap">${esc(econTime(e.time))}</td><td class="l" title="${esc(e.event)}">${esc(econName(e.event))}${e.for?` <span class="ks">${esc(String(e.for))}</span>`:""}</td><td class="num"><b>${fmt(e.actual)}</b></td>${compact?"":`<td class="num ks">${fmt(e.expected)}</td>`}<td class="num ks">${fmt(e.last)}</td>${surprise!=null&&!compact?`<td class="num sg ${surprise>0?"up":surprise<0?"down":""}">${surprise>0?"▲":surprise<0?"▼":"="}</td>`:compact?"":`<td class="num sg"></td>`}</tr>`; }).join("")}</tbody></table></div>`).join("")
-   +`<p class="hint">${compact?"Bold is the actual figure, grey the previous one.":"Actual, then the forecast and the previous figure. ▲ ▼ show whether the actual came in above or below the forecast."}</p>`;
+   +`<p class="hint">${compact?"Bold is the actual figure, gray the previous one.":"Actual, then the forecast and the previous figure. ▲ ▼ show whether the actual came in above or below the forecast."}</p>`;
 }
 
 /* ======================= CALENDAR ======================= */
@@ -396,8 +402,8 @@ function renderCalendar(){
   if(name==="econ"){ $("#calSub").textContent="US economic releases from a few days ago to two weeks out."; body.innerHTML=`<section class="panel">${econList(c.data,false)}</section>`; return; }
   if(name==="ipo"){ $("#calSub").textContent="Companies going public, from last week to a month out.";
     body.innerHTML=`<section class="panel">${c.data.length?`<div class="tbl-wrap"><table class="hold"><thead><tr><th class="l">Date</th><th class="l">Company</th><th class="l">Exchange</th><th>Price range</th><th>Priced</th><th>Shares</th><th class="l">Status</th></tr></thead><tbody>${c.data.map(r=>`<tr><td class="l">${r.date?dayLabel(r.date):"TBA"}</td><td class="l"><b class="mono">${esc(r.t)}</b> <span class="qn">${esc(r.company||"")}</span></td><td class="l ks">${esc(r.exchange||"")}</td><td class="num">${r.priceFrom!=null||r.priceTo!=null?[r.priceFrom,r.priceTo].map(x=>x==null?"–":"$"+esc(x)).join(" to "):"–"}</td><td class="num">${r.price?money(r.price):"–"}</td><td class="num">${r.shares?(r.shares/1e6).toFixed(1)+"M":"–"}</td><td class="l ks">${esc(r.action||"")}</td></tr>`).join("")}</tbody></table></div>`:`<p class="hint">No IPOs scheduled in this window.</p>`}</section>`; return; }
-  if(name==="splits"){ $("#calSub").textContent="Upcoming stock splits and reverse splits for US-listed companies.";
-    body.innerHTML=`<section class="panel">${c.data.length?`<div class="tbl-wrap"><table class="hold"><thead><tr><th class="l">Date</th><th class="l">Company</th><th>Split</th><th class="l">Kind</th></tr></thead><tbody>${c.data.map(r=>`<tr data-sel="${esc(r.t)}"><td class="l">${r.date?dayLabel(r.date):"–"}</td><td class="l"><b class="mono">${esc(r.t)}</b> <span class="qn">${esc(r.company||"")}</span></td><td class="num">${r.new!=null&&r.old!=null?`${esc(r.new)}-for-${esc(r.old)}`:"–"}</td><td class="l ks">${r.new==null||r.old==null?"":+r.new>+r.old?"Split":"Reverse split"}</td></tr>`).join("")}</tbody></table></div>`:`<p class="hint">No splits scheduled in this window.</p>`}</section>`; }
+  if(name==="splits"){ $("#calSub").textContent="Upcoming stock splits and reverse splits for US-listed companies."; const today=nyToday(), rows=c.data.filter(r=>!r.date||r.date>=today);
+    body.innerHTML=`<section class="panel">${rows.length?`<div class="tbl-wrap"><table class="hold"><thead><tr><th class="l">Date</th><th class="l">Company</th><th>Split</th><th class="l">Kind</th></tr></thead><tbody>${rows.map(r=>`<tr data-sel="${esc(r.t)}"><td class="l">${r.date?dayLabel(r.date):"–"}</td><td class="l"><b class="mono">${esc(r.t)}</b> <span class="qn">${esc(r.company||"")}</span></td><td class="num">${r.new!=null&&r.old!=null?`${esc(r.new)}-for-${esc(r.old)}`:"–"}</td><td class="l ks">${r.new==null||r.old==null?"":+r.new>+r.old?"Split":"Reverse split"}</td></tr>`).join("")}</tbody></table></div>`:`<p class="hint">No splits scheduled in this window.</p>`}</section>`; }
 }
 const CAL_SHOW=10;
 /* earnings grid: W maps ticker -> weight (or null when weights don't apply) */
@@ -410,7 +416,7 @@ function earnGrid(W,label,isMine){
   const up=items.filter(e=>e.date>=today&&e.reported==null), upW=up.reduce((a,e)=>a+(e.w||0),0);
   const done=items.filter(e=>e.reported!=null&&e.surprise!=null), beats=done.filter(e=>e.surprise>0).length;
   const wtxt=(w)=>`<span class="ew">${w==null?"":w.toFixed(w<1?2:1)+"%"}</span>`, eit=e=>eitHTML(e,wtxt);
-  return `<p class="hint" style="margin:0 0 12px">${up.length} ${isMine?(up.length===1?"of your stocks reports":"of your stocks report"):(up.length===1?"holding reports":"holdings report")} in the next two weeks${upW?`, ${upW.toFixed(1)}% of ${esc(label)} by weight`:""}.${done.length?` So far ${beats} of ${done.length} beat estimates.`:""} ☀ before the open, ☾ after the close. Past reports show the earnings surprise, then the stock's move the next session.</p>
+  return `<p class="hint" style="margin:0 0 12px">${up.length} ${isMine?(up.length===1?"of your stocks reports":"of your stocks report"):(up.length===1?"holding reports":"holdings report")} in the next two weeks${upW?`, ${upW.toFixed(1)}% of ${esc(label)} by weight`:""}.${done.length?` So far ${beats} of ${done.length} beat estimates.`:""} <span class="ii">${ic("sun",11)}</span> before the open, <span class="ii">${ic("moon",11)}</span> after the close. Past reports show the earnings surprise, then the stock's move the next session.</p>
    <div class="ecal">${[...byDay].map(([d,list])=>{ const past=d<today||list.every(e=>e.reported!=null), tw=list.reduce((a,e)=>a+(e.w||0),0);
      const open=calDay===d&&list.length>CAL_SHOW;
      return `<div class="eday ${d===today?"today":""} ${past?"past":""} ${open?"open":""}" data-day="${d}"><div class="edh">${dayLabel(d,today)}${tw?`<span>${tw.toFixed(1)}%</span>`:""}</div>
@@ -419,7 +425,7 @@ function earnGrid(W,label,isMine){
      +(open?`<section class="eall" id="eall" data-for="${d}" aria-label="Everyone reporting ${esc(dayLabel(d,today))}"><div class="eah"><b>${dayLabel(d,today)}</b><span>${list.length} companies${tw?`, ${tw.toFixed(1)}% of ${esc(label)}`:""}</span><button type="button" class="eax" data-eday="${d}" aria-label="Close the full list" title="Close">${ic("close",14)}</button></div><div class="eits">${list.map(eit).join("")}</div></section>`:""); }).join("")}</div>`;
 }
 function eitHTML(e,wtxt){ const rx=e.reported!=null?reaction(e.t,e.date,e.timing==="BMO"?9:16):null;
-       return `<button class="eit" data-sel="${esc(e.t)}"><b class="mono">${esc(e.t)}</b><span class="et">${e.timing==="BMO"?"☀":e.timing==="AMC"?"☾":""}</span>${wtxt(e.w)}${e.reported!=null?`<span class="${cls(e.surprise)}">${e.surprise!=null?pct(e.surprise/100,0):""}</span><span class="num ${rx!=null?cls(rx):""}">${rx!=null?pct(rx,1):""}</span>`:`<span class="ks">${e.epsEst!=null?"est "+(e.epsEst<0?"−":"")+"$"+Math.abs(e.epsEst).toFixed(2):""}</span>`}</button>`;
+       return `<button class="eit" data-sel="${esc(e.t)}"><b class="mono">${esc(e.t)}</b><span class="et" ${e.timing==="BMO"?'title="Before the open"':e.timing==="AMC"?'title="After the close"':""}>${e.timing==="BMO"?ic("sun",11):e.timing==="AMC"?ic("moon",11):""}</span>${wtxt(e.w)}${e.reported!=null?`<span class="${cls(e.surprise)}">${e.surprise!=null?pct(e.surprise/100,0):""}</span><span class="num ${rx!=null?cls(rx):""}">${rx!=null?pct(rx,1):""}</span>`:`<span class="ks">${e.epsEst!=null?"est "+(e.epsEst<0?"−":"")+"$"+Math.abs(e.epsEst).toFixed(2):""}</span>`}</button>`;
 }
 /* the full list of one day opens as a band right under that day's row, so the grid keeps its shape */
 function placeEall(){
@@ -521,7 +527,7 @@ function renderSignals(main){
   rows=[...rows].sort((a,b)=>{const x=G(a),y=G(b); if(x==null) return 1; if(y==null) return -1; return (x-y)*sigSort.dir;});
   const funds=(SIG.funds||["SPY","QQQ","SMH"]).join(", ");
   const head=`<div class="ph" style="margin:0"><div><h2>Momentum signals</h2>
-    <div class="hint">Every stock in ${funds}, plus yours, scored from daily price and volume. Weak trends are capped at Hold, six core signals and six boosters add or take away points, and a bonus comes when several line up. It measures momentum, not value, and isn't advice.</div></div>
+    <div class="hint">Every stock in ${funds}, plus yours, scored from daily price and volume. Weak trends are capped at Hold, six core signals and six boosters add or take away points, and a bonus comes when several line up. It measures momentum, not value, and the ratings, stops and targets are a score, not advice to buy or sell.</div></div>
     <div class="sig-asof">${SIG.asOf?`As of the close on ${sigDay(SIG.asOf)}`:""}${SIG.running&&all.length?` · <span class="sig-busy">refreshing</span>`:""}</div></div>`;
   let body;
   if(!all.length&&SIG.running){
@@ -550,7 +556,7 @@ function renderSignals(main){
         <td><button class="star ${on?"on":""}" data-star="${esc(r.t)}" aria-label="${on?"Remove from":"Add to"} watchlist" title="${on?"On your watchlist":"Add to watchlist"}">${ic("star",16,on)}</button></td></tr>
         ${open?`<tr class="sig-why"><td colspan="10">${why(r)}</td></tr>`:""}`; };
     const table=rows.length?`<div class="tbl-wrap"><table class="hold qt sig"><thead><tr>${th("","Stock","l")}${th("rating","Rating","l")}${th("score","Score")}${th("price","Price")}<th data-c="adx" class="sortable ${sigSort.k==="adx"?"on":""}" data-sig-k="adx" title="Average Directional Index: how strong the trend is. Under 20 is no trend.">Trend${sigSort.k==="adx"?(sigSort.dir>0?" ↑":" ↓"):""}</th>${th("rs6","vs S&P, 6 mo")}${th("fromHigh","From high")}<th data-c="stop">Stop</th><th data-c="target">Target</th><th></th></tr></thead>
-      <tbody>${rows.map(tr).join("")}</tbody></table></div>`:`<p class="hint" style="margin:14px 0">${sigScope==="mine"&&!scoped.length?"None of your stocks are scored yet. Add some to your watchlist or portfolio.":"No stocks have this rating today."}</p>`;
+      <tbody>${rows.map(tr).join("")}</tbody></table></div>`:`<p class="hint" style="margin:14px 0">${sigScope==="mine"&&!scoped.length?"None of your stocks are scored yet. Add some to your watchlist or portfolio.":"No stocks have this rating."}</p>`;
     body=filt+`<p class="hint" style="margin:10px 0 0">${rows.length} stocks. Click a row to see why it scored what it did; click the ticker to open the stock.</p>`+table+method();
   }
   main.innerHTML=head+`<div id="scrRes">${body}</div>`;
@@ -571,9 +577,9 @@ function why(r){
 }
 function method(){
   return `<details class="sig-how"><summary><span class="lbl">How the score works</span></summary><div class="sig-how-b">
-    <p><b>Trend checks.</b> A stock needs a real trend before it can rate well. If trend strength (ADX) is under 20 the best it can get is Hold; if the weekly RSI is under 40, the bigger trend is down and the best is Accumulate.</p>
-    <p><b>Core signals</b> carry most of the score: beating the S&P 500 and its sector over 6 and 12 months (up to +2.5), the 50-day average against the 200-day (+2.5 for a fresh golden cross, −3 for a death cross), MACD momentum (up to +2), whether volume is heavier on up days than down days (up to +2), how close it is to its 52-week high (up to +2), and whether its sector is beating the market (±1).</p>
-    <p><b>Boosters</b> fine-tune it: RSI divergence, a Bollinger squeeze, a volume breakout, a stochastic pullback in an uptrend, tightening pullbacks (VCP) and the 8 and 21-day averages crossing. <b>Combos</b> add up to +1.5 when signals line up, or take 2 away when several roll over together.</p>
+    <p><b>Trend checks.</b> A stock needs a real trend before it can rate well. If trend strength (ADX, which reads how steady the trend is, from 0 to 100) is under 20 the best it can get is Hold; if the weekly RSI (how fast the price has risen lately, from 0 to 100) is under 40, the bigger trend is down and the best is Accumulate.</p>
+    <p><b>Core signals</b> carry most of the score: beating the S&P 500 and its sector over 6 and 12 months (up to +2.5), the 50-day average against the 200-day (+2.5 for a fresh golden cross, when the 50-day rises above the 200-day; −3 for a death cross, the reverse), MACD momentum, which says whether the climb is speeding up or slowing (up to +2), whether volume is heavier on up days than down days (up to +2), how close it is to its 52-week high (up to +2), and whether its sector is beating the market (±1).</p>
+    <p><b>Boosters</b> fine-tune it: RSI divergence (a new high or low the RSI doesn't match), a Bollinger squeeze (the daily swings at their narrowest in months, which often comes before a big move), a volume breakout, a stochastic pullback in an uptrend, tightening pullbacks (VCP, each dip shallower than the last) and the 8 and 21-day averages crossing. <b>Combos</b> add up to +1.5 when signals line up, or take 2 away when several roll over together.</p>
     <p><b>Ratings.</b> Strong Buy at 10 or more, Buy at 7, Accumulate at 4, Hold at 1, Avoid below that. Scores use finished trading days, so they change after each close.</p>
 </div></details>`;
 }
@@ -602,7 +608,7 @@ document.addEventListener("click",e=>{
     if(opening){ const a=$("#eall"); a?.querySelector(".eax")?.focus({preventScroll:true}); if(a&&a.getBoundingClientRect().bottom>innerHeight) a.scrollIntoView({behavior:"smooth",block:"start"}); }
     else $(`.eday[data-day="${d}"] .emore`)?.focus({preventScroll:true}); return; }
   if(t.dataset.scr){ scrSel=t.dataset.scr; save("scr",scrSel); scrSort={k:null,dir:-1}; renderScreener(); return; }
-  if(t.dataset.star){ e.stopPropagation(); const s=t.dataset.star, on=!me?.watch?.includes(s); api("/api/me/watch",{t:s,on}).then(()=>{ if(page==="screener") renderScreener(); else if(page==="market") renderMarket(); }).catch(()=>{}); return; }
+  if(t.dataset.star){ e.stopPropagation(); const s=t.dataset.star, on=!me?.watch?.includes(s); api("/api/me/watch",{t:s,on}).then(()=>{ if(page==="screener") renderScreener(); }).catch(()=>{}); return; }   // api() redraws the rest
   if(t.dataset.retryX){ t.disabled=true; t.textContent="Loading…"; xget(t.dataset.retryX,JSON.parse(t.dataset.retryP||"{}"),true).then(()=>{ if(t.closest("#drawer")) return renderTab(); repaintPage(); }); return; }
 },true);
 /* the stars and inline links inside rows must not also open the row */

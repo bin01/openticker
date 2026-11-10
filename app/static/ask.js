@@ -363,7 +363,7 @@ function noticings(c){
   if(c&&c.scope==="stock"){
     const t=c.t, r=r1(t), spy=r1("SPY");
     if(r!=null){ const vs=spy==null?"":Math.sign(r)!==Math.sign(spy)?`, while SPY went the other way`:Math.abs(r)>Math.abs(spy)*2&&Math.abs(r)>.01?`, well beyond SPY's ${pct(Math.abs(spy),1).replace(/^[+−]/,"")}`:", about in line with the market";
-      out.push({dir:cls(r),text:`<b>${esc(t)}</b> is ${r>=0?"up":"down"} <b class="${cls(r)}">${pct(r,1).replace(/^[+−]/,"")}</b> today${vs}.`,act:"Why is it moving?",go:{scope:"stock",t,skill:"explain-move"}}); }
+      out.push({dir:cls(r),text:`<b>${esc(t)}</b> ${sessDay()==="today"?"is":"was"} ${r>=0?"up":"down"} <b class="${cls(r)}">${pct(r,1).replace(/^[+−]/,"")}</b> ${sessWhen()}${vs}.`,act:"Why is it moving?",go:{scope:"stock",t,skill:"explain-move"}}); }
     const e=EARN?.[t]; if(e&&e.date&&e.reported==null&&e.date>=today&&e.date<=soon) out.push({dir:"ev",text:`Reports earnings ${day(e.date)}.`,act:"Preview it",go:{scope:"stock",t,skill:"earnings-preview"}});
     return out;
   }
@@ -371,11 +371,11 @@ function noticings(c){
   const own=[...new Set((me?.positions||[]).map(p=>p.t))], watched=(me?.watch||[]).filter(t=>!own.includes(t));
   const big=ts=>ts.map(t=>({t,r:r1(t)})).filter(x=>x.r!=null&&Math.abs(x.r)>=.015).sort((a,b)=>Math.abs(b.r)-Math.abs(a.r));
   const mo=big(own), mw=big(watched), movers=mo.length?mo:mw, where=mo.length?"among the stocks you own":"on your watchlist";
-  if(movers[0]){ const m=movers[0]; out.push({dir:cls(m.r),text:`<b>${esc(m.t)}</b>${mo.length?"":" (watching)"} is ${m.r>0?"up":"down"} <b class="${cls(m.r)}">${pct(m.r,1).replace(/^[+−]/,"")}</b> today${movers[1]?`, the biggest move ${where}`:""}.`,act:"Want the why?",go:{scope:"stock",t:m.t,skill:"explain-move"}}); }
+  if(movers[0]){ const m=movers[0]; out.push({dir:cls(m.r),text:`<b>${esc(m.t)}</b>${mo.length?"":" (watching)"} ${sessDay()==="today"?"is":"was"} ${m.r>0?"up":"down"} <b class="${cls(m.r)}">${pct(m.r,1).replace(/^[+−]/,"")}</b> ${sessWhen()}${movers[1]?`, the biggest move ${where}`:""}.`,act:"Want the why?",go:{scope:"stock",t:m.t,skill:"explain-move"}}); }
   const spy=r1("SPY"); if(spy!=null){
     const hold=base.funds?.SPY?.holdings||[]; let up=0,n=0; for(const h of hold){ const r=r1(h.t); if(r!=null){ n++; if(r>0) up++; } }
     const breadth=n?up/n:null, narrow=breadth!=null&&((spy>0&&breadth<.45)||(spy<0&&breadth>.55));
-    out.push({dir:cls(spy),text:`SPY is ${spy>=0?"up":"down"} <b class="${cls(spy)}">${pct(spy,2).replace(/^[+−]/,"")}</b>${breadth!=null?narrow?`, but only ${Math.round(breadth*100)}% of S&amp;P 500 stocks ${spy>=0?"rose":"fell"}. A narrow day.`:`, and ${Math.round(breadth*100)}% of S&amp;P 500 stocks rose.`:"."}`,act:"Recap the day",go:{scope:"market",skill:"market-recap"}});
+    out.push({dir:cls(spy),text:`SPY ${sessDay()==="today"?"is":"was"} ${spy>=0?"up":"down"} <b class="${cls(spy)}">${pct(spy,2).replace(/^[+−]/,"")}</b>${sessDay()==="today"?"":" "+sessWhen()}${breadth!=null?narrow?`, but only ${Math.round(breadth*100)}% of S&amp;P 500 stocks ${spy>=0?"rose":"fell"}. A narrow day.`:`, and ${Math.round(breadth*100)}% of S&amp;P 500 stocks rose.`:"."}`,act:"Recap the day",go:{scope:"market",skill:"market-recap"}});
   }
   const er=[...own,...watched].map(t=>({t,...(EARN?.[t]||{})})).filter(e=>e.date&&e.reported==null&&e.date>=today&&e.date<=soon).sort((a,b)=>a.date<b.date?-1:1)[0];
   if(er){ out.push({dir:"ev",text:`<b>${esc(er.t)}</b> reports earnings ${day(er.date)}.`,act:"Preview it",go:{scope:"stock",t:er.t,skill:"earnings-preview"}}); }
