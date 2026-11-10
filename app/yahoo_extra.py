@@ -80,6 +80,13 @@ def iso(ts):
 
 
 # ---------------------------------------------------------------- analysts
+def target(v):
+    """A price target, or None. Yahoo sends 0 for "no target" (a new rating with no prior target), never a real one.
+    Yahoo's own priceTargetAction (Raises, Lowers, Maintains, Announces) isn't sent: comparing pt with ptPrior says the same."""
+    v = clean(v)
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 else None
+
+
 def analysts(sym):
     t = yf.Ticker(sym)
     out = {"t": sym}
@@ -95,8 +102,8 @@ def analysts(sym):
             ud = ud[ud.index >= cutoff].sort_index(ascending=False)
             for ts, r in zip(ud.index, ud.to_dict("records")):
                 rows.append({"date": iso(ts), "firm": r.get("Firm"), "to": r.get("ToGrade"), "from": r.get("FromGrade"),
-                             "action": r.get("Action"), "ptAction": r.get("priceTargetAction"),
-                             "pt": clean(r.get("currentPriceTarget")), "ptPrior": clean(r.get("priorPriceTarget"))})
+                             "action": r.get("Action"), "pt": target(r.get("currentPriceTarget")),
+                             "ptPrior": target(r.get("priorPriceTarget"))})
         out["changes"] = rows[:40]
     except Exception:
         out["changes"] = []
@@ -197,12 +204,6 @@ def ownership(sym):
                          for r in ro.to_dict("records")] if isinstance(ro, pd.DataFrame) else []
     except Exception:
         out["roster"] = []
-    try:
-        ip = t.insider_purchases
-        out["insiderSummary"] = [{"label": str(r.iloc[0]), "shares": clean(r.iloc[1]), "trans": clean(r.iloc[2])}
-                                 for _, r in ip.iterrows()] if isinstance(ip, pd.DataFrame) else []
-    except Exception:
-        out["insiderSummary"] = []
     return _need(out, "major", "institutions", "funds", "insiders")
 
 
@@ -774,6 +775,15 @@ def _cal(days_back=2, days_ahead=14):
     return yf.Calendars(start=today - dt.timedelta(days=days_back), end=today + dt.timedelta(days=days_ahead))
 
 
+def revised_from(last, revised):
+    """What the previous figure was first reported as, when it has since been revised; else None.
+    Yahoo's "Last" is the previous figure as it stands now and "Revised" the number first published, in the same units."""
+    last, revised = clean(last), clean(revised)
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (last, revised)):
+        return None
+    return None if abs(revised - last) < 1e-9 else revised
+
+
 def economic_calendar():
     c = _cal(3, 14)
     rows = []
@@ -794,7 +804,7 @@ def economic_calendar():
                     continue
             rows.append({"event": str(name).rstrip("*"), "date": ts.strftime("%Y-%m-%d"), "time": ts.strftime("%H:%M"),
                          "for": clean(r.get("For")), "actual": clean(r.get("Actual")), "expected": clean(r.get("Expected")),
-                         "last": clean(r.get("Last")), "revised": clean(r.get("Revised"))})
+                         "last": clean(r.get("Last")), "revised": revised_from(r.get("Last"), r.get("Revised"))})
         if len(df) < 100:
             break
         time.sleep(0.3)
@@ -809,7 +819,7 @@ def ipo_calendar():
         return out
     for sym, r in zip(df.index, df.to_dict("records")):
         out.append({"t": str(sym), "company": r.get("Company"), "exchange": r.get("Exchange"), "date": iso(r.get("Date")),
-                    "filed": iso(r.get("Filing Date")), "priceFrom": clean(r.get("Price From")), "priceTo": clean(r.get("Price To")),
+                    "priceFrom": clean(r.get("Price From")), "priceTo": clean(r.get("Price To")),
                     "price": clean(r.get("Price")), "shares": clean(r.get("Shares")), "action": r.get("Action")})
     out.sort(key=lambda r: r["date"] or "")
     return out
@@ -825,6 +835,6 @@ def splits_calendar():
         if "." in s:      # US listings only
             continue
         out.append({"t": s, "company": r.get("Company"), "date": iso(r.get("Payable On")),
-                    "old": clean(r.get("Old Share Worth")), "new": clean(r.get("Share Worth")), "optionable": r.get("Optionable")})
+                    "old": clean(r.get("Old Share Worth")), "new": clean(r.get("Share Worth"))})
     out.sort(key=lambda r: r["date"] or "")
     return out

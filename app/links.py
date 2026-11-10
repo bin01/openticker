@@ -686,8 +686,7 @@ def public(link):
     p = PRESETS.get(link["provider"], {})
     return {"id": link["id"], "provider": link["provider"], "name": link["name"], "status": link["status"],
             "error": link["error"], "synced": link["synced"], "count": link["count"], "off": link["off"],
-            "host": urllib.parse.urlsplit(link["url"]).hostname, "full_access": bool(p.get("full_access")),
-            "has_preview": link["id"] in PREVIEW}
+            "full_access": bool(p.get("full_access"))}
 
 
 def presets():

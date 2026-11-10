@@ -663,13 +663,13 @@ def cmd_check(args):
             if sc and sc.group(1) not in ("stock", "portfolio", "market"):
                 fails.append(f"skills/{d.name}/SKILL.md: scope must be stock, portfolio or market")
             nd = re.search(r"^\s+needs:\s*(.*)$", meta, re.M)
-            bad = set(re.findall(r"[a-z]+", nd.group(1))) - {"workbench", "web"} if nd else set()   # agent.NEEDS
-            if bad:
-                fails.append(f"skills/{d.name}/SKILL.md: needs can only list workbench and web, not {', '.join(sorted(bad))}")
+            unknown = set(re.findall(r"[a-z]+", nd.group(1))) - {"workbench", "web"} if nd else set()   # agent.NEEDS
+            if unknown:
+                fails.append(f"skills/{d.name}/SKILL.md: needs can only list workbench and web, not {', '.join(sorted(unknown))}")
             da = re.search(r"^\s+data:\s*(.*)$", meta, re.M)
-            bad = set(re.findall(r"[a-z]+", da.group(1))) - set(SECTIONS) if da else set()   # agent.SECTIONS
-            if bad:
-                fails.append(f"skills/{d.name}/SKILL.md: data can only list {', '.join(SECTIONS)}, not {', '.join(sorted(bad))}")
+            unknown = set(re.findall(r"[a-z]+", da.group(1))) - set(SECTIONS) if da else set()   # agent.SECTIONS
+            if unknown:
+                fails.append(f"skills/{d.name}/SKILL.md: data can only list {', '.join(SECTIONS)}, not {', '.join(sorted(unknown))}")
     t = subprocess.run([py(), "-m", "unittest", "discover", "-s", str(ROOT / "tests"), "-t", str(ROOT)], capture_output=True, text=True, cwd=str(ROOT))
     if t.returncode != 0:
         fails.append("tests failed (run openticker test to see which):\n" + "\n".join(t.stderr.strip().splitlines()[-6:]))
@@ -822,7 +822,7 @@ MCP_TOOLS = [
               "ownership, options positioning, news and events.", {"ticker": TICKER}, ["ticker"]),
     ("stock_section", "One section for a stock, when you only need part of the picture.",
      {"ticker": TICKER, "section": {"type": "string", "enum": list(SECTIONS)}}, ["ticker", "section"]),
-    ("portfolio", "The user's positions (with P&L), watchlist, upcoming earnings for them and what changed recently.", {}, []),
+    ("portfolio", "The user's positions with exact shares, cost and P&L, watchlist, upcoming earnings for them and what changed recently. Call only when the question needs those figures.", {}, []),
     ("brief", "What changed recently for the user's stocks: rating changes, target moves, insider trades, unusual options, earnings.", {}, []),
     ("market", "Market overview: SPY, QQQ, SMH, SPSM (small caps), sector ETFs, rates, oil, dollar, VIX and today's biggest S&P 500 movers.", {}, []),
     ("fund", "Which holdings drove an index fund over a period.",

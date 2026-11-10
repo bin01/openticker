@@ -70,3 +70,48 @@ function renderTabbar(){
   $("#tbMore")?.classList.toggle("on",!TAB_PAGES.includes(page));   // Calendar and Screener light up More
 }
 renderTabbar();
+
+/* ---------- keyboard: rows, tiles, chart bars and sort headers ----------
+   What you can click to open a stock, you can reach and open from the keyboard. Each list (a table's rows, the
+   market map, a chart's bars, a list of movers) is one stop in the Tab order, so a 500-row table doesn't bury the
+   rest of the page: Tab lands on the row you were last on, ↑ ↓ move (← → too on the map and charts), Home and End
+   jump, Enter or Space opens. Sort headers are ordinary stops. Buttons and links inside a row work on their own. */
+const KB_ITEM="tr[data-sel],tr[data-sig-t],li[data-sel],.tile[data-sel],g[data-sel]";
+const KB_HEAD="th[data-sort],th.sortable,th[data-sig-k]";
+function kbPrep(){
+  const groups=new Map();
+  document.querySelectorAll(`#app :is(${KB_ITEM}),#drawer :is(${KB_ITEM})`).forEach(el=>{
+    if(!el.hasAttribute("tabindex")) el.setAttribute("tabindex","-1");
+    const g=el.parentElement, l=groups.get(g); if(l) l.push(el); else groups.set(g,[el]); });
+  groups.forEach(l=>{ const on=l.filter(x=>x.getAttribute("tabindex")==="0"); if(on.length===1) return;
+    const keep=on[0]||l[0]; l.forEach(x=>{ const v=x===keep?"0":"-1"; if(x.getAttribute("tabindex")!==v) x.setAttribute("tabindex",v); }); });
+  document.querySelectorAll(`#app :is(${KB_HEAD}),#drawer :is(${KB_HEAD})`).forEach(th=>{ if(!th.hasAttribute("tabindex")) th.setAttribute("tabindex","0"); });
+}
+new MutationObserver(()=>{ cancelAnimationFrame(kbPrep.r); kbPrep.r=requestAnimationFrame(kbPrep); }).observe(document.body,{childList:true,subtree:true});
+/* the row you were on stays the list's Tab stop */
+document.addEventListener("focusin",e=>{ const el=e.target; if(!el.matches?.(KB_ITEM)||el.getAttribute("tabindex")==="0") return;
+  [...el.parentElement.children].forEach(x=>{ if(x!==el&&x.getAttribute("tabindex")==="0") x.setAttribute("tabindex","-1"); }); el.setAttribute("tabindex","0"); });
+/* a way back to the same row or header after a redraw replaced it */
+function kbFind(el){ const k=["data-sel","data-sig-t","data-sort","data-sig-k","data-c"].find(a=>el.hasAttribute(a)); if(!k) return null;
+  const root=el.closest("#drawer,#app")||document; const q=`${el.tagName.toLowerCase()}[${k}="${CSS.escape(el.getAttribute(k))}"]`; return ()=>root.querySelector(q); }
+function kbActivate(el){
+  const again=kbFind(el);
+  el.dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true,view:window}));   // what a click does; SVG has no .click()
+  if(el.isConnected||document.activeElement&&document.activeElement!==document.body) return;
+  const n=again?.(); if(!n) return; if(!n.hasAttribute("tabindex")) n.setAttribute("tabindex",n.matches(KB_HEAD)?"0":"-1"); n.focus({preventScroll:true});
+}
+document.addEventListener("keydown",e=>{
+  const el=e.target; if(!(el instanceof Element)||e.metaKey||e.ctrlKey||e.altKey) return;
+  const item=el.matches(KB_ITEM), head=!item&&el.matches(KB_HEAD); if(!item&&!head) return;
+  if(e.key==="Enter"||e.key===" "){ e.preventDefault(); e.stopPropagation(); kbActivate(el); return; }
+  if(!item) return;
+  const two=el.matches(".tile,g"), fwd=e.key==="ArrowDown"||two&&e.key==="ArrowRight", back=e.key==="ArrowUp"||two&&e.key==="ArrowLeft";
+  if(!fwd&&!back&&e.key!=="Home"&&e.key!=="End") return;   // ← → on a table row still change the time range
+  const l=[...el.parentElement.children].filter(x=>x.matches(KB_ITEM)), i=l.indexOf(el);
+  const n=l[e.key==="Home"?0:e.key==="End"?l.length-1:fwd?Math.min(l.length-1,i+1):Math.max(0,i-1)];
+  e.preventDefault(); e.stopPropagation(); if(n&&n!==el){ n.focus(); n.scrollIntoView?.({block:"nearest",inline:"nearest"}); }
+},true);
+/* the hover card a tile or bar shows for the mouse, shown for the keyboard too */
+document.addEventListener("focusin",e=>{ const el=e.target; if(!el.matches?.("[data-tip]")||!el.matches(":focus-visible")) return;
+  const r=el.getBoundingClientRect(); showTip({clientX:Math.min(r.right,innerWidth-20)-8,clientY:r.bottom-6},el.dataset.tip); });
+document.addEventListener("focusout",e=>{ if(e.target.matches?.("[data-tip]")) hideTip(); });

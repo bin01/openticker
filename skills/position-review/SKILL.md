@@ -13,7 +13,7 @@ metadata:
 
 # Review my position
 
-**Data**: `openticker stock TICKER` (it has the position, each purchase, and the share of the portfolio), `openticker signals TICKER` and `openticker technicals TICKER` (usually in the conversation already). Add `openticker reads TICKER` for earlier checks and `openticker portfolio` when concentration matters.
+**Data**: `openticker stock TICKER` (the position's share of the portfolio and, for each purchase, how the stock has done since against the S&P 500 and the momentum rating then), `openticker signals TICKER` and `openticker technicals TICKER` (usually in the conversation already). The dollar figures need the person's exact shares and cost: run `openticker portfolio` for them, and keep those numbers out of anything you send to the web. Add `openticker reads TICKER` for earlier checks.
 
 If the user doesn't own the stock, say so in one line and weigh the evidence instead, as the "Weigh the evidence" playbook does.
 
