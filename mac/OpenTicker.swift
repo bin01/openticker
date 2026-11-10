@@ -159,7 +159,7 @@ final class Controller: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func ping() -> Bool {
-        var req = URLRequest(url: home.appendingPathComponent("api/ask/info"))
+        var req = URLRequest(url: home.appendingPathComponent("api/app"))
         req.timeoutInterval = 1.5
         let sem = DispatchSemaphore(value: 0)
         var ok = false
@@ -218,11 +218,16 @@ final class Controller: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         return (url.host == "127.0.0.1" || url.host == "localhost") && url.port == otPort()
     }
 
+    /// Only web and mail links leave the app; any other scheme is dropped.
+    func openOutside(_ url: URL) {
+        if ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") { NSWorkspace.shared.open(url) }
+    }
+
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if !isInternal(action.request.url), let url = action.request.url,
            action.navigationType == .linkActivated || action.targetFrame?.isMainFrame == true {
-            NSWorkspace.shared.open(url)
+            openOutside(url)
             decisionHandler(.cancel)
             return
         }
@@ -233,7 +238,7 @@ final class Controller: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = action.request.url {
-            if isInternal(url) { web.load(URLRequest(url: url)) } else { NSWorkspace.shared.open(url) }
+            if isInternal(url) { web.load(URLRequest(url: url)) } else { openOutside(url) }
         }
         return nil
     }
@@ -252,6 +257,23 @@ final class Controller: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         a.addButton(withTitle: "OK")
         a.addButton(withTitle: "Cancel")
         a.beginSheetModal(for: window) { completionHandler($0 == .alertFirstButtonReturn) }
+    }
+
+    // <input type=file>: WKWebView shows no file dialog on its own
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        let done: (NSApplication.ModalResponse) -> Void = { r in
+            completionHandler(r == .OK ? panel.urls : nil)
+        }
+        if let w = webView.window {
+            panel.beginSheetModal(for: w, completionHandler: done)
+        } else {
+            panel.begin(completionHandler: done)
+        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { lost(error) }
