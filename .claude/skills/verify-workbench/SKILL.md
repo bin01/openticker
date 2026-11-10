@@ -2,7 +2,7 @@
 name: verify-workbench
 description: Model-checks Tick's workbench with Claude Code, that the workbench is switched off only after the sandbox failed (never after a plain "signed out" or "usage limit" error) and that Tick is promised scipy and matplotlib only once the toolbox is installed. Use when changing app/workbench.py (build, _build, python, claude_ready, claude_failed, sandbox_failed, note), the sandbox fallback in runs._work, agent.PLAIN_FAILURE, or the bench argument of agent.build_prompt.
 metadata:
-  synced: 3218198
+  synced: 1d01cf8
   covers: app/workbench.py app/runs.py app/agent.py
   models: SandboxWorks.cfg NoSandbox.cfg
   known:

@@ -2,7 +2,7 @@
 name: verify-linked-accounts
 description: Model-checks linked brokerage accounts (Monarch, Interactive Brokers, Robinhood, any MCP server), that every row in Settings, Accounts means what it says across restarts and its buttons work, and that syncing never loses a working sign-in, including two syncs at once with a provider that rotates refresh tokens. Use when changing app/links.py (connect, callback, _fetch_async, preview, apply, sync, retry, reconnect, disconnect, cancel, _session, loop, due), mcp_client.refresh, the Keychain helpers, or linksSection and the review sheet in app/static/links.js.
 metadata:
-  synced: 3218198
+  synced: 1d01cf8
   covers: app/links.py app/mcp_client.py app/static/links.js
   models: LinkAccount.cfg OneSync.cfg NoRotation.cfg Overlap.cfg LostReply.cfg
   known: LostReply.cfg:StaysSignedIn LostReply.cfg:KeychainWorks

@@ -2,7 +2,7 @@
 name: verify-momentum-signals
 description: Model-checks the Screener's Momentum signals, that only one scan of about 600 stocks runs at a time however many pages ask, and that the page keeps a moving progress bar moving and picks up new scores after a close. Use when changing signals_payload or signals_scan in app/server.py (SIG, _sig_lock, the stale test, failAt), or SIG, sigWait, loadSignals and renderSignals in app/static/pages.js.
 metadata:
-  synced: 3218198
+  synced: 1d01cf8
   covers: app/server.py app/static/pages.js
   models: Signals.cfg
   known:
