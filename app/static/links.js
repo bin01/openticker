@@ -45,7 +45,7 @@ function linkStatus(l){
     case "signin": return ["",`Waiting for you to sign in to ${l.name} in your browser…`];
     case "fetching": return ["","Reading your holdings…"];
     case "review": return ["",`Ready. Review what was found before it's added.`];
-    case "auth": return ["bad",`The sign-in expired${l.synced?`. Showing positions from ${linkWhen(l.synced)}`:""}.`];
+    case "auth": return ["bad",l.synced?`The sign-in expired. Showing positions from ${linkWhen(l.synced)}.`:"The sign-in didn't finish."];
     case "error": return ["bad",l.error||"Couldn't connect."];
     default: return l.error?["bad",`Couldn't sync: ${l.error} Showing positions from ${linkWhen(l.synced)}.`]:["",`${pos}, synced ${linkWhen(l.synced)}. Updates each trading day after the close.`];
   }
@@ -62,7 +62,7 @@ function linksSection(){
     else if(busy) ctl=`<span class="sv">${esc(busy)}</span>`;
     else if(l.status==="review") ctl=`<button type="button" class="btn" data-lk-act="review" data-lk="${l.id}">Review</button>`;
     else if(l.status==="signin"||l.status==="fetching") ctl=local?`<button type="button" class="btn ghost" data-lk-act="cancel" data-lk="${l.id}">Cancel</button>`:"";
-    else if(l.status==="auth") ctl=local?`<button type="button" class="btn" data-lk-act="reconnect" data-lk="${l.id}">Sign in again</button>`:"";
+    else if(l.status==="auth") ctl=local?`<button type="button" class="btn" data-lk-act="reconnect" data-lk="${l.id}">Sign in again</button><button type="button" class="btn ghost" data-lk-act="${l.synced?"ask":"remove"}" data-lk="${l.id}">${l.synced?"Disconnect":"Remove"}</button>`:"";
     else if(l.status==="error") ctl=`<button type="button" class="btn" data-lk-act="retry" data-lk="${l.id}">Try again</button>${local?`<button type="button" class="btn ghost" data-lk-act="remove" data-lk="${l.id}">Remove</button>`:""}`;
     else ctl=`<button type="button" class="btn ghost" data-lk-act="sync" data-lk="${l.id}">Sync now</button>${local?`<button type="button" class="btn ghost" data-lk-act="ask" data-lk="${l.id}">Disconnect</button>`:""}`;
     const wait=l.status==="signin"||l.status==="fetching";
@@ -127,7 +127,10 @@ async function openLinkReview(id){
   d.querySelector(".x").onclick=()=>d.close(); d.showModal();
   let P=null;
   try{ const r=await fetch("/api/me/links?preview="+encodeURIComponent(id),{headers:meHeaders()}); P=(await r.json()).preview; }catch(e){}
-  if(!P){ d.querySelector(".sbody").innerHTML=`<p class="imsg">This review has expired. Sync the account again from Settings.</p>`; return; }
+  if(!P){   // the holdings it found are gone (OpenTicker restarted): read them again and reopen the review when they're back
+    let msg="Reading your holdings again. This opens again when they're ready.";
+    try{ await linkApi("retry",{id}); LK.want=id; await linksLoad(); if($("#sets")) renderSettings(); linksWatch(); }catch(x){ msg=x.message; }
+    d.querySelector(".sbody").innerHTML=`<p class="imsg">${esc(msg)}</p>`; return; }
   const L=P.link, accts=Object.entries(P.accounts).sort((a,b)=>b[1]-a[1]), off=new Set(P.off||[]), firstTime=!L.synced;
   const mine=new Set((me?.positions||[]).filter(p=>!p.source&&p.note!=="sample").map(p=>p.t));
   let dropMine=true, done=null;
