@@ -4,7 +4,7 @@
 /* ---------- command bar: pages, funds, actions and stocks in one box ---------- */
 const COMMANDS=[
   ...PAGES.map(([k,l])=>({cmd:"page:"+k,label:l,hint:"Go to",icon:k,keys:l+" "+k,run:()=>goPage(k)})),
-  ...FUND_LIST.map(f=>({cmd:"fund:"+f,label:`${f} dashboard`,hint:"Fund",icon:"funds",keys:f+" fund "+(base?.funds?.[f]?.name||""),run:()=>pickFund(f)})),
+  ...FUND_LIST.map(f=>({cmd:"fund:"+f,label:`${f} dashboard`,hint:"Fund",icon:"funds",keys:f+" fund",fund:f,run:()=>pickFund(f)})),   // the fund's name joins the keys when matching: base isn't loaded yet here
   {cmd:"fund:Watchlist",label:"Your watchlist",hint:"My stocks",icon:"star",keys:"watchlist watch",run:()=>pickFund("Watchlist")},
   {cmd:"fund:Portfolio",label:"Your portfolio",hint:"My stocks",icon:"mine",keys:"portfolio positions holdings mine",run:()=>pickFund("Portfolio")},
   {cmd:"edit:watch",label:"Edit watchlist",hint:"My stocks",icon:"star",keys:"edit watchlist remove add tickers",run:()=>{ pickFund("Watchlist"); setTimeout(()=>{ $("#s-mine")?.scrollIntoView({behavior:"smooth"}); $("#wT")?.focus({preventScroll:true}); },120); }},
@@ -26,7 +26,7 @@ function pickFund(k){ const p=PAGE_FUNDS.funds.includes(k)?"funds":"mine"; setFu
 function setTheme(t){ theme=t; save("theme",t); applyTheme(); }
 function commandMatches(q){
   const Q=q.toLowerCase().trim(); if(!Q) return [];
-  return COMMANDS.map(c=>{ const l=c.label.toLowerCase(), k=c.keys.toLowerCase(); const s=l.startsWith(Q)?0:l.split(/\s+/).some(w=>w.startsWith(Q))?1:k.split(/\s+/).some(w=>w.startsWith(Q))?2:l.includes(Q)?3:9; return [s,c]; })
+  return COMMANDS.map(c=>{ const l=c.label.toLowerCase(), k=(c.keys+(c.fund?" "+(base?.funds?.[c.fund]?.name||"").replace(/[()]/g," "):"")).toLowerCase(); const s=l.startsWith(Q)?0:l.split(/\s+/).some(w=>w.startsWith(Q))?1:k.split(/\s+/).some(w=>w.startsWith(Q))?2:l.includes(Q)?3:9; return [s,c]; })
     .filter(x=>x[0]<9).sort((a,b)=>a[0]-b[0]).slice(0,Q.length<=2?2:4).map(x=>x[1]);
 }
 let recent=[]; try{ recent=JSON.parse(load("recent","[]")).filter(t=>typeof t==="string").slice(0,6); }catch(e){}
