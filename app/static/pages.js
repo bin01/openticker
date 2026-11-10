@@ -581,13 +581,16 @@ function trackHTML(){
   const topVs=n?top.reduce((s,x)=>s+x.vs*x.n,0)/n:null, av=R.Avoid?.["21"];
   let say;
   if(topVs==null||!all.n) say="Not enough Buy ratings yet to judge.";
-  else if(topVs>all.vs+0.003) say=`Stocks rated Buy or better led the S&P 500 by ${(topVs*100).toFixed(1)} points over the next month on average, against ${(all.vs*100).toFixed(1)} for every stock${av?.n&&av.vs<all.vs?`, and Avoid-rated stocks trailed the rest`:""}. The rating has added something, though a month is a short, noisy window.`;
-  else say=`Stocks rated Buy or better did no better over the next month than the average stock here (${(topVs*100).toFixed(1)} against ${(all.vs*100).toFixed(1)} points ahead of the S&P 500). Read the rating as a description of the trend, not an edge.`;
+  else{ const d=topVs-all.vs, tb=top.reduce((s,x)=>s+x.beat*x.n,0)/n, f=x=>`${x>0.0005?"+":x<-0.0005?"−":""}${Math.abs(x*100).toFixed(1)}`;
+    const vs=`${f(topVs)} points against the S&P 500 over the next month, against ${f(all.vs)} for every stock`;
+    if(d>=0.01&&tb>=all.beat+0.03) say=`Stocks rated Buy or better have done clearly better: ${vs}, and they beat the index more often${av?.n&&av.vs<all.vs?`, while Avoid-rated stocks trailed`:""}. A month is still a short, noisy window.`;
+    else if(d>0.002) say=`Stocks rated Buy or better did only slightly better: ${vs}. That's too small to lean on; read the rating as a description of the trend, not an edge.`;
+    else say=`Stocks rated Buy or better did no better than the average stock: ${vs}. Read the rating as a description of the trend, not an edge.`; }
   return `<section class="sig-track"><div class="lbl">How these ratings have done</div>
     <p class="sig-say">${say}</p>
     <div class="tbl-wrap"><table class="hold qt"><thead><tr><th class="l">Rating then</th><th>Cases</th><th>Next month, points vs S&amp;P 500</th><th>Beat it</th><th>Next 3 months, vs S&amp;P 500</th><th>Beat it</th></tr></thead>
     <tbody>${SIG_RATINGS.map(([k])=>row(k,k,true)).join("")}${row("All","Every stock")}</tbody></table></div>
-    <p class="hint">${T.stocks} stocks scored every two weeks${span?` from ${span}`:""}, each time using only the prices known that day, then followed for one and three months. "Points vs S&amp;P 500" is the average lead over the index. These are today's index members, so stocks that dropped out aren't counted, which flatters every rating a little; two years is only one or two market phases.</p></section>`;
+    <p class="hint">${T.stocks} stocks scored every two weeks${span?` from ${span}`:""}, each time using only the prices known that day, then followed for one and three months. "Points vs S&amp;P 500" is the average lead over the index. Most stocks trail the index in a typical month, because a few giants carry it, so compare each rating with the "Every stock" row rather than with 50%. These are today's index members, so stocks that dropped out aren't counted, which flatters every rating a little; two years is only one or two market phases.</p></section>`;
 }
 function dist(rows){
   if(!rows.length) return "";

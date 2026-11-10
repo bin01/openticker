@@ -609,8 +609,13 @@ def _score_now(sym, b, info):
     return r, f"Worked out now from {len(f)} daily bars to {f.index[-1].strftime('%Y-%m-%d')} (this stock isn't in the Screener's scan)."
 
 
+def _pts(x):
+    v = round(x * 100, 1)
+    return f"{v:+.1f}" if v else "0.0"
+
+
 def _beat(x):
-    return f"{x['vs'] * 100:+.1f} pts, beat it {x['beat'] * 100:.0f}% of the time" if x.get("n") else "no cases"
+    return f"{_pts(x['vs'])} pts, beat it {x['beat'] * 100:.0f}% of the time" if x.get("n") else "no cases"
 
 
 def sec_signals(sym, b, info):
@@ -646,7 +651,8 @@ def sec_signals(sym, b, info):
             if a.get("n"):
                 rows.append([("**" + k + "**") if k == r["rating"] else k, a["n"], _pct(a["avg"]), _beat(a), _pct(z.get("avg")) if z.get("n") else "n/a", _beat(z)])
         L += ["", f"How the score has done: {sm.get('stocks')} stocks scored every two weeks from {sm.get('from')} to {sm.get('to')}, "
-              "using only the prices known on each date, then followed for one and three months. \"vs S&P 500\" is the average lead over the S&P 500 in points.",
+              "using only the prices known on each date, then followed for one and three months. \"vs S&P 500\" is the average lead over the S&P 500 in points. "
+              "Most stocks trail the index in a typical month because a few giants carry it, so judge each rating against the All row, not against 50%.",
               _table(["Rating then", "Cases", "1M return", "1M vs S&P 500", "3M return", "3M vs S&P 500"], rows)]
         up, dn = (sm.get("upMarket") or {}).get(r["rating"], {}), (sm.get("downMarket") or {}).get(r["rating"], {})
         if up.get(hs[0], {}).get("n") or dn.get(hs[0], {}).get("n"):
