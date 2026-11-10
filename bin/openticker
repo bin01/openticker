@@ -38,7 +38,7 @@ Change it (with Claude Code, Codex or any coding agent; see AGENTS.md)
   openticker edit ["what you want"]  open your coding agent in OpenTicker's code
   openticker check                   fast checks after a change, including the tests
   openticker test [-v]               the tests: the math behind every number
-  openticker shot [page|TICKER] [--dark] [--phone] [--no-tick]
+  openticker shot [page|TICKER] [--dark|--light] [--phone] [--no-tick] [--out FILE]
                                      screenshot a page with headless Chrome and print the file
 
 Agents

@@ -3,7 +3,7 @@ name: verify-tick-answers
 description: Model-checks that every question to Tick gets exactly one reply in its conversation, however OpenTicker stops and restarts mid-answer, and that the page ends a question only when the log does. Use when changing app/runs.py (start, _work, _finish, recover, _close_finished, follow), askDrive or askFollow in app/static/ask.js, or the run and chat functions in app/personal.py.
 metadata:
   synced: 1d01cf8
-  covers: app/runs.py app/static/ask.js
+  covers: app/runs.py app/static/ask.js app/personal.py
   models: TickAnswer.cfg
   known:
   tests: tests.test_state_machines.Restart

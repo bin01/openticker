@@ -51,12 +51,12 @@ Whichever you pick, OpenTicker installs to `~/.openticker`, runs in the backgrou
 | Page | What you see |
 | --- | --- |
 | **Market** | The day in plain English, then indexes, rates, the dollar, oil, the VIX and the 11 sectors |
-| **Levels** | Support and resistance, full screen: the S&P 500, VXX and the Nasdaq-100 across the top, any stock you pick below, on 5-minute to quarterly bars, with each level's strength and how far away it is |
-| **Funds** | Which stocks drove SPY, QQQ, SMH and SPSM (small caps) over a day, a week or a year, holding by holding |
 | **My stocks** | Your watchlist and positions (typed in, imported from your broker's CSV, or kept in sync from Monarch, Interactive Brokers or Robinhood through their MCP servers, read-only) with gains and losses, how you're doing against the S&P 500, a brief of what changed, a portfolio X-ray, alerts that say why a stock moved, and a note on your phone at the close |
 | **Any stock** | A chart with earnings and events marked, analysts, earnings history, ownership, options, financials and news |
+| **Funds** | Which stocks drove SPY, QQQ, SMH and SPSM (small caps) over a day, a week or a year, holding by holding |
+| **Levels** | Support and resistance, full screen: the S&P 500, VXX and the Nasdaq-100 across the top, any stock you pick below, on 5-minute to quarterly bars, with each level's strength and how far away it is |
 | **Calendar** | Upcoming earnings and economic events |
-| **Screener** | Filter the S&P 500 |
+| **Screener** | Yahoo's ready-made stock and fund ideas, a filter you build (size, valuation, growth, yield, 1-year change, sector), and Momentum signals: trend, strength and volume in one score |
 
 Press <kbd>⌘K</kbd> or <kbd>/</kbd> to jump anywhere, and <kbd>⌘,</kbd> for Settings. Light and dark follow your Mac.
 
@@ -80,6 +80,7 @@ One click runs a playbook written for that question. Hover any insight and press
 | Playbook | What you get |
 | --- | --- |
 | Quick take | The story of a stock in 200 words: trend, analysts, what's next |
+| Deep dive | The business, where its growth comes from, and what the price assumes |
 | Why is it moving? | Market, sector or company news, sized against a normal day |
 | Earnings | Before a report: the bar to beat and the move options price in. After: what happened and how the stock took it |
 | Read the chart | Trend, momentum, volume, and the support and resistance levels that matter |
@@ -136,7 +137,7 @@ openticker calendar
 /plugin install openticker@openticker
 ```
 
-**MCP.** `openticker mcp` is a stdio MCP server with read-only tools (`stock`, `portfolio`, `brief`, `market`, `fund`, `compare`, `history`, `calendar`, `search`) and the playbooks as prompts. For Claude Desktop, Cursor or any MCP client:
+**MCP.** `openticker mcp` is a stdio MCP server with read-only tools (`stock`, `stock_section`, `portfolio`, `brief`, `market`, `fund`, `compare`, `history`, `calendar`, `search`) and the playbooks as prompts. For Claude Desktop, Cursor or any MCP client:
 
 ```json
 { "mcpServers": { "openticker": { "command": "openticker", "args": ["mcp"] } } }
@@ -153,8 +154,9 @@ openticker calendar
 | `openticker update` | Get the latest version, keep your changes, restart |
 | `openticker doctor` | Check Python, the server, the Mac app and your agents |
 | `openticker edit ["what you want"]` | Open your coding agent in OpenTicker's code |
-| `openticker check` | Fast checks after a change |
-| `openticker shot [page\|TICKER] [--dark] [--phone]` | Screenshot a page and print where it saved |
+| `openticker check` | Fast checks after a change, including the tests |
+| `openticker test [-v]` | Just the tests: the math behind every number |
+| `openticker shot [page\|TICKER] [--dark\|--light] [--phone] [--out FILE]` | Screenshot a page and print where it saved |
 | `openticker skills [install]` | List the playbooks, or install them for your agents |
 | `openticker mcp` | Run as an MCP server |
 
@@ -168,7 +170,7 @@ OpenTicker uses Yahoo Finance's public data through [yfinance](https://github.co
 
 ## Contributing
 
-OpenTicker is a small Python server (standard library plus yfinance) and plain HTML, CSS and JavaScript with no build step. The Mac app is one Swift file. [AGENTS.md](AGENTS.md) maps the code and the house rules, for people and agents alike.
+OpenTicker is a small Python server (standard library plus yfinance, pandas and openpyxl, which reads the fund issuers' Excel files) and plain HTML, CSS and JavaScript with no build step. The Mac app is one Swift file. [AGENTS.md](AGENTS.md) maps the code and the house rules, for people and agents alike.
 
 ```bash
 git clone https://github.com/bin01/openticker && cd openticker

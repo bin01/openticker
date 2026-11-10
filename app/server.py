@@ -2255,7 +2255,7 @@ main{{max-width:360px;padding:24px;text-align:center}}b{{display:block;font-size
     # ------------------------------------------------------------ ask an agent (streams Server-Sent Events)
     def ask(self):
         if not agent.may_ask(self):
-            return self.send(403, json.dumps({"error": "Ask runs agents signed in on your Mac, so it only works there or on a paired phone."}).encode(), "application/json")
+            return self.send(403, json.dumps({"error": "Tick runs agents signed in on your Mac, so it only works there or on a paired phone."}).encode(), "application/json")
         try:
             body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 200_000)) or b"{}")
         except Exception:
