@@ -38,7 +38,8 @@ addEventListener("popstate",()=>{
   if(t){ if(t!==sel||!drawerOpen) openDrawer(t); } else if(drawerOpen) closeDrawer();
 });
 function renderNav(){
-  $("#mainnav").innerHTML=PAGES.map(([k,l])=>`<a href="#${k}" data-page="${k}" class="${[k===page?"on":"",NAV_GROUP.has(k)?"gs":""].join(" ").trim()}" ${k===page?'aria-current="page"':""}>${ic(k,16)}<span>${l}</span></a>`).join("");
+  const nav=$("#mainnav");   // only when the page changes, never on a price tick; links stay put so focus does too
+  if(nav.dataset.page!==page){ nav.dataset.page=page; patch(nav,PAGES.map(([k,l])=>`<a href="#${k}" data-page="${k}" class="${[k===page?"on":"",NAV_GROUP.has(k)?"gs":""].join(" ").trim()}" ${k===page?'aria-current="page"':""}>${ic(k,16)}<span>${l}</span></a>`).join("")); }
   $("#toolbar").hidden=page!=="mine";   // Funds picks its fund with the cards; My stocks keeps Watchlist / Portfolio here, since an empty one has no card
   $("#tape").hidden=!isDash()||$("#tape").dataset.empty==="1";
   if(typeof renderTabbar==="function") renderTabbar();
@@ -226,7 +227,7 @@ function mktLevels(){
   MKT_LEVELS.forEach(s=>{ const el=document.querySelector(`[data-tlv="${CSS.escape(s)}"]`); if(!el) return;
     const q={t:s,iv:"1d"};   // daily bars here, whatever bar size the Levels page was left on
     const fill=()=>{ const c=xpeek("levels",q), x=document.querySelector(`[data-tlv="${CSS.escape(s)}"]`); if(!x) return;
-      x.innerHTML=c?.data?lvTag(lvVerdict(s,c.data,lvLast(s,c.data))):""; };   // the same price the Levels page reads, so the two always agree
+      patch(x,c?.data?lvTag(lvVerdict(s,c.data,lvLast(s,c.data))):""); };   // the same price the Levels page reads, so the two always agree
     const c=xpeek("levels",q); fill(); if(!c?.data&&!c?.error||xstale(c)) xget("levels",q).then(fill); });
 }
 const TILE_GROUPS=[["Stocks",["^GSPC","^IXIC","^DJI","^RUT","ES=F","NQ=F"],"trend"],["Rates, volatility and the dollar",["^TNX","^FVX","^IRX","^VIX","DX-Y.NYB"],"percent"],["Commodities and crypto",["CL=F","GC=F","BTC-USD"],"coins"]];
@@ -251,42 +252,42 @@ function renderMarket(){
     loadMarket();
   }
   const v=macroView(), err=xpeek("macro")?.error;
-  if(err&&!v){ $("#mIns").innerHTML=errBox(err,"macro"); return; }
+  if(err&&!v){ patch($("#mIns"),errBox(err,"macro")); return; }
   if(!v) return;
   const st=v.status||{}, sp=v.q["^GSPC"];
-  const sd=st.status==="open"?"today":sessDay(); document.querySelectorAll("#mkt .mWhen").forEach(x=>x.textContent=sessWhen()); $("#mMineL").textContent="Your stocks "+sessWhen();
-  $("#mEyebrow").innerHTML=`<span>${sd==="today"?"Market today":sd?sd[0].toUpperCase()+sd.slice(1)+"'s session":"The last session"}</span><span>·</span><span class="chip ${st.status==="open"?"up":""}">${st.status==="open"?"● Open":"Closed"}</span>${statusNote(st)?`<span class="hint" style="margin:0">${esc(statusNote(st))}</span>`:""}`;
-  $("#mTitle").innerHTML=sp?.rets?.["1D"]!=null?`S&amp;P 500 <span class="${cls(sp.rets["1D"])}">${pct(sp.rets["1D"])}</span>`:st.status==="open"?"The market is open":"The market is closed";   // no S&P quote from Yahoo: don't leave the loading line up
-  $("#mIns").innerHTML=insightList(marketInsights(v));
+  const sd=st.status==="open"?"today":sessDay(); document.querySelectorAll("#mkt .mWhen").forEach(x=>setText(x,sessWhen())); setText($("#mMineL"),"Your stocks "+sessWhen());
+  patch($("#mEyebrow"),`<span>${sd==="today"?"Market today":sd?sd[0].toUpperCase()+sd.slice(1)+"'s session":"The last session"}</span><span>·</span><span class="chip ${st.status==="open"?"up":""}">${st.status==="open"?"● Open":"Closed"}</span>${statusNote(st)?`<span class="hint" style="margin:0">${esc(statusNote(st))}</span>`:""}`);
+  patch($("#mTitle"),sp?.rets?.["1D"]!=null?`S&amp;P 500 <span class="${cls(sp.rets["1D"])}">${pct(sp.rets["1D"])}</span>`:st.status==="open"?"The market is open":"The market is closed");   // no S&P quote from Yahoo: don't leave the loading line up
+  patch($("#mIns"),insightList(marketInsights(v)));
   // your stocks
   const my=myToday();
-  $("#mMine").innerHTML=!my||!my.count?`<p class="hint">Add stocks to your watchlist or portfolio to see them here.</p><button class="btn ghost" data-page="mine">Go to My stocks</button>`:
+  patch($("#mMine"),!my||!my.count?`<p class="hint">Add stocks to your watchlist or portfolio to see them here.</p><button class="btn ghost" data-page="mine">Go to My stocks</button>`:
     `${my.hasPos?`<div class="mval"><b>${money(my.V)}</b><span class="${cls(my.D)}">${my.D>=0?"+":"−"}${money(Math.abs(my.D))} · ${pct(my.dayPct)}</span></div>`:""}
      ${my.hasPos&&my.XD!=null?`<div class="mxh">${ic(my.xLab==="Pre-market"?"sun":"moon",12)}${my.xLab} <span class="num ${cls(my.XD)}">${my.XD>=0?"+":"−"}${money(Math.abs(my.XD))} · ${pct(my.V?my.XD/my.V:null)}</span></div>`:""}
      ${my.own.length?`${my.watch.length?`<div class="mgrp">You own</div>`:""}${myRows(my.own.slice(0,3))}`:""}
      ${my.watch.length?`<div class="mgrp">Watching</div>${myRows(my.watch.slice(0,3))}`:""}
-     ${(()=>{ const b=briefItems().filter(x=>x.kind!=="move"); return b.length?`<div class="lbl" style="margin-top:16px">From your brief</div>${briefRows(b.slice(0,3))}<a class="lnk" href="#mine" data-page="mine" style="margin-top:6px">Open your brief ›</a>`:""; })()}`;
+     ${(()=>{ const b=briefItems().filter(x=>x.kind!=="move"); return b.length?`<div class="lbl" style="margin-top:16px">From your brief</div>${briefRows(b.slice(0,3))}<a class="lnk" href="#mine" data-page="mine" style="margin-top:6px">Open your brief ›</a>`:""; })()}`);
   // tiles
-  $("#mTiles").innerHTML=TILE_GROUPS.map(([g,syms,icn])=>`<div class="tgrp" style="--n:${syms.filter(s=>v.q[s]).length}"><div class="lbl">${ic(icn,12)}${g}</div><div class="tiles">${syms.filter(s=>v.q[s]).map(s=>{ const t=tileValue(s,v), col=t.c==null?"var(--ink-3)":t.c>=0?"var(--up)":"var(--down)";
+  patch($("#mTiles"),TILE_GROUPS.map(([g,syms,icn])=>`<div class="tgrp" style="--n:${syms.filter(s=>v.q[s]).length}"><div class="lbl">${ic(icn,12)}${g}</div><div class="tiles">${syms.filter(s=>v.q[s]).map(s=>{ const t=tileValue(s,v), col=t.c==null?"var(--ink-3)":t.c>=0?"var(--up)":"var(--down)";
       const inner=`<div class="tn">${esc(v.names[s]?.[0]||s)}</div><div class="tv num">${t.val}</div><div class="tc num ${t.c==null?"":t.c>=0?"up":"down"}">${t.chg}</div><div class="tsp">${miniSpark(v.q[s].spark,140,30,col)}</div>`;
-      return MKT_LEVELS.includes(s)?`<button type="button" class="mtile" data-levels="${s}" title="Support and resistance for ${esc(v.names[s]?.[0]||s)}">${inner}<div class="tlv" data-tlv="${s}"></div></button>`:`<div class="mtile">${inner}</div>`; }).join("")}</div></div>`).join("");
+      return MKT_LEVELS.includes(s)?`<button type="button" class="mtile" data-levels="${s}" title="Support and resistance for ${esc(v.names[s]?.[0]||s)}">${inner}<div class="tlv" data-tlv="${s}" data-keep></div></button>`:`<div class="mtile">${inner}</div>`; }).join("")}</div></div>`).join(""));
   mktLevels();
   // sectors
-  $("#mRng").innerHTML=MKT_RANGES.map(k=>`<button data-mr="${k}" aria-pressed="${k===mktRange}">${k}</button>`).join("");
+  patch($("#mRng"),MKT_RANGES.map(k=>`<button data-mr="${k}" aria-pressed="${k===mktRange}">${k}</button>`).join(""));
   const secs=(v.sectors||[]).map(([s,n,key])=>({s,n,key,r:v.q[s]?.rets[mktRange],r1:v.q[s]?.rets["1D"]})).filter(x=>x.r!=null).sort((a,b)=>b.r-a.r);
   const spR=sp?.rets[mktRange], mx=Math.max(...secs.map(x=>Math.abs(x.r)),Math.abs(spR||0))||0.01;
   const spX=spR!=null?(50+spR/mx*50):null;
-  $("#mSectors").innerHTML=`<div class="sbars">${spX!=null?`<div class="sbhead" aria-hidden="true"><span></span><span class="strk"><b style="left:${spX.toFixed(1)}%;transform:translateX(${spX<12?"-10%":spX>88?"-90%":"-50%"})">S&amp;P 500 ${pct(spR,1)}</b></span><span></span></div>`:""}${secs.map(x=>`<button class="sbar ${sectorOpen===x.key?"on":""}" data-sector="${x.key}" data-sname="${esc(x.n)}"><span class="sn">${esc(x.n)}<small class="mono">${x.s}</small></span><span class="strk"><span class="szero"></span><i style="${x.r>=0?"left:50%":"right:50%"};width:${(Math.abs(x.r)/mx*50).toFixed(1)}%;background:${x.r>=0?"var(--up)":"var(--down)"}"></i>${spX!=null?`<em style="left:${spX.toFixed(1)}%" title="S&amp;P 500 ${pct(spR)}"></em>`:""}</span><span class="num ${cls(x.r)}">${pct(x.r,1)}</span></button>`).join("")}</div>
-    ${spR!=null?`<p class="hint" style="margin:8px 0 0">The blue line is the S&amp;P 500 ${mktRange==="1D"?sessWhen():"over "+mktRange}. Sectors that end to its right did better than the market, to its left worse.</p>`:""}`;
+  patch($("#mSectors"),`<div class="sbars">${spX!=null?`<div class="sbhead" aria-hidden="true"><span></span><span class="strk"><b style="left:${spX.toFixed(1)}%;transform:translateX(${spX<12?"-10%":spX>88?"-90%":"-50%"})">S&amp;P 500 ${pct(spR,1)}</b></span><span></span></div>`:""}${secs.map(x=>`<button class="sbar ${sectorOpen===x.key?"on":""}" data-key="${x.key}" data-sector="${x.key}" data-sname="${esc(x.n)}"><span class="sn">${esc(x.n)}<small class="mono">${x.s}</small></span><span class="strk"><span class="szero"></span><i style="${x.r>=0?"left:50%":"right:50%"};width:${(Math.abs(x.r)/mx*50).toFixed(1)}%;background:${x.r>=0?"var(--up)":"var(--down)"}"></i>${spX!=null?`<em style="left:${spX.toFixed(1)}%" title="S&amp;P 500 ${pct(spR)}"></em>`:""}</span><span class="num ${cls(x.r)}">${pct(x.r,1)}</span></button>`).join("")}</div>
+    ${spR!=null?`<p class="hint" style="margin:8px 0 0">The blue line is the S&amp;P 500 ${mktRange==="1D"?sessWhen():"over "+mktRange}. Sectors that end to its right did better than the market, to its left worse.</p>`:""}`);
   renderSectorDetail();
   // movers
   const ms=load("movers","day_gainers");
-  $("#mMovSeg").innerHTML=[["day_gainers","Gainers"],["day_losers","Losers"],["most_actives","Active"]].map(([k,l])=>`<button data-mov="${k}" aria-pressed="${k===ms}">${l}</button>`).join("");
+  patch($("#mMovSeg"),[["day_gainers","Gainers"],["day_losers","Losers"],["most_actives","Active"]].map(([k,l])=>`<button data-mov="${k}" aria-pressed="${k===ms}">${l}</button>`).join(""));
   const mv=xpeek("screen",{name:ms});
-  $("#mMovers").innerHTML=!mv||mv.loading&&!mv.data?sk(300):mv.error?errBox(mv.error,"screen",{name:ms}):quoteTable(mv.data.slice(0,12),["t","price","chg","rvol","cap"]);
+  patch($("#mMovers"),!mv||mv.loading&&!mv.data?sk(300):mv.error?errBox(mv.error,"screen",{name:ms}):quoteTable(mv.data.slice(0,12),["t","price","chg","rvol","cap"]));
   // econ
   const ec=xpeek("econ");
-  $("#mEcon").innerHTML=!ec||ec.loading&&!ec.data?sk(300):ec.error?errBox(ec.error,"econ"):econList(ec.data.filter(e=>e.date>=shiftDays(nyToday(),-1)).slice(0,14),true);
+  patch($("#mEcon"),!ec||ec.loading&&!ec.data?sk(300):ec.error?errBox(ec.error,"econ"):econList(ec.data.filter(e=>e.date>=shiftDays(nyToday(),-1)).slice(0,14),true));
 }
 /* the sector's S&P 500 companies that moved most over the chosen range, from prices already on hand */
 function sectorMovers(name){
@@ -303,19 +304,19 @@ function sectorMovers(name){
 }
 async function renderSectorDetail(){
   const el=$("#mSector"); if(!el) return;
-  if(!sectorOpen){ el.innerHTML=""; return; }
+  if(!sectorOpen){ patch(el,""); return; }
   const name=$(`[data-sector="${sectorOpen}"]`)?.dataset.sname||sectorOpen, mv=sectorMovers(name);
   const head=desc=>`<div class="sdh"><div><h3>${esc(name)}</h3>${desc?`<p class="hint" style="margin:4px 0 0;max-width:80ch">${esc(desc)}</p>`:""}</div><button class="x" data-sector-close aria-label="Close sector">${ic("close",16)}</button></div>${mv}`;
   const c=xpeek("sector",{key:sectorOpen});
   // the movers come from prices already loaded, so they show at once; Yahoo's sector profile fills in below
-  if(!c||c.loading&&!c.data){ el.innerHTML=`<div class="sdet">${head()}<div style="margin-top:16px">${sk(200)}</div></div>`; xget("sector",{key:sectorOpen}).then(()=>page==="market"&&renderSectorDetail()); return; }
-  if(c.error){ el.innerHTML=`<div class="sdet">${head()}<div style="margin-top:16px">${errBox(c.error,"sector",{key:sectorOpen})}</div></div>`; return; }
+  if(!c||c.loading&&!c.data){ patch(el,`<div class="sdet">${head()}<div style="margin-top:16px">${sk(200)}</div></div>`); xget("sector",{key:sectorOpen}).then(()=>page==="market"&&renderSectorDetail()); return; }
+  if(c.error){ patch(el,`<div class="sdet">${head()}<div style="margin-top:16px">${errBox(c.error,"sector",{key:sectorOpen})}</div></div>`); return; }
   const d=c.data, o=d.overview||{}, inds=d.industries||[], mxw=Math.max(...inds.map(i=>i.weight||0))||1;
   const ind=industryOpen?xpeek("industry",{key:industryOpen}):null;   // not "ic": that's the icon helper
-  el.innerHTML=`<div class="sdet">${head(o.description)}
+  patch(el,`<div class="sdet">${head(o.description)}
     ${o.market_cap==null&&o.companies_count==null?"":`<div class="kf" style="margin-top:16px"><div><div class="lbl">Market value</div><div class="v">${big(o.market_cap)}</div></div><div><div class="lbl">Share of US market</div><div class="v">${o.market_weight!=null?pc(o.market_weight):"–"}</div></div><div><div class="lbl">Companies</div><div class="v">${o.companies_count?.toLocaleString("en-US")||"–"}</div><div class="ks">${o.industries_count||"?"} industries</div></div></div>`}
     <div class="row even" style="margin-top:26px;gap:22px"><div><h4 class="h4">Industries by size</h4><div class="ibars">${inds.map(i=>`<button class="ibar ${industryOpen===i.key?"on":""}" data-industry="${esc(i.key)}"><span>${esc(i.name)}</span><i style="width:${((i.weight||0)/mxw*100).toFixed(1)}%"></i><b class="num">${i.weight!=null?pc(i.weight):""}</b></button>`).join("")}</div><p class="hint">Pick an industry for its best performers.</p></div>
-      <div><h4 class="h4">${industryOpen&&ind?.data?esc(inds.find(i=>i.key===industryOpen)?.name||"")+": best this year":"Largest companies · share of the sector"}</h4>${industryOpen?industryHTML(ind):`<ul class="clist">${(d.companies||[]).slice(0,14).map(x=>`<li data-sel="${esc(x.t)}"><b class="mono">${esc(x.t)}</b><span>${esc(x.n)}</span><span class="ks">${esc(x.rating||"")}</span><span class="num">${x.weight!=null?pc(x.weight):""}</span></li>`).join("")}</ul>`}</div></div></div>`;
+      <div><h4 class="h4">${industryOpen&&ind?.data?esc(inds.find(i=>i.key===industryOpen)?.name||"")+": best this year":"Largest companies · share of the sector"}</h4>${industryOpen?industryHTML(ind):`<ul class="clist">${(d.companies||[]).slice(0,14).map(x=>`<li data-sel="${esc(x.t)}"><b class="mono">${esc(x.t)}</b><span>${esc(x.n)}</span><span class="ks">${esc(x.rating||"")}</span><span class="num">${x.weight!=null?pc(x.weight):""}</span></li>`).join("")}</ul>`}</div></div></div>`);
   if(industryOpen&&(!ind||ind.loading&&!ind.data)) xget("industry",{key:industryOpen}).then(()=>page==="market"&&renderSectorDetail());
 }
 function industryHTML(ic){
@@ -370,8 +371,8 @@ function econList(rows,compact){
   const today=nyToday(), by=new Map(); rows.forEach(e=>{ if(!by.has(e.date)) by.set(e.date,[]); by.get(e.date).push(e); });
   const fmt=v=>v==null?"–":(v<0?"−":"")+(Math.abs(v)>=1000?Math.abs(v).toLocaleString("en-US"):String(+Math.abs(+v).toFixed(2)));
   return [...by].map(([d,list])=>`<div class="eg"><div class="egh ${d===today?"today":""}">${dayLabel(d,today)}</div><table class="hz econ"><tbody>${list.map(e=>{ const surprise=e.actual!=null&&e.expected!=null?e.actual-e.expected:null;
-    return `<tr class="${e.actual==null?"pending":""}"><td class="l mono ks" style="width:64px;white-space:nowrap">${esc(econTime(e.time))}</td><td class="l" title="${esc(e.event)}">${esc(econName(e.event))}${e.for?` <span class="ks">${esc(String(e.for))}</span>`:""}</td><td class="num"><b>${fmt(e.actual)}</b></td>${compact?"":`<td class="num ks">${fmt(e.expected)}</td>`}<td class="num ks">${fmt(e.last)}</td>${surprise!=null&&!compact?`<td class="num sg ${surprise>0?"up":surprise<0?"down":""}">${surprise>0?"▲":surprise<0?"▼":"="}</td>`:compact?"":`<td class="num sg"></td>`}</tr>`; }).join("")}</tbody></table></div>`).join("")
-   +`<p class="hint">${compact?"Bold is the actual figure, gray the previous one.":"Actual, then the forecast and the previous figure. ▲ ▼ show whether the actual came in above or below the forecast."}</p>`;
+    return `<tr class="${e.actual==null?"pending":""}"><td class="l mono ks" style="width:64px;white-space:nowrap">${esc(econTime(e.time))}</td><td class="l" title="${esc(e.event)}">${esc(econName(e.event))}${e.for?` <span class="ks">${esc(String(e.for))}</span>`:""}</td><td class="num"><b>${fmt(e.actual)}</b></td>${compact?"":`<td class="num ks">${fmt(e.expected)}</td>`}<td class="num ks">${fmt(e.last)}${e.revised!=null?(compact?`<span class="ks" style="display:block;font-size:11px;white-space:nowrap" title="First reported as ${fmt(e.revised)}">was ${fmt(e.revised)}</span>`:`<span class="ks" style="white-space:nowrap"> revised from ${fmt(e.revised)}</span>`):""}</td>${surprise!=null&&!compact?`<td class="num sg ${surprise>0?"up":surprise<0?"down":""}">${surprise>0?"▲":surprise<0?"▼":"="}</td>`:compact?"":`<td class="num sg"></td>`}</tr>`; }).join("")}</tbody></table></div>`).join("")
+   +`<p class="hint">${compact?"Bold is the actual figure, gray the previous one. \"Was\" is what it was first reported as, when it has since been revised.":"Actual, then the forecast and the previous figure (with what it was first reported as, if revised). ▲ ▼ show whether the actual came in above or below the forecast."}</p>`;
 }
 
 /* ======================= CALENDAR ======================= */
@@ -492,7 +493,7 @@ function renderScreener(){
   main.innerHTML=head+`<div id="scrRes">${body}</div>`;
   const form=$("#sform");
   if(form){ form.onsubmit=e=>{ e.preventDefault(); form.querySelectorAll("[data-sf]").forEach(i=>scrForm[i.dataset.sf]=i.value.trim()); save("scrForm",JSON.stringify(scrForm)); renderScreener(); }; }
-  main.querySelectorAll(".qt th").forEach((th,i)=>{ const key=["t","price","chg","cap","pe","yr","yield","rating","add"][i]; if(["price","chg","cap","pe","yr","yield"].includes(key)){ th.classList.add("sortable"); th.onclick=()=>{ scrSort={k:key,dir:scrSort.k===key?-scrSort.dir:-1}; renderScreener(); }; if(scrSort.k===key) th.textContent+=scrSort.dir>0?" ↑":" ↓"; } });
+  main.querySelectorAll(".qt th").forEach((th,i)=>{ const key=["t","price","chg","cap","pe","yr","yield","rating","add"][i]; if(["price","chg","cap","pe","yr","yield"].includes(key)){ th.classList.add("sortable"); th.setAttribute("aria-sort",scrSort.k===key?(scrSort.dir>0?"ascending":"descending"):"none"); th.onclick=()=>{ scrSort={k:key,dir:scrSort.k===key?-scrSort.dir:-1}; renderScreener(); }; if(scrSort.k===key) th.textContent+=scrSort.dir>0?" ↑":" ↓"; } });
 }
 
 
@@ -542,7 +543,7 @@ function renderSignals(main){
     const filt=`<div class="sig-bar-row"><div class="seg">${[["all","All stocks"],["mine","My stocks"]].map(([k,l])=>`<button aria-pressed="${sigScope===k}" data-sig-s="${k}">${l}</button>`).join("")}</div>
       <div class="chips" style="margin:0">${SIG_RATINGS.map(([k,c])=>chip(k,k,n(k),"rt-"+c)).join("")}</div></div>
       ${dist(scoped)}`;
-    const th=(k,l,c="")=>`<th class="${c} ${G&&sigSort.k===k?"on":""} ${k?"sortable":""}" ${k?`data-sig-k="${k}"`:""} ${k&&k!=="rating"?`data-c="${k}"`:""}>${l}${sigSort.k===k?(sigSort.dir>0?" ↑":" ↓"):""}</th>`;
+    const th=(k,l,c="")=>`<th class="${c} ${G&&sigSort.k===k?"on":""} ${k?"sortable":""}" ${k?`data-sig-k="${k}" aria-sort="${sigSort.k===k?(sigSort.dir>0?"ascending":"descending"):"none"}"`:""} ${k&&k!=="rating"?`data-c="${k}"`:""}>${l}${sigSort.k===k?(sigSort.dir>0?" ↑":" ↓"):""}</th>`;
     const tr=r=>{ const on=me?.watch?.includes(r.t), open=sigOpen===r.t;
       return `<tr class="sig-row ${open?"open":""}" data-sig-t="${esc(r.t)}" aria-expanded="${open}">
         <td class="l"><a href="#" class="mono sig-t" data-sel="${esc(r.t)}" title="Open ${esc(r.t)}"><b>${esc(r.t)}</b></a><span class="qn">${esc(niceName(r.n||""))}</span></td>
@@ -555,7 +556,7 @@ function renderSignals(main){
         <td class="num" data-c="stop">${money(r.stop)}</td><td class="num" data-c="target">${money(r.target)}</td>
         <td><button class="star ${on?"on":""}" data-star="${esc(r.t)}" aria-label="${on?"Remove from":"Add to"} watchlist" title="${on?"On your watchlist":"Add to watchlist"}">${ic("star",16,on)}</button></td></tr>
         ${open?`<tr class="sig-why"><td colspan="10">${why(r)}</td></tr>`:""}`; };
-    const table=rows.length?`<div class="tbl-wrap"><table class="hold qt sig"><thead><tr>${th("","Stock","l")}${th("rating","Rating","l")}${th("score","Score")}${th("price","Price")}<th data-c="adx" class="sortable ${sigSort.k==="adx"?"on":""}" data-sig-k="adx" title="Average Directional Index: how strong the trend is. Under 20 is no trend.">Trend${sigSort.k==="adx"?(sigSort.dir>0?" ↑":" ↓"):""}</th>${th("rs6","vs S&P, 6 mo")}${th("fromHigh","From high")}<th data-c="stop">Stop</th><th data-c="target">Target</th><th></th></tr></thead>
+    const table=rows.length?`<div class="tbl-wrap"><table class="hold qt sig"><thead><tr>${th("","Stock","l")}${th("rating","Rating","l")}${th("score","Score")}${th("price","Price")}<th data-c="adx" class="sortable ${sigSort.k==="adx"?"on":""}" data-sig-k="adx" aria-sort="${sigSort.k==="adx"?(sigSort.dir>0?"ascending":"descending"):"none"}" title="Average Directional Index: how strong the trend is. Under 20 is no trend.">Trend${sigSort.k==="adx"?(sigSort.dir>0?" ↑":" ↓"):""}</th>${th("rs6","vs S&P, 6 mo")}${th("fromHigh","From high")}<th data-c="stop">Stop</th><th data-c="target">Target</th><th></th></tr></thead>
       <tbody>${rows.map(tr).join("")}</tbody></table></div>`:`<p class="hint" style="margin:14px 0">${sigScope==="mine"&&!scoped.length?"None of your stocks are scored yet. Add some to your watchlist or portfolio.":"No stocks have this rating."}</p>`;
     body=filt+`<p class="hint" style="margin:10px 0 0">${rows.length} stocks. Click a row to see why it scored what it did; click the ticker to open the stock.</p>`+table+method();
   }
@@ -614,7 +615,7 @@ document.addEventListener("click",e=>{
 /* the stars and inline links inside rows must not also open the row */
 document.addEventListener("click",e=>{ if(e.target.closest("a[data-sel]")) e.preventDefault(); });
 // refresh the market page while it is open
-setInterval(()=>{ if(page==="market"&&!document.hidden){ const m=xpeek("macro"); if(m&&Date.now()-m.at>60e3) xget("macro",{},true).then(()=>page==="market"&&renderMarket()); else if(model) renderMarket(); } },20e3);
+setInterval(()=>{ if(page==="market"&&!document.hidden){ const m=xpeek("macro"); if(m&&Date.now()-m.at>60e3) xget("macro",{},true).then(()=>page==="market"&&renderMarket()); else if(base) renderMarket(); } },20e3);   // in place: only what changed (the "Opens in" line, a mover) is touched
 // Calendar and Screener lists left open: draw again once the list is past its freshness window, which fetches it anew
 setInterval(()=>{ if(document.hidden) return;
   if(page==="calendar"&&calTab!=="earn"&&xstale(xpeek(calTab))) renderCalendar();

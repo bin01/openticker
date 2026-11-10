@@ -11,7 +11,7 @@ metadata:
 
 # Week ahead
 
-**Data**: `openticker calendar`, `openticker portfolio` and `openticker market`.
+**Data**: `openticker calendar` and `openticker market`. The user's stocks and their brief usually come with the question; if they don't, `openticker portfolio`. Share counts and dollar amounts aren't needed here.
 
 ## Cover
 

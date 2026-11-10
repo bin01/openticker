@@ -129,6 +129,45 @@ class Settings(unittest.TestCase):
         self.assertIn("Bash(openticker stock:*)", allowed)
         self.assertFalse(any(a.startswith("Bash(openticker:") or a == "Bash" for a in allowed))   # never every openticker command
 
+    def test_toolbox_is_read_only(self):
+        # one Python toolbox serves every conversation, so code in one conversation's sandbox may run it but not change it
+        ws = workbench.space("chat-test-3")
+        s = workbench.claude_settings(ws)
+        fs = s["sandbox"]["filesystem"]
+        a = lambda p: "/" + str(Path(p).resolve()).lstrip("/")
+        self.assertEqual(fs["allowWrite"], [a(ws)])                        # its own folder, and nothing else
+        for shared in (workbench.TOOLBOX, workbench.CACHE, workbench.SDK, workbench.paths.ROOT):
+            self.assertIn(a(shared), fs["denyWrite"])
+            self.assertFalse(any(w == a(shared) or w.startswith(a(shared) + "/") for w in fs["allowWrite"]), shared)
+            self.assertIn(f"Edit(/{a(shared)}/**)", s["permissions"]["deny"])
+        self.assertFalse(any(r.startswith("Write(") for r in s["permissions"]["deny"]))   # Claude Code ignores those, and says so
+        self.assertIn(a(workbench.TOOLBOX), fs["allowRead"])                # but it may read and run it
+        self.assertFalse(a(ws).startswith(a(workbench.TOOLBOX) + "/"))
+        tools, allowed = workbench.claude_tools(ws, ("stock",))
+        self.assertFalse(any(str(workbench.TOOLBOX.resolve()) in x for x in allowed if x.startswith(("Edit", "Write"))))
+
+    def test_installs_and_caches_stay_in_the_conversation(self):
+        ws = workbench.space("chat-test-4")
+        e = workbench.env(ws, {"PATH": "/usr/bin"})
+        own = ws / ".openticker"
+        self.assertEqual(e["PIP_TARGET"], str(own / "packages"))
+        self.assertEqual(e["PYTHONPATH"].split(os.pathsep), [str(workbench.SDK), str(own / "packages")])
+        for k in ("PIP_CACHE_DIR", "XDG_CACHE_HOME", "MPLCONFIGDIR"):
+            self.assertTrue(e[k].startswith(str(own)), k)
+        self.assertEqual(e["PYTHONDONTWRITEBYTECODE"], "1")
+        self.assertTrue((own / "packages").is_dir())
+        self.assertFalse(hasattr(workbench, "codex_args"))                  # Codex gets no extra writable folder either
+
+    def test_older_toolbox_is_made_again(self):
+        # a toolbox from before it was read-only (no pip, no compiled bytecode) doesn't count as ready, so build() remakes it
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(workbench, "TOOLBOX", Path(d)):
+            (Path(d) / "bin").mkdir()
+            (Path(d) / "bin" / "python").write_text("")
+            (Path(d) / ".ready").write_text(json.dumps({"packages": workbench.PACKAGES, "at": 1}))
+            self.assertIsNone(workbench.python())
+            (Path(d) / ".ready").write_text(json.dumps({"packages": workbench.PACKAGES, "at": 1, "v": workbench.TOOLBOX_VERSION}))
+            self.assertEqual(workbench.python(), Path(d) / "bin" / "python")
+
     def test_sandbox_failure_is_recognized(self):
         self.assertTrue(workbench.sandbox_failed("Error: sandbox is not available on this platform"))
         self.assertFalse(workbench.sandbox_failed("rate limit reached"))
@@ -156,6 +195,11 @@ class OT(unittest.TestCase):
                 ot.prices("ZZZ")
             self.assertEqual(asked, [["ZZZ"]])
             self.assertEqual(len(ot.positions()), 0)
+            Path(d, ".openticker").mkdir()
+            Path(d, ".openticker", "you.json").write_text(json.dumps({"positions": [{"t": "NVDA", "weight": 0.6}, {"t": "AAPL", "weight": 0.4}]}))
+            pos = ot.positions()
+            self.assertEqual(list(pos.columns), ["t", "weight"])                # weights, never shares or cost
+            self.assertAlmostEqual(pos["weight"].sum(), 1.0)
 
 
 if __name__ == "__main__":

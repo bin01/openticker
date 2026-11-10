@@ -68,21 +68,32 @@ let systemBG = NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .d
 
 // MARK: - The window
 
-final class Controller: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, NSWindowDelegate {
+final class Controller: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, NSWindowDelegate,
+                        WKDownloadDelegate {
     let window: NSWindow
     let web: WKWebView
     var home: URL { URL(string: "http://127.0.0.1:\(otPort())/")! }
     var starting = false
+    var downloads: [WKDownload: URL] = [:]   // where each download in flight is being saved
 
     override init() {
         let cfg = WKWebViewConfiguration()
         cfg.websiteDataStore = .default()
-        cfg.applicationNameForUserAgent = "OpenTicker/\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") ?? "1") Version/18.0 Safari/605.1.15"
-        cfg.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        // WebKit writes the rest of the user agent (its own Mac and AppleWebKit tokens) and appends this name
+        cfg.applicationNameForUserAgent = "OpenTicker/\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") ?? "1")"
+        if #available(macOS 13.3, *) {
+            // set on the web view below: isInspectable replaces the private switch
+        } else {
+            // before macOS 13.3, Inspect Element had only this private switch
+            cfg.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        }
         web = WKWebView(frame: .zero, configuration: cfg)
+        if #available(macOS 13.3, *) { web.isInspectable = true }
         web.allowsBackForwardNavigationGestures = false
         web.allowsMagnification = true
-        web.setValue(false, forKey: "drawsBackground")   // no white flash before the page paints
+        // No white flash before the page paints. There is no public switch for this on macOS (WKWebView's
+        // underPageBackgroundColor only colors the overscroll area), so this private key stays.
+        web.setValue(false, forKey: "drawsBackground")
 
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 920),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -225,6 +236,11 @@ final class Controller: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        // <a download> on our own pages (Tick's files) or a blob:/data: link the page built: save it, don't navigate
+        if action.shouldPerformDownload && isInternal(action.request.url) {
+            decisionHandler(.download)
+            return
+        }
         if !isInternal(action.request.url), let url = action.request.url,
            action.navigationType == .linkActivated || action.targetFrame?.isMainFrame == true {
             openOutside(url)
@@ -232,6 +248,73 @@ final class Controller: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             return
         }
         decisionHandler(.allow)
+    }
+
+    // A response the window can't show, or one the server marks as an attachment, is saved instead of replacing the page
+    func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
+                 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        let disposition = (response.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
+        let attachment = disposition.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("attachment")
+        if isInternal(response.response.url) && (attachment || !response.canShowMIMEType) {
+            decisionHandler(.download)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
+    // MARK: Downloads
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    /// ~/Downloads/name.csv, or "name 2.csv", "name 3.csv"... when that's taken, the way Safari does it.
+    func freeDownloadURL(_ suggested: String) -> URL {
+        let fm = FileManager.default
+        let dir = fm.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? fm.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
+        var name = (suggested as NSString).lastPathComponent
+            .replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: CharacterSet(charactersIn: ". ").union(.whitespacesAndNewlines))
+        if name.isEmpty { name = "download" }
+        let ext = (name as NSString).pathExtension
+        let stem = (name as NSString).deletingPathExtension
+        var url = dir.appendingPathComponent(name)
+        var n = 2
+        while fm.fileExists(atPath: url.path) {
+            url = dir.appendingPathComponent(ext.isEmpty ? "\(stem) \(n)" : "\(stem) \(n).\(ext)")
+            n += 1
+        }
+        return url
+    }
+
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String,
+                  completionHandler: @escaping (URL?) -> Void) {
+        let url = freeDownloadURL(suggestedFilename)
+        downloads[download] = url
+        completionHandler(url)
+    }
+
+    func downloadDidFinish(_ download: WKDownload) {
+        guard let url = downloads.removeValue(forKey: download) else { return }
+        // bounce the Downloads stack in the Dock, as browsers do, and show the file in Finder
+        DistributedNotificationCenter.default().post(name: Notification.Name("com.apple.DownloadFileFinished"),
+                                                     object: url.path)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        let name = downloads.removeValue(forKey: download)?.lastPathComponent
+        let e = error as NSError
+        if e.domain == NSURLErrorDomain && e.code == NSURLErrorCancelled { return }
+        let a = NSAlert()
+        a.messageText = name.map { "“\($0)” didn't download" } ?? "The file didn't download"
+        a.informativeText = e.localizedDescription
+        a.beginSheetModal(for: window) { _ in }
     }
 
     // target=_blank and window.open
@@ -282,6 +365,8 @@ final class Controller: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     func lost(_ error: Error) {
         let e = error as NSError
         if e.code == NSURLErrorCancelled { return }
+        // 102 "frame load interrupted": a navigation we turned into a download; the page is fine
+        if e.domain == "WebKitErrorDomain" && e.code == 102 { return }
         boot()   // the server restarted or went away: bring it back
     }
 
@@ -295,6 +380,14 @@ final class Controller: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     @objc func zoomOut(_ sender: Any?) { web.pageZoom = max(web.pageZoom - 0.1, 0.6) }
     @objc func actualSize(_ sender: Any?) { web.pageZoom = 1 }
     @objc func showWindow(_ sender: Any?) { window.makeKeyAndOrderFront(nil) }
+    /// The page's Settings sheet. Opens it only if it isn't already open: when the page has focus, its own ⌘, handler
+    /// (settings.js) takes the key first and the menu never sees it, so this runs for menu clicks and for ⌘, while
+    /// focus is outside the page.
+    @objc func openSettings(_ sender: Any?) {
+        window.makeKeyAndOrderFront(nil)
+        web.evaluateJavaScript("if (typeof openSettings === 'function' && !document.getElementById('sets')) openSettings()",
+                               completionHandler: nil)
+    }
     @objc func openRepo(_ sender: Any?) { NSWorkspace.shared.open(repoURL) }
     @objc func openLogs(_ sender: Any?) { NSWorkspace.shared.open(otHome().appendingPathComponent("logs/server.log")) }
     @objc func openData(_ sender: Any?) { NSWorkspace.shared.open(otHome()) }
@@ -308,7 +401,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ n: Notification) {
         buildMenu()
         c = Controller()
-        NSApp.activate(ignoringOtherApps: true)
+        if #available(macOS 14.0, *) {
+            NSApp.activate()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -340,6 +437,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let me = self as AnyObject
         _ = sub(appName, [
             item("About \(appName)", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+            .separator(),
+            item("Settings…", #selector(AppDelegate.openSettings(_:)), ",", target: me),
             .separator(),
             item("Show Your Data in Finder", #selector(AppDelegate.openData(_:)), target: me),
             item("Show Server Log", #selector(AppDelegate.openLogs(_:)), target: me),
@@ -392,6 +491,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func actualSize(_ s: Any?) { c.actualSize(s) }
     @objc func showWindow(_ s: Any?) { c.showWindow(s) }
     @objc func openRepo(_ s: Any?) { c.openRepo(s) }
+    @objc func openSettings(_ s: Any?) { c.openSettings(s) }
     @objc func openLogs(_ s: Any?) { c.openLogs(s) }
     @objc func openData(_ s: Any?) { c.openData(s) }
 }

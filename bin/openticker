@@ -813,7 +813,7 @@ MCP_TOOLS = [
               "ownership, options positioning, news and events.", {"ticker": TICKER}, ["ticker"]),
     ("stock_section", "One section for a stock, when you only need part of the picture.",
      {"ticker": TICKER, "section": {"type": "string", "enum": list(SECTIONS)}}, ["ticker", "section"]),
-    ("portfolio", "The user's positions (with P&L), watchlist, upcoming earnings for them and what changed recently.", {}, []),
+    ("portfolio", "The user's positions with exact shares, cost and P&L, watchlist, upcoming earnings for them and what changed recently. Call only when the question needs those figures.", {}, []),
     ("brief", "What changed recently for the user's stocks: rating changes, target moves, insider trades, unusual options, earnings.", {}, []),
     ("market", "Market overview: SPY, QQQ, SMH, SPSM (small caps), sector ETFs, rates, oil, dollar, VIX and today's biggest S&P 500 movers.", {}, []),
     ("fund", "Which holdings drove an index fund over a period.",

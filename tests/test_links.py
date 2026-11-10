@@ -315,6 +315,9 @@ class Links(unittest.TestCase):
 
         # tokens never reach the page
         self.assertNotIn("tok-", json.dumps(links.public(personal.link("me", lid))))
+        # and the page gets only what links.js reads (the server's address and the preview flag aren't among them)
+        self.assertEqual(set(links.public(personal.link("me", lid))),
+                         {"id", "provider", "name", "status", "error", "synced", "count", "off", "full_access"})
 
         links.disconnect("me", lid)
         self.assertEqual([x["t"] for x in personal.positions("me")], ["TSLA"])

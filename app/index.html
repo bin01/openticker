@@ -228,6 +228,13 @@ table.hold{border-collapse:collapse;width:100%;min-width:1060px}
 .rng+.num{display:inline-block;min-width:54px;text-align:right}
 .rng{display:inline-block;position:relative;width:64px;height:6px;border-radius:3px;background:var(--grid);vertical-align:middle;margin-right:6px}
 .rng i{position:absolute;top:-2px;width:3px;height:10px;border-radius:2px;background:var(--ink)}
+/* keyboard: a list (rows, the map, a chart's bars) is one Tab stop and the arrow keys move inside it (ux.js) */
+tr[data-sel][tabindex]:focus-visible,tr[data-sig-t][tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;background:var(--accent-soft)}
+li[data-sel][tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:6px}
+.tile[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;z-index:4}
+svg g[data-sel]:focus{outline:none}svg g[data-sel]:focus-visible>rect:first-child{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}svg g[data-sel]:focus-visible .hd{stroke:var(--accent);stroke-width:2.5;fill-opacity:.95}
+th[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:4px}
+.drawer:focus{outline:none}
 .flash-up{animation:fu 1.4s}.flash-down{animation:fd 1.4s}
 @keyframes fu{0%{background:var(--up-soft)}100%{background:transparent}}
 @keyframes fd{0%{background:var(--down-soft)}100%{background:transparent}}
@@ -1438,8 +1445,8 @@ body[data-page="mine"] section.keys{display:none}
 <main class="wrap" id="app"><div class="skel" aria-label="Loading"><p class="hint" style="text-align:center;margin:28px auto 22px;max-width:46ch;line-height:1.55"><b id="bootStep" style="font-weight:600;color:var(--ink)">Loading…</b><br>The very first start downloads a year of prices and takes about a minute. After that, OpenTicker opens straight away.</p><i style="height:120px"></i><i style="height:300px"></i><i style="height:480px"></i></div></main>
 
 <div class="scrim" id="scrim"></div>
-<aside class="drawer" id="drawer" aria-hidden="true" aria-label="Stock detail"></aside>
-<aside class="drawer" id="side2" aria-hidden="true" aria-label="Alerts"></aside>
+<aside class="drawer" id="drawer" aria-hidden="true" aria-label="Stock detail" tabindex="-1"></aside>
+<aside class="drawer" id="side2" aria-hidden="true" aria-label="Alerts" tabindex="-1"></aside>
 <div class="tip" id="tip"></div>
 
 <script>
@@ -1604,10 +1611,77 @@ function computePulse(){
 }
 function series(a,i0,maxPts=80){ if(!a) return []; const s=firstValid(a,i0); if(!s) return []; const pts=[]; for(let k=s.k;k<a.length;k++) if(a[k]!=null) pts.push([k,a[k]/s.v-1]); if(pts.length<=maxPts) return pts; const step=pts.length/maxPts, out=[]; for(let j=0;j<maxPts;j++) out.push(pts[Math.floor(j*step)]); out.push(pts[pts.length-1]); return out; }
 
+/* ======================= drawing in place =======================
+   patch(el, html) puts new HTML into el by changing only what differs from what's on screen: a price's text, a cell's
+   color, a row added, removed or moved. Children are matched by id or ticker (MKEY), the rest by position, so a live
+   price tick leaves focus, hover, text selection, typed values and running animations alone, and a section is only
+   rebuilt where its structure really changed. Scripts own a few things templates don't mention: tabindex (keyboard
+   order), data-saving, the hl and bad classes, attributes named in data-live (a chart's hover line), and anything
+   marked data-keep (filled in by other code). */
+let drawing=false, patchFocus=null;   // true while a render runs: a change event fired by a field leaving the page isn't the person's
+const MKEY=["id","data-sel","data-f","data-fk","data-lot","data-key"], MKEEP_ATTR=["tabindex","data-saving"], MKEEP_CLS=["hl","bad"];
+function mkey(n){ if(n.nodeType!==1) return null; for(const a of MKEY){ const v=n.getAttribute(a); if(v!=null) return a+"="+v; } return null; }
+function patch(el,html){
+  if(!el) return;
+  const was=drawing; drawing=true;
+  try{
+    if(!el.firstChild){ el.innerHTML=html; return; }
+    const t=document.createElement("template"); t.innerHTML=html;
+    const a=document.activeElement, was0=patchFocus; patchFocus=a;   // a field counts as "being typed in" even while a move has blurred it
+    try{ patchKids(el,t.content); }finally{ patchFocus=was0; }
+    if(a&&a!==document.activeElement&&a.isConnected&&el.contains(a)) a.focus({preventScroll:true});   // a browser without moveBefore drops focus from a moved row
+  }finally{ drawing=was; }
+}
+/* text that a tick changes: edit the text node rather than replace it, and skip it when it is the same */
+function setText(el,v){ if(!el) return; v=String(v); const f=el.firstChild; if(f&&f.nodeType===3&&!f.nextSibling){ if(f.nodeValue!==v) f.nodeValue=v; } else if(el.textContent!==v) el.textContent=v; }
+function mmove(p,n,ref){ if(p.moveBefore){ try{ p.moveBefore(n,ref); return; }catch(e){} } p.insertBefore(n,ref); }
+function patchKids(from,to){
+  const pool=new Map(), want=new Set();
+  for(let n=to.firstChild;n;n=n.nextSibling){ const k=mkey(n); if(k!=null) want.add(k); }
+  for(let c=from.firstChild;c;c=c.nextSibling){ const k=mkey(c); if(k!=null){ const q=pool.get(k); if(q) q.push(c); else pool.set(k,[c]); } }
+  let cur=from.firstChild;
+  const skipGone=()=>{ while(cur){ const k=mkey(cur); if(k==null||want.has(k)) return; const nx=cur.nextSibling; cur.remove(); cur=nx; } };   // a row that left: drop it rather than move everything after it
+  for(let n=to.firstChild;n;){
+    const next=n.nextSibling, k=mkey(n); let m=null;
+    skipGone();
+    if(k!=null){ const q=pool.get(k); while(!m&&q?.length){ const c=q.shift(); if(c.nodeName===n.nodeName) m=c; } }
+    else if(cur&&mkey(cur)==null&&cur.nodeType===n.nodeType&&cur.nodeName===n.nodeName) m=cur;
+    if(m){ if(m===cur) cur=cur.nextSibling; else mmove(from,m,cur); patchNode(m,n); }
+    else from.insertBefore(n,cur);
+    n=next;
+  }
+  while(cur){ const nx=cur.nextSibling; cur.remove(); cur=nx; }
+}
+function patchNode(a,b){
+  if(a.nodeType!==1){ if(a.nodeValue!==b.nodeValue) a.nodeValue=b.nodeValue; return; }
+  // data-keep: filled by other code. Left alone while it's the same element; anything else about it changed (another
+  // tile's data-tlv) means it's a different one, so it's drawn afresh and refilled
+  if(a.hasAttribute("data-keep")&&b.hasAttribute("data-keep")&&b.getAttributeNames().every(n=>n==="class"||a.getAttribute(n)===b.getAttribute(n))) return;
+  const focused=a===document.activeElement||a===patchFocus, live=(a.getAttribute("data-live")||"").split(" ");
+  const hadChecked=a.hasAttribute("checked"), keepCls=()=>MKEEP_CLS.filter(c=>a.classList.contains(c)&&!b.classList.contains(c));
+  for(const n of a.getAttributeNames()){ if(b.hasAttribute(n)||MKEEP_ATTR.includes(n)||live.includes(n)||n==="open"&&a.nodeName==="DETAILS") continue;
+    if(n==="class"&&keepCls().length){ a.setAttribute("class",keepCls().join(" ")); continue; }   // the red outline on a field with an error stays
+    a.removeAttribute(n); }
+  const field=/^(INPUT|TEXTAREA|SELECT|OPTION)$/.test(a.nodeName);
+  for(const n of b.getAttributeNames()){
+    if(live.includes(n)||focused&&(n==="type"||n==="value")) continue;   // the field you're in keeps its kind and what you typed
+    let v=b.getAttribute(n);
+    if(n==="class") for(const c of keepCls()) v+=" "+c;
+    const old=a.getAttribute(n); if(old===v) continue;
+    a.setAttribute(n,v);
+    // a field you've typed in ignores its value attribute: when the saved value itself changed (another device, the
+    // stock page, a sync), you're not in the field, and it still shows the old saved value, show the new one. Text you
+    // typed and haven't saved (a cost you're about to add) differs from the old value and stays
+    if(field&&!focused){ if(n==="value"&&a.value===(old??"")) a.value=v; else if(n==="checked") a.checked=true; else if(n==="selected") a.selected=true; }
+  }
+  if(field&&!focused&&hadChecked&&!b.hasAttribute("checked")) a.checked=false;
+  if(a.nodeName!=="TEXTAREA") patchKids(a,b);
+}
+
 /* ======================= render: shell ======================= */
 function renderControls(){
-  $("#funds").innerHTML=(PAGE_FUNDS[page]||[]).filter(k=>base?.funds[k]).map((k,i)=>{ const fi={Watchlist:"star",Portfolio:"mine"}[k]; return `<button${fi?' class="wi"':""} aria-pressed="${k===fund}" data-f="${k}" title="${esc(base.funds[k].name)} (key ${i+1})">${fi?ic(fi,14):""}${k}</button>`; }).join("");
-  if($("#horizons")) $("#horizons").innerHTML=HZ.map(k=>`<button aria-pressed="${k===hz}" data-h="${k}">${k}</button>`).join("");
+  patch($("#funds"),(PAGE_FUNDS[page]||[]).filter(k=>base?.funds[k]).map((k,i)=>{ const fi={Watchlist:"star",Portfolio:"mine"}[k]; return `<button${fi?' class="wi"':""} aria-pressed="${k===fund}" data-f="${k}" title="${esc(base.funds[k].name)} (key ${i+1})">${fi?ic(fi,14):""}${k}</button>`; }).join(""));
+  patch($("#horizons"),HZ.map(k=>`<button aria-pressed="${k===hz}" data-h="${k}">${k}</button>`).join(""));
 }
 function buildShell(){
   const mine=page==="mine"; query="";   // a filter belongs to the box it was typed in, and a new shell starts with an empty one
@@ -1639,7 +1713,8 @@ function render0(){
   if(!base) return;
   renderNav(); buildPseudo(); document.body.dataset.page=page;
   if(!isDash()){
-    model=compute();
+    // nothing on Market, Calendar, Screener or Levels shows the fund maths; an open stock page works out its own (benchModel)
+    model=null; benchM=null;
     const built={market:"#mkt",calendar:"#cal",screener:"#scr",levels:"#lvl"}[page];
     if(page==="market"||!$(built)) renderPage();
     if(drawerOpen) renderDrawer(); lastRender=Date.now(); return;
@@ -1671,18 +1746,18 @@ function spark(pts,w=240,h=38,color,dom){   // dom: the x range to span, when th
 function renderPulse(){
   const ks=(PAGE_FUNDS[page]||FUND_ORDER).filter(k=>fundStats[k]&&base.funds[k].holdings.length);
   $("#pulse").classList.toggle("n2",ks.length<=2); $("#pulse").classList.toggle("n1",ks.length===1);
-  $("#pulse").innerHTML=ks.map(k=>{const s=fundStats[k], col=s.r>=0?"var(--up)":"var(--down)";
+  patch($("#pulse"),ks.map(k=>{const s=fundStats[k], col=s.r>=0?"var(--up)":"var(--down)";
     return `<button class="pcard" data-f="${k}" aria-pressed="${k===fund}">
       <div class="t"><span class="tk">${k}</span><span class="nm">${esc(base.funds[k].name)}</span></div>
       <div class="rw"><div class="r ${clsR(s.r)}">${pct(s.r)}</div>${isPseudo(k)?"":`<span class="px" title="${k} price per share">${money(lastValid(base.px[k]))}</span>`}</div>
       <div class="meta"><span>Avg stock <b class="num ${clsR(s.ew,1)}">${pct(s.ew,1)}</b></span><span>${s.up}/${s.n} up</span></div>
-      ${spark(s.spark,240,38,col,s.dom)}</button>`;}).join("");
+      ${spark(s.spark,240,38,col,s.dom)}</button>`;}).join(""));
 }
 
 /* ======================= the read: auto-written headline ======================= */
 function hzWords(h){return {"1D":"the last session","1W":"the past week","1M":"the past month","3M":"the past 3 months","6M":"the past 6 months","YTD":"the year to date","1Y":"the past year"}[h];}
 function renderRead(){
-  const m=model, s=m.st; if(m.R==null){$("#read").innerHTML="";return;}
+  const m=model, s=m.st; if(m.R==null){patch($("#read"),"");return;}
   const gap=s.ew-m.R; let tag, lead;
   if(Math.abs(gap)<0.005){tag=m.R>=0?"Broad advance":"Broad decline"; lead=`the average holding moved about as much (${pct(s.ew,1)}), so the move is broad-based`;}
   else if(gap<0){tag=m.R>=0?"Narrow rally":"Heavyweights led down"; lead=`the average holding returned ${pct(s.ew,1)}, so the largest stocks ${m.R>=0?"carried the fund":"did most of the damage"}`;}
@@ -1698,15 +1773,15 @@ function renderRead(){
   const back=model.rows.filter(r=>!r.other&&r.c*sg<0).sort((a,b)=>Math.abs(b.c)-Math.abs(a.c)).slice(0,2).map(r=>`<b>${esc(r.t)}</b> ${pct(r.r,1)}`).join(" and ");
   const shareTxt=share==null?"":share>100?`. ${drv.length>1?"Together they":"That alone"} ${m.Rpp>=0?"added":"cost"} more than the whole move${back?`; ${back} ${m.Rpp>=0?"gave some of it back":"made some of it back"}`:""}`:`. ${nw} for ${share}% of the move`;
   const trend=s.above200>=.6?"most holdings remain above their 200-day average":s.above200<=.4?"most holdings are below their 200-day average":"holdings are split around their 200-day average";
-  $("#read").innerHTML=`<span class="tag">${tag}</span><p><b>${fund==="Portfolio"?"Your portfolio":fund==="Watchlist"?"Your watchlist":fund} ${pct(m.R)}</b> over ${hzWords(hz)}, while ${lead}. ${m.R>=0?"Biggest lifts":"Biggest drags"}: ${dn}${shareTxt}. ${s.up} of ${s.n} holdings are up, and ${trend} (${Math.round(s.above200*100)}%).</p>`;
+  patch($("#read"),`<span class="tag">${tag}</span><p><b>${fund==="Portfolio"?"Your portfolio":fund==="Watchlist"?"Your watchlist":fund} ${pct(m.R)}</b> over ${hzWords(hz)}, while ${lead}. ${m.R>=0?"Biggest lifts":"Biggest drags"}: ${dn}${shareTxt}. ${s.up} of ${s.n} holdings are up, and ${trend} (${Math.round(s.above200*100)}%).</p>`);
 }
 
 /* ======================= hero ======================= */
 let shownR=null;
 function countTo(el,to,fmt,ms=550){
   const from=shownR; shownR=to;
-  if(from==null||from===to||matchMedia("(prefers-reduced-motion: reduce)").matches){ el.textContent=fmt(to); return; }
-  const t0=performance.now(); const step=t=>{ const k=Math.min(1,(t-t0)/ms), e=1-Math.pow(1-k,3); el.textContent=fmt(from+(to-from)*e); if(k<1) requestAnimationFrame(step); }; requestAnimationFrame(step);
+  if(from==null||from===to||matchMedia("(prefers-reduced-motion: reduce)").matches){ setText(el,fmt(to)); return; }
+  const t0=performance.now(); const step=t=>{ const k=Math.min(1,(t-t0)/ms), e=1-Math.pow(1-k,3); setText(el,fmt(from+(to-from)*e)); if(k<1) requestAnimationFrame(step); }; requestAnimationFrame(step);
 }
 function ewSeries(){
   const m=model, i0=m.i0, n=base.dates.length, starts=[];
@@ -1742,15 +1817,15 @@ function intraFund(f,ewNow){   // {F, E}: the fund and what it's measured agains
 
 function renderHero(){
   const m=model, d0=base.dates[m.i0], d1=base.dates[base.dates.length-1], live=isLive(d1);
-  $("#heroEyebrow").innerHTML=`<span>${esc(m.f.name)}</span><span>·</span><span>${hz}</span>${live?'<span class="chip up" style="letter-spacing:.04em">● Live</span>':""}`;
+  patch($("#heroEyebrow"),`<span>${esc(m.f.name)}</span><span>·</span><span>${hz}</span>${live?'<span class="chip up" style="letter-spacing:.04em">● Live</span>':""}`);
   const el=$("#heroR"); el.className="big-r "+cls(m.R); if(shownFund!==fund+hz){ shownR=null; shownFund=fund+hz; } countTo(el,m.R,v=>pct(v));
-  $("#heroSub").innerHTML=`${ic("calendar",14)}From the ${longDate(d0)} close to ${live?"now":longDate(d1)}`;
+  patch($("#heroSub"),`${ic("calendar",14)}From the ${longDate(d0)} close to ${live?"now":longDate(d1)}`);
   // your own stocks are measured against the S&P 500; a fund against its own average stock
   const vsM=isPseudo(fund)&&!!base.px.SPY, I=intraOn()?intraFund(fund,m.st.ew):null, day=I&&I.F.length>1;
   const F=day?I.F:series(base.px[fund],m.i0,400), E=day?I.E:vsM?series(base.px.SPY,m.i0,400):ewSeries();
   const nF=fund==="Portfolio"?"Your portfolio":fund==="Watchlist"?"Your watchlist":fund, nE=vsM?"S&P 500":"Average stock";
-  $("#heroLeg").innerHTML=`<span><i class="sw" style="background:var(--ink)"></i>${fund==="Portfolio"?"Your portfolio (today's shares)":fund==="Watchlist"?"Your watchlist (equal weight)":fund+" (weighted by size)"}</span><span><i class="sw" style="background:var(--accent)"></i>${vsM?"S&P 500 (SPY)":"Average stock (equal weight)"}</span>`;
-  const cw=$("#heroChart").clientWidth, W=cw>240?Math.round(cw):600, H=250,L=38,R=58,T=10,B=24, all=[...F,...E].map(p=>p[1]); if(!all.length){$("#heroChart").innerHTML="";return;}
+  patch($("#heroLeg"),`<span><i class="sw" style="background:var(--ink)"></i>${fund==="Portfolio"?"Your portfolio (today's shares)":fund==="Watchlist"?"Your watchlist (equal weight)":fund+" (weighted by size)"}</span><span><i class="sw" style="background:var(--accent)"></i>${vsM?"S&P 500 (SPY)":"Average stock (equal weight)"}</span>`);
+  const cw=$("#heroChart").clientWidth, W=cw>240?Math.round(cw):600, H=250,L=38,R=58,T=10,B=24, all=[...F,...E].map(p=>p[1]); if(!all.length){patch($("#heroChart"),"");return;}
   let lo=Math.min(0,...all),hi=Math.max(0,...all); const pad=(hi-lo)*.1||.01; lo-=pad; hi+=pad;
   const n=base.dates.length, i0=m.i0, Y=v=>T+(H-T-B)*(1-(v-lo)/(hi-lo));
   const X=day?t=>L+(W-L-R)*(t-intra.open)/(intra.close-intra.open):k=>L+(W-L-R)*(n-1===i0?1:(k-i0)/(n-1-i0));
@@ -1766,19 +1841,19 @@ function renderHero(){
   const eF=F[F.length-1], eE=E[E.length-1]; let yF=Y(eF[1])+4, yE=eE?Y(eE[1])+4:0; if(eE&&Math.abs(yF-yE)<14){ if(yF<yE){yF-=7;yE+=7;}else{yF+=7;yE-=7;} }
   s+=`<circle cx="${X(eF[0])}" cy="${Y(eF[1])}" r="4" fill="var(--ink)" stroke="var(--panel)" stroke-width="2"/><text x="${X(eF[0])+8}" y="${yF}" font-size="11.5" class="mono" font-weight="600" fill="var(--ink)">${pct(eF[1],1)}</text>`;
   if(eE) s+=`<circle cx="${X(eE[0])}" cy="${Y(eE[1])}" r="4" fill="var(--accent)" stroke="var(--panel)" stroke-width="2"/><text x="${X(eE[0])+8}" y="${yE}" font-size="11.5" class="mono" font-weight="600" fill="var(--accent)">${pct(eE[1],1)}</text>`;
-  s+=`<line id="hxh" y1="${T}" y2="${H-B}" stroke="var(--ink-3)" stroke-dasharray="3 3" opacity="0"/><rect id="hhov" x="${L}" y="${T}" width="${W-L-R}" height="${H-T-B}" fill="transparent"/></svg>`;
-  $("#heroChart").innerHTML=s;
+  s+=`<line id="hxh" data-live="opacity x1 x2" y1="${T}" y2="${H-B}" stroke="var(--ink-3)" stroke-dasharray="3 3" opacity="0"/><rect id="hhov" x="${L}" y="${T}" width="${W-L-R}" height="${H-T-B}" fill="transparent"/></svg>`;
+  patch($("#heroChart"),s);
   // redraw when the column changes width (window resize, Tick docking) so the chart's text stays its real size
   const hc=$("#heroChart"); if(hc&&hc._ro!==true&&window.ResizeObserver){ hc._ro=true; let w0=hc.clientWidth, t;
     new ResizeObserver(()=>{ const w=hc.clientWidth; if(Math.abs(w-w0)<8) return; w0=w; clearTimeout(t); t=setTimeout(()=>model&&document.contains(hc)&&renderHero(),100); }).observe(hc); }
   const svg=$("#heroChart svg"),hov=svg.querySelector("#hhov"),xh=svg.querySelector("#hxh");
-  hov.addEventListener("mousemove",ev=>{const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;const p=pt.matrixTransform(svg.getScreenCTM().inverse());
+  hov.onmousemove=ev=>{const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;const p=pt.matrixTransform(svg.getScreenCTM().inverse());
     if(day){ const t=intra.open+(p.x-L)/(W-L-R)*(intra.close-intra.open), near=a=>a.reduce((b,q)=>!b||Math.abs(q[0]-t)<Math.abs(b[0]-t)?q:b,null);
       const vf=near(F), ve=E.length?near(E):null; if(!vf) return; xh.setAttribute("x1",X(vf[0]));xh.setAttribute("x2",X(vf[0]));xh.setAttribute("opacity",1);
       showTip(ev,`<b>${vf===F[F.length-1]&&live?"Now":fmtAxis(vf[0],"1D")}</b><br>${nF} ${pct(vf[1])}<br>${nE} ${ve?pct(ve[1]):"–"}`); return; }
     const k=clamp(Math.round(i0+(p.x-L)/(W-L-R)*(n-1-i0)),i0,n-1); xh.setAttribute("x1",X(k));xh.setAttribute("x2",X(k));xh.setAttribute("opacity",1);
-    const vf=F.find(q=>q[0]===k),ve=E.find(q=>q[0]===k); showTip(ev,`<b>${longDate(base.dates[k])}</b><br>${nF} ${vf?pct(vf[1]):"–"}<br>${nE} ${ve?pct(ve[1]):"–"}`);});
-  hov.addEventListener("mouseleave",()=>{xh.setAttribute("opacity",0);hideTip();});
+    const vf=F.find(q=>q[0]===k),ve=E.find(q=>q[0]===k); showTip(ev,`<b>${longDate(base.dates[k])}</b><br>${nF} ${vf?pct(vf[1]):"–"}<br>${nE} ${ve?pct(ve[1]):"–"}`);};   // properties, not listeners: the chart's nodes outlive a redraw
+  hov.onmouseleave=()=>{xh.setAttribute("opacity",0);hideTip();};
 }
 let shownFund=null;
 
@@ -1794,14 +1869,14 @@ function renderTape(){
   const tip=r=>`${r.t} ${moved(r.chg)} today, ${Math.abs((r.chg-F)*100).toFixed(2)} points ${r.chg>F?"better":"worse"} than ${fw}`;
   const item=r=>`<span data-sel="${esc(r.t)}" title="${esc(tip(r))}"><b>${esc(r.t)}</b><span class="${cls(r.chg)}">${pct(r.chg)}</span></span>`;
   const one=`<span class="lab">Today</span><span><b>${fund}</b><span class="${cls(F)}">${pct(F)}</span></span>${ups.length?`<span class="lab">Beat ${esc(fw)}</span>${ups.map(item).join("")}`:""}${dns.length?`<span class="lab">Trailed ${esc(fw)}</span>${dns.map(item).join("")}`:""}`;
-  const t=$("#tape"); t.hidden=false; t.innerHTML=`<div class="wrap" style="padding-inline:0;max-width:none"><div class="tape-in">${one}${one}</div></div>`;
+  const t=$("#tape"); t.hidden=false; patch(t,`<div class="wrap" style="padding-inline:0;max-width:none"><div class="tape-in">${one}${one}</div></div>`);   // in place, so the scroll carries on
 }
 
 /* ======================= KPIs ======================= */
 function renderKpis(){
   const m=model,s=m.st, fw=fund==="Portfolio"?"your portfolio":fund==="Watchlist"?"your watchlist":"the fund";
-  document.querySelectorAll(".fw").forEach(e=>e.textContent=fw); document.querySelectorAll(".fws").forEach(e=>e.textContent=fw+"'s");
-  $("#kpis").innerHTML=`
+  document.querySelectorAll(".fw").forEach(e=>setText(e,fw)); document.querySelectorAll(".fws").forEach(e=>setText(e,fw+"'s"));
+  patch($("#kpis"),`
    <div><div class="lbl">Average stock</div><div class="kv ${cls(s.ew)}">${pct(s.ew)}</div><div class="ks">Equal-weight, ${s.ew-m.R>=0?"ahead of":"behind"} ${fw} by ${Math.abs((s.ew-m.R)*100).toFixed(1)} points</div></div>
    <div><div class="lbl">Breadth</div><div class="kv">${s.up}<span class="ks"> / ${s.n} up</span></div><div class="meter"><i style="width:${s.up/s.n*100}%;background:var(--up)"></i><i style="flex:1;background:var(--down);opacity:.75"></i></div></div>
    <div><div class="lbl">Beating ${fw==="the fund"?fund:fw}</div><div class="kv">${s.beat.length}<span class="ks"> stocks</span></div><div class="ks">${Math.round(s.beatW*100)}% of ${fw} by weight</div></div>
@@ -1809,7 +1884,7 @@ function renderKpis(){
    <div><div class="lbl">Concentration</div>${(()=>{ const sh=m.Rpp?Math.round(s.top5/m.Rpp*100):null; const t10=m.rows.filter(r=>!r.other).length>10?` · top 10 hold ${Math.round(s.top10w)}%`:"";
       const word=sh==null?"–":sh>=60?"Narrow":sh>=35?"Moderate":"Broad";   // a plain word first, the number in the line below
       return sh!=null&&sh>100?`<div class="kv">Narrow</div><div class="ks">5 stocks moved more than ${fw} as a whole; the rest pulled the other way${t10}</div>`:`<div class="kv">${word}</div><div class="ks">${sh!=null?`5 stocks drove ${sh}% of the move`:"No move to explain yet"}${t10}</div>`; })()}</div>
-   <div><div class="lbl">52-week extremes</div><div class="kv"><span class="${s.nearHi?"up":""}">${s.nearHi}</span><span class="ks"> near highs</span></div><div class="ks"><span class="${s.nearLo?"down":""} num">${s.nearLo}</span> near lows · within 2%</div></div>`;
+   <div><div class="lbl">52-week extremes</div><div class="kv"><span class="${s.nearHi?"up":""}">${s.nearHi}</span><span class="ks"> near highs</span></div><div class="ks"><span class="${s.nearLo?"down":""} num">${s.nearLo}</span> near lows · within 2%</div></div>`);
 }
 function isLive(d){ return liveInfo&&liveInfo.lastTick&&(Date.now()/1000-liveInfo.lastTick)<600&&d===liveInfo.date; }
 function shortDate(s){ if(!s) return ""; return new Date(s+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"}); }
@@ -1836,8 +1911,8 @@ function heat(r){
 }
 function renderMap(){
   const el=$("#map"); if(!el) return; const W=el.clientWidth, H=el.clientHeight; if(!W) return;
-  $("#mapTitle").textContent=`${fund} market map · ${hz}`;
-  $("#rampLo").textContent=pct(-HEAT[hz],0); $("#rampHi").textContent=pct(HEAT[hz],0);
+  setText($("#mapTitle"),`${fund} market map · ${hz}`);
+  setText($("#rampLo"),pct(-HEAT[hz],0)); setText($("#rampHi"),pct(HEAT[hz],0));
   const rows=model.rows.filter(r=>r.w>0);
   const groups={}; rows.forEach(r=>{(groups[r.sector]=groups[r.sector]||[]).push(r);});
   const gl=Object.entries(groups).map(([k,v])=>({k,v:v.reduce((a,r)=>a+r.w,0),items:v.sort((a,b)=>b.w-a.w)})).sort((a,b)=>b.v-a.v);
@@ -1851,10 +1926,10 @@ function renderMap(){
       const r=t.n, c=r.other?{bg:"var(--tile-0)",fg:"var(--tile-ink-0)"}:heat(r.r), area=t.w*t.h;
       const fs=clamp(Math.sqrt(area)/5.2,9,30), show=t.w>30&&t.h>20, show2=t.w>44&&t.h>36;
       const fl=flashes[r.t]?(flashes[r.t]==="flash-up"?" tick-up":" tick-down"):"";
-      html+=`<div class="tile${r.t===sel?" sel":""}${fl}" data-sel="${esc(r.t)}" data-tip="${esc(tipFor(r))}" style="left:${t.x+1}px;top:${t.y+1}px;width:${Math.max(0,t.w-2)}px;height:${Math.max(0,t.h-2)}px;background:${c.bg};color:${c.fg}">${show?`<span class="a" style="font-size:${fs}px">${esc(r.t)}</span>`:""}${show2&&!r.other?`<span class="b" style="font-size:${clamp(fs*.62,9,16)}px">${pct(r.r,1)}</span>`:""}</div>`;
+      html+=`<div class="tile${r.t===sel?" sel":""}${fl}" data-sel="${esc(r.t)}" role="button" aria-label="${esc(r.t)} ${r.other?"":pct(r.r,1)}" data-tip="${esc(tipFor(r))}" style="left:${t.x+1}px;top:${t.y+1}px;width:${Math.max(0,t.w-2)}px;height:${Math.max(0,t.h-2)}px;background:${c.bg};color:${c.fg}">${show?`<span class="a" style="font-size:${fs}px">${esc(r.t)}</span>`:""}${show2&&!r.other?`<span class="b" style="font-size:${clamp(fs*.62,9,16)}px">${pct(r.r,1)}</span>`:""}</div>`;
     });
   });
-  el.innerHTML=html;
+  patch(el,html);
 }
 
 /* ======================= drivers (diverging bars) ======================= */
@@ -1871,7 +1946,7 @@ function renderBars(){
   list.forEach((r,i)=>{
     if(i===first.length&&mid){ s+=`<line x1="8" x2="${W-8}" y1="${y+mid/2-1}" y2="${y+mid/2-1}" stroke="var(--grid)"/>`; y+=mid; }
     const w=Math.abs(r.c)*k,x=r.c>=0?zero:zero-w,on=r.t===sel;
-    s+=`<g data-sel="${esc(r.t)}" data-tip="${esc(tipFor(r))}"><rect x="0" y="${y-2}" width="${W}" height="${rowH}" fill="${on?"var(--accent-soft)":"transparent"}" rx="4"/>
+    s+=`<g data-sel="${esc(r.t)}" role="button" aria-label="${esc(r.t)} ${pp(r.c)}" data-tip="${esc(tipFor(r))}"><rect x="0" y="${y-2}" width="${W}" height="${rowH}" fill="${on?"var(--accent-soft)":"transparent"}" rx="4"/>
       <text x="6" y="${y+13}" font-size="12.5" class="mono" font-weight="600" fill="var(--ink)">${esc(r.t)}</text>
       <text x="58" y="${y+13}" font-size="${W<420?12:11}" fill="var(--ink-3)">${r.n===r.t?"":esc(trunc(short(r.n),nmax))}</text>
       <rect x="${x}" y="${y+3}" width="${Math.max(1.5,w)}" height="${rowH-8}" rx="3" fill="${r.c>=0?"var(--up)":"var(--down)"}" opacity="${r.other?.4:.88}"/>
@@ -1879,8 +1954,8 @@ function renderBars(){
     y+=rowH;
   });
   s+=`<line x1="${zero}" x2="${zero}" y1="2" y2="${H-18}" stroke="var(--ink-3)"/><text x="${zero}" y="${H-4}" font-size="10.5" fill="var(--ink-3)" text-anchor="middle">0</text></svg>`;
-  $("#bars").innerHTML=list.length?s:`<p class="hint">No price data for this range yet.</p>`;
-  $("#barsTitle").textContent=`What moved ${isPseudo(fund)?"your "+fund.toLowerCase():fund} · ${hz}`;
+  patch($("#bars"),list.length?s:`<p class="hint">No price data for this range yet.</p>`);
+  setText($("#barsTitle"),`What moved ${isPseudo(fund)?"your "+fund.toLowerCase():fund} · ${hz}`);
 }
 function tipFor(r){
   if(r.other) return `<b>Rest of fund</b><br>${r.w.toFixed(1)}% of assets not itemized by the data source<br>Contribution ${pp(r.c)}`;
@@ -1892,13 +1967,13 @@ function cellBg(v,h){ if(v==null) return "transparent"; const t=clamp(v/(HEAT[h]
 function cellFg(v,h){ if(v==null) return "var(--ink-3)"; return Math.abs(v/(HEAT[h]*.6))>.55?"var(--tile-ink)":"var(--tile-ink-0)"; }
 function renderMatrix(){
   const top=model.rows.filter(r=>!r.other).sort((a,b)=>b.w-a.w).slice(0,20);
-  const fr=model.ff.rets; if($("#mxN")) $("#mxN").textContent=top.length;
+  const fr=model.ff.rets; setText($("#mxN"),String(top.length));
   let s=`<table class="mx"><thead><tr><th class="l">Stock</th><th>Wt %</th>${HZ.map(h=>`<th class="${h===hz?"cur":""}">${h}</th>`).join("")}<th title="Return rank within the fund for this range, 1 to 99 (99 is best)">Rank</th></tr>
     <tr><td class="l" style="color:var(--ink-3);font-weight:500">${fund} return</td><td></td>${HZ.map(h=>`<td class="num ${cls(fr[h])}" style="font-size:11px">${pct(fr[h],1)}</td>`).join("")}<td></td></tr></thead><tbody>`;
   top.forEach(r=>{
     s+=`<tr data-sel="${esc(r.t)}"><td class="l">${esc(r.t)}<small>${r.n===r.t?"":esc(trunc(r.n.replace(/ Class [A-C]$/,""),22))}</small></td><td class="w num">${r.w.toFixed(1)}</td>${HZ.map(h=>{const v=r.ex[h];return `<td data-tip="${esc(`<b>${r.t}</b> ${h}: ${pct(r.rets[h])}<br>${fund}: ${pct(fr[h])}<br>Relative: <b>${pct(v)}</b>`)}" style="background:${cellBg(v,h)};color:${cellFg(v,h)};${h===hz?"box-shadow:inset 0 0 0 1.5px var(--ink)":""}">${v==null?"–":(v>0?"+":"−")+Math.abs(v*100).toFixed(Math.abs(v)<.1?1:0)}</td>`;}).join("")}<td><span class="rs" style="background:${r.rs>=70?"var(--up-soft)":r.rs<=30?"var(--down-soft)":"var(--grid)"};color:${r.rs>=70?"var(--up)":r.rs<=30?"var(--down)":"var(--ink-2)"}">${r.rs??"–"}</span></td></tr>`;
   });
-  $("#matrix").innerHTML=s+`</tbody></table>`;
+  patch($("#matrix"),s+`</tbody></table>`);
 }
 
 /* ======================= rotation quadrant ======================= */
@@ -1937,12 +2012,12 @@ function renderRotation(){
   const box=$("#rotation"); if(!box) return;
   const vs=isPseudo(fund)?"your "+fund.toLowerCase():fund, cfg=rrgCfg(hz), bars=cfg.step===1?"daily":"weekly";
   const tailN=Math.min(cfg.tail,5), tailWords=tailN===1?"day":tailN+" "+(cfg.step===1?"trading days":"weeks");   // traders keep tails short: the last few bars show direction, longer ones turn to scribble
-  $("#rotTitle").textContent=`Relative rotation · ${bars} bars`;
-  $("#rotHint").innerHTML=`The relative rotation graph traders use, on ${bars} prices against ${esc(vs)}. Across is relative strength: past 100 means stronger than ${esc(vs)}. Up is momentum: above 100 means gaining on it. Stocks tend to move clockwise, from Improving to Leading to Weakening to Lagging. Positions reflect roughly the last ${cfg.step===1?"month":"few months"} of trading, not the ${hz==="YTD"?"year to date":hz+" return"}. Point at a dot for its ${hz} return and its path over the last ${tailWords}.`;
-  const B=base.px[fund]; if(!B){ box.innerHTML=""; return; }
+  setText($("#rotTitle"),`Relative rotation · ${bars} bars`);
+  patch($("#rotHint"),`The relative rotation graph traders use, on ${bars} prices against ${esc(vs)}. Across is relative strength: past 100 means stronger than ${esc(vs)}. Up is momentum: above 100 means gaining on it. Stocks tend to move clockwise, from Improving to Leading to Weakening to Lagging. Positions reflect roughly the last ${cfg.step===1?"month":"few months"} of trading, not the ${hz==="YTD"?"year to date":hz+" return"}. Point at a dot for its ${hz} return and its path over the last ${tailWords}.`);
+  const B=base.px[fund]; if(!B){ patch(box,""); return; }
   let pts=model.rows.filter(r=>!r.other&&base.px[r.t]).sort((a,b)=>b.w-a.w).slice(0,fund==="SPY"?60:40)
     .map(r=>({...r,path:rrgPath(base.px[r.t],B,cfg.step,tailN)})).filter(r=>r.path);
-  if(!pts.length){ box.innerHTML=`<p class="hint">Not enough price history for this range yet.</p>`; return; }
+  if(!pts.length){ patch(box,`<p class="hint">Not enough price history for this range yet.</p>`); return; }
   const W=Math.round(Math.min(560,Math.max(320,box.clientWidth||520))),H=Math.round(W*0.77),L=56,R=12,T=12,B2=40;
   const all=pts.flatMap(r=>r.path), xm=Math.max(1,...all.map(p=>Math.abs(p[0]-100)))*1.12, ym=Math.max(1,...all.map(p=>Math.abs(p[1]-100)))*1.15, fs=W<420?12:11, ts=W<420?11.5:10.5;
   const X=v=>L+(W-L-R)*(v-100+xm)/(2*xm), Y=v=>T+(H-T-B2)*(1-(v-100+ym)/(2*ym));
@@ -1964,7 +2039,7 @@ function renderRotation(){
     const tail=`<g class="tail${tailed.has(r.t)?" on":""}"><polyline points="${line}" fill="none" stroke="${c}" stroke-width="1.5" stroke-opacity=".7" stroke-linejoin="round"/>${P.slice(0,-1).map(p=>`<circle cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="1.8" fill="${c}" fill-opacity=".7"/>`).join("")}</g>`;
     const was=r.path[0];
     const QN={"var(--up)":"Leading","var(--warn)":"Weakening","var(--accent)":"Improving","var(--down)":"Lagging"};
-    s+=`<g data-sel="${esc(r.t)}" data-tip="${esc(`<b>${esc(r.t)}</b> · ${esc(r.n)}<br><b>${QN[c]}</b> · strength ${h[0].toFixed(1)}, momentum ${h[1].toFixed(1)}<br>${tailN===1?"A day":tailWords[0].toUpperCase()+tailWords.slice(1)} ago: ${QN[quadColor(was)].toLowerCase()}${r.ex[hz]!=null?`<br>${hz==="YTD"?"Year to date":hz}: ${pct(r.ex[hz])} vs ${esc(vs)}`:""}<br>Weight ${r.w.toFixed(2)}%`)}">${tail}<circle class="hd" cx="${X(h[0]).toFixed(1)}" cy="${Y(h[1]).toFixed(1)}" r="${rad(r.w).toFixed(1)}" fill="${c}" fill-opacity="${on?.95:.6}" stroke="${on?"var(--ink)":"var(--panel)"}" stroke-width="${on?2:1.2}"/></g>`; });
+    s+=`<g data-sel="${esc(r.t)}" role="button" aria-label="${esc(r.t)}, ${QN[c]}" data-tip="${esc(`<b>${esc(r.t)}</b> · ${esc(r.n)}<br><b>${QN[c]}</b> · strength ${h[0].toFixed(1)}, momentum ${h[1].toFixed(1)}<br>${tailN===1?"A day":tailWords[0].toUpperCase()+tailWords.slice(1)} ago: ${QN[quadColor(was)].toLowerCase()}${r.ex[hz]!=null?`<br>${hz==="YTD"?"Year to date":hz}: ${pct(r.ex[hz])} vs ${esc(vs)}`:""}<br>Weight ${r.w.toFixed(2)}%`)}">${tail}<circle class="hd" cx="${X(h[0]).toFixed(1)}" cy="${Y(h[1]).toFixed(1)}" r="${rad(r.w).toFixed(1)}" fill="${c}" fill-opacity="${on?.95:.6}" stroke="${on?"var(--ink)":"var(--panel)"}" stroke-width="${on?2:1.2}"/></g>`; });
   // labels: biggest names first, each where it overlaps no dot, label or quadrant name; skipped if nowhere fits
   const dots=pts.map(r=>{ const k=rad(r.w)+1, h=head(r); return {t:r.t,b:[X(h[0])-k,Y(h[1])-k,2*k,2*k]}; });
   const over=(b,o)=>b[0]<o[0]+o[2]&&b[0]+b[2]>o[0]&&b[1]<o[1]+o[3]&&b[1]+b[3]>o[1];
@@ -1980,7 +2055,7 @@ function renderRotation(){
     const ok=opts.find(([x,y])=>!hit([x,y,w,lh],r.t)); if(!ok&&r.t!==sel) return; const [x,y]=ok||opts[0];
     boxes.push([x,y,w,lh]); labs+=`<text x="${x.toFixed(1)}" y="${(y+fs).toFixed(1)}" font-size="${fs}" class="mono" font-weight="600" fill="var(--ink)" stroke="var(--panel)" stroke-width="3" paint-order="stroke" pointer-events="none">${esc(r.t)}</text>`; });
   q.forEach(([,,,,c,l,a,tx,ty])=>{ s+=`<text x="${tx}" y="${ty}" font-size="${fs}" font-weight="700" letter-spacing=".08em" text-anchor="${a}" fill="${c}" stroke="var(--panel)" stroke-width="3" paint-order="stroke" pointer-events="none">${l.toUpperCase()}</text>`; });
-  box.innerHTML=s+labs+"</svg>";
+  patch(box,s+labs+"</svg>");
 }
 
 /* ======================= holdings table ======================= */
@@ -1992,13 +2067,13 @@ function passes(r){
 }
 function renderTable(){
   const m=model; if(!m) return;
-  $("#filters").innerHTML=FILTERS.map(([k,l])=>`<button data-filter="${k}" aria-pressed="${k===filter}">${l.replace("fund",isPseudo(fund)?fund.toLowerCase():fund)}</button>`).join("");
+  patch($("#filters"),FILTERS.map(([k,l])=>`<button data-filter="${k}" aria-pressed="${k===filter}">${l.replace("fund",isPseudo(fund)?fund.toLowerCase():fund)}</button>`).join(""));
   const cols=[["t","Ticker","l"],["n","Name","l"],["sector","Sector","l"],["last","Price"],["chg","Today"],["w","Weight"],["r",hz],["exh",`vs ${fund}`],["c","Contribution"],["rs","Rank"],["pos","52-wk range"],["vs200","vs 200-day"],["spark",`${hz} trend`]];
   let rows=m.rows.filter(passes);
   rows.sort((a,b)=>{const x=a[sortKey],y=b[sortKey]; if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1; return (typeof x==="string"?x.localeCompare(y):x-y)*sortDir;});
   const total=rows.length; if(!showAll&&!query) rows=rows.slice(0,40);
   const cmax=Math.max(...m.rows.map(r=>Math.abs(r.c)))||1;
-  $("#tbl").innerHTML=`<thead><tr>${cols.map(([k,l,a])=>`<th class="${a||""}" ${k==="rs"?'title="Return rank within the fund for this range, 1 to 99 (99 is best)"':""} ${k==="spark"?"":`data-sort="${k}"`} aria-sort="${sortKey===k?(sortDir>0?"ascending":"descending"):"none"}">${l}${sortKey===k?(sortDir>0?" ↑":" ↓"):""}</th>`).join("")}</tr></thead><tbody>${
+  patch($("#tbl"),`<thead><tr>${cols.map(([k,l,a])=>`<th class="${a||""}" ${k==="rs"?'title="Return rank within the fund for this range, 1 to 99 (99 is best)"':""} ${k==="spark"?"":`data-sort="${k}" aria-sort="${sortKey===k?(sortDir>0?"ascending":"descending"):"none"}"`}>${l}${sortKey===k?(sortDir>0?" ↑":" ↓"):""}</th>`).join("")}</tr></thead><tbody>${
     rows.map(r=>`<tr data-sel="${esc(r.t)}" class="${r.t===sel?"sel":""}">
       <td class="l tk">${esc(r.t)}</td><td class="l name" title="${esc(r.n)}">${r.n===r.t?"":esc(r.n)}</td><td class="l sector">${esc(r.sector)}</td>
       <td class="num ${flashes[r.t]||""}">${r.other?"":money(r.last)}</td>
@@ -2010,16 +2085,16 @@ function renderTable(){
       <td class="num">${r.rs??"–"}</td>
       <td>${r.pos==null?"–":`<span class="rng" title="Low ${money(r.lo)} · High ${money(r.hi)}"><i style="left:calc(${(r.pos*100).toFixed(0)}% - 1.5px)"></i></span><span class="num ${cls(r.offHi)}" style="font-size:12px">${pct(r.offHi,1)}</span>`}</td>
       <td class="num ${cls(r.vs200)}">${pct(r.vs200,1)}</td>
-      <td style="width:96px">${r.other?"":`<span class="sp">${spark(series(base.px[r.t],m.i0,40),90,24,r.r>=0?"var(--up)":"var(--down)")}</span>`}</td></tr>`).join("")}</tbody>`;
-  $("#moreWrap").innerHTML=(!query&&total>40)?`<button class="more" id="more">${showAll?"Show top 40":`Show all ${total}`}</button>`:"";
-  $("#tblHint").textContent=isPseudo(fund)?`${m.f.holdings.length} stocks · showing ${(showAll||query)?total:Math.min(total,40)} of ${total}`:`${m.f.holdings.length} holdings covering ${m.sumW.toFixed(1)}% of the fund · weights as of ${fmtAsOf(m.f.asOf)} · showing ${(showAll||query)?total:Math.min(total,40)} of ${total}`;
+      <td style="width:96px">${r.other?"":`<span class="sp">${spark(series(base.px[r.t],m.i0,40),90,24,r.r>=0?"var(--up)":"var(--down)")}</span>`}</td></tr>`).join("")}</tbody>`);
+  patch($("#moreWrap"),(!query&&total>40)?`<button class="more" id="more">${showAll?"Show top 40":`Show all ${total}`}</button>`:"");
+  setText($("#tblHint"),isPseudo(fund)?`${m.f.holdings.length} stocks · showing ${(showAll||query)?total:Math.min(total,40)} of ${total}`:`${m.f.holdings.length} holdings covering ${m.sumW.toFixed(1)}% of the fund · weights as of ${fmtAsOf(m.f.asOf)} · showing ${(showAll||query)?total:Math.min(total,40)} of ${total}`);
 }
 
 function chipBg(v){ if(v==null) return "transparent"; const p=Math.round(clamp(Math.abs(v)/HEAT[hz],0,1)*22)+4; return `color-mix(in oklab, ${v>=0?"var(--up)":"var(--down)"} ${p}%, transparent)`; }
 function renderNote(){
   const m=model, gap=m.Rpp!=null?m.Rpp-m.sumC:null;
-  if(isPseudo(fund)){ $("#note").innerHTML=`How this is computed. ${fund==="Portfolio"?"Your portfolio is valued at live prices with the shares you entered. Its history assumes you held today's shares for the whole period, so it shows what drove your current holdings rather than your actual past trades.":"Your watchlist is treated as an equal-weight basket, rebalanced daily."} Contribution is start-of-period weight × return, as for the funds. Prices come from Yahoo Finance.`; return; }
-  $("#note").innerHTML=`How this is computed. Contribution is start-of-period weight × return. Start weights are backed out from today's published weights and each stock's return, so they add up to the fund's return without needing historical holdings. ${m.f.complete?`For ${fund} over ${hz}, contributions sum to ${pp(m.sumC,2," percentage points")} against the fund's ${pp(m.Rpp,2,"")}; the gap of ${pp(gap,2,"")} is cash, fees, dividends and any rebalancing during the period.`:`The data source only itemizes the top ${m.f.holdings.length} holdings of ${fund} (${m.sumW.toFixed(0)}% of assets); the rest is one "Other" line equal to the fund's return minus the itemized contributions.`} "Average stock" is the equal-weighted mean return of the holdings. Moving averages and 52-week ranges use daily closes adjusted for splits and dividends. Prices stream from Yahoo Finance during regular hours.`;
+  if(isPseudo(fund)){ patch($("#note"),`How this is computed. ${fund==="Portfolio"?"Your portfolio is valued at live prices with the shares you entered. Its history assumes you held today's shares for the whole period, so it shows what drove your current holdings rather than your actual past trades.":"Your watchlist is treated as an equal-weight basket, rebalanced daily."} Contribution is start-of-period weight × return, as for the funds. Prices come from Yahoo Finance.`); return; }
+  patch($("#note"),`How this is computed. Contribution is start-of-period weight × return. Start weights are backed out from today's published weights and each stock's return, so they add up to the fund's return without needing historical holdings. ${m.f.complete?`For ${fund} over ${hz}, contributions sum to ${pp(m.sumC,2," percentage points")} against the fund's ${pp(m.Rpp,2,"")}; the gap of ${pp(gap,2,"")} is cash, fees, dividends and any rebalancing during the period.`:`The data source only itemizes the top ${m.f.holdings.length} holdings of ${fund} (${m.sumW.toFixed(0)}% of assets); the rest is one "Other" line equal to the fund's return minus the itemized contributions.`} "Average stock" is the equal-weighted mean return of the holdings. Moving averages and 52-week ranges use daily closes adjusted for splits and dividends. Prices stream from Yahoo Finance during regular hours.`);
 }
 
 /* ======================= drawer ======================= */
@@ -2067,8 +2142,10 @@ async function openDrawer(t){
   if(!t||t==="Other"||!base) return;
   if(t!==sel){ aboutOpen=false; benchPick=null; $("#drawer").scrollTop=0; drTab=nextTab||"overview"; } else if(nextTab&&drawerOpen){ setTab(nextTab); }
   nextTab=null;
+  const wasOpen=drawerOpen; if(!wasOpen) drFrom=focusMark();
   sel=t; drawerOpen=true; drawerKey=""; pushRecent(t);
   const d=$("#drawer"); d.classList.toggle("full",full); d.classList.add("open"); $("#scrim").classList.add("open"); d.setAttribute("aria-hidden","false");
+  if(!wasOpen&&!document.activeElement?.matches?.("input,textarea,select,[contenteditable]")) d.focus({preventScroll:true});   // Tab goes on into the stock page; Esc comes back
   setHash();
   loadDetail(t).then(()=>prefetchStock(t));
   if(!base.px[t]){
@@ -2081,7 +2158,17 @@ async function openDrawer(t){
   }
   renderDrawer(); if(isDash()&&$("#pulse")){ renderBars(); renderMap(); renderRotation(); renderTable(); }
 }
-function closeDrawer(){ drawerOpen=false; $("#drawer").classList.remove("open"); $("#scrim").classList.remove("open"); $("#drawer").setAttribute("aria-hidden","true"); setHash(); }
+function closeDrawer(){ const back=drawerOpen&&($("#drawer").contains(document.activeElement)||document.activeElement===document.body);
+  drawerOpen=false; $("#drawer").classList.remove("open"); $("#scrim").classList.remove("open"); $("#drawer").setAttribute("aria-hidden","true"); setHash();
+  if(back) focusBack(drFrom); const m=drFrom; drFrom=null;
+  // a dialog closing at the same moment (Esc in Settings) may hand focus back into the hidden drawer: take it out
+  setTimeout(()=>{ if(!drawerOpen&&$("#drawer").contains(document.activeElement)){ focusBack(m); if($("#drawer").contains(document.activeElement)) document.activeElement.blur(); } },0); }
+/* where focus was before a panel opened, so closing it puts you back there (the same row, even if a redraw replaced it) */
+let drFrom=null, alFrom=null;
+function focusMark(skip=".drawer"){ const a=document.activeElement; if(!a||a===document.body||a.closest?.(skip)) return null;
+  const k=["data-sel","data-sort","data-sig-t","data-sig-k","data-f","data-page","id"].find(x=>a.hasAttribute(x));
+  return {el:a,q:k?`${a.tagName.toLowerCase()}[${k}="${CSS.escape(a.getAttribute(k))}"]`:null}; }
+function focusBack(m){ const n=m?.el?.isConnected?m.el:m?.q?document.querySelector(m.q):null; n?.focus({preventScroll:true}); }
 function toggleFull(){ full=!full; save("full",full?"1":"0"); $("#drawer").classList.toggle("full",full); const b=$("#fullDr"); if(b){ b.innerHTML=ic(full?"shrink":"expand",15); b.title=full?"Exit full screen (F)":"Full screen (F)"; } }
 
 async function loadDetail(t,force){
@@ -2155,35 +2242,34 @@ function drawerShell(r){
 function drawerLive(r){
   const fund=r.bench, fr=benchModel(fund).ff.rets, inFunds=FUND_LIST.filter(k=>base.funds[k]?.holdings.some(h=>h.t===r.t));
   const X=extOf(r.t);
-  $("#drPrice").innerHTML=!X?`<span class="p ${flashes[r.t]||""}">${money(r.last)}</span><span class="num ${cls(r.chg)}">${pct(r.chg)} ${sessWhen()}</span>`:
+  patch($("#drPrice"),!X?`<span class="p ${flashes[r.t]||""}">${money(r.last)}</span><span class="num ${cls(r.chg)}">${pct(r.chg)} ${sessWhen()}</span>`:
     `<div class="pq"><div class="pr"><span class="p">${money(r.last)}</span><span class="num ${cls(r.chg)}">${pct(r.chg)}${X.s==="post"?" "+sessWhen():""}</span></div><div class="pw">${X.s==="post"?"At the close, 4:00 pm":"Last close"}</div></div>
-     <div class="pq pqx"><div class="pr"><span class="pe">${ic(X.s==="pre"?"sun":"moon",14)}${money(X.p)}</span><span class="num ${cls(X.chg)}">${pct(X.chg)}</span></div><div class="pw">${X.lab}, ${extTime(X.ts)}</div></div>`;
+     <div class="pq pqx"><div class="pr"><span class="pe">${ic(X.s==="pre"?"sun":"moon",14)}${money(X.p)}</span><span class="num ${cls(X.chg)}">${pct(X.chg)}</span></div><div class="pw">${X.lab}, ${extTime(X.ts)}</div></div>`);
   const badges=[];
   if(r.offHi!=null&&r.offHi>-0.02) badges.push(`<span class="chip up">Near 52-wk high</span>`);
   if(r.lo&&r.last<=r.lo*1.02) badges.push(`<span class="chip down">Near 52-wk low</span>`);
   if(r.vs50!=null&&r.vs200!=null) badges.push(r.vs50>0&&r.vs200>0?`<span class="chip up">Uptrend · above 50 &amp; 200-day</span>`:r.vs50<0&&r.vs200<0?`<span class="chip down">Downtrend · below 50 &amp; 200-day</span>`:`<span class="chip">Trend turning · ${r.vs50>0?"above":"below"} 50-day, ${r.vs200>0?"above":"below"} 200-day</span>`);
   if(r.ex["3M"]!=null&&r.ex["1M"]!=null){ const q=r.ex["3M"]>=0?(r.ex["1M"]>=0?"Leading":"Weakening"):(r.ex["1M"]>=0?"Improving":"Lagging"); badges.push(`<span class="chip">${q} vs ${fund}</span>`); }
-  $("#drBadges").innerHTML=badges.join("");
-  $("#drFund").innerHTML=!r.held?`<p class="hint" style="margin:0;grid-column:1/-1">${FUND_LIST.includes(r.t)?`${esc(r.t)} is one of the funds OpenTicker follows, so it's compared with ${fund}${benchWhy(fund,r)}.`:`${esc(r.t)} isn't held in ${FUND_LIST.slice(0,-1).join(", ")} or ${FUND_LIST.at(-1)}, so it's compared with ${fund}${benchWhy(fund,r)}, a stand-in for the whole market.`}</p>`:`
+  patch($("#drBadges"),badges.join(""));
+  patch($("#drFund"),!r.held?`<p class="hint" style="margin:0;grid-column:1/-1">${FUND_LIST.includes(r.t)?`${esc(r.t)} is one of the funds OpenTicker follows, so it's compared with ${fund}${benchWhy(fund,r)}.`:`${esc(r.t)} isn't held in ${FUND_LIST.slice(0,-1).join(", ")} or ${FUND_LIST.at(-1)}, so it's compared with ${fund}${benchWhy(fund,r)}, a stand-in for the whole market.`}</p>`:`
      <div class="stat"><div class="lbl">Weight</div><div class="v">${r.w.toFixed(2)}%</div></div>
      <div class="stat"><div class="lbl">${hz} contribution</div><div class="v ${cls(r.c)}">${pp(r.c)}</div></div>
      <div class="stat"><div class="lbl">Share of ${fund}'s move</div><div class="v">${r.share==null?"–":Math.round(r.share*100)+"%"}</div></div>
-     <div class="stat"><div class="lbl">Return rank (${hz})</div><div class="v">${r.rs??"–"} / 99</div></div>`;
-  $("#drRet").innerHTML=`<table class="hz"><thead><tr><th>Range</th><th>${esc(r.t)}</th><th>${fund}</th><th>Relative</th></tr></thead><tbody>
-     ${HZ.map(h=>`<tr style="${h===hz?"font-weight:600":""}"><td>${h}</td><td class="num ${cls(r.rets[h])}">${pct(r.rets[h])}</td><td class="num ${cls(fr[h])}">${pct(fr[h])}</td><td class="num ${cls(r.ex[h])}">${pct(r.ex[h])}</td></tr>`).join("")}</tbody></table>`;
-  $("#drPos").innerHTML=`
+     <div class="stat"><div class="lbl">Return rank (${hz})</div><div class="v">${r.rs??"–"} / 99</div></div>`);
+  patch($("#drRet"),`<table class="hz"><thead><tr><th>Range</th><th>${esc(r.t)}</th><th>${fund}</th><th>Relative</th></tr></thead><tbody>
+     ${HZ.map(h=>`<tr style="${h===hz?"font-weight:600":""}"><td>${h}</td><td class="num ${cls(r.rets[h])}">${pct(r.rets[h])}</td><td class="num ${cls(fr[h])}">${pct(fr[h])}</td><td class="num ${cls(r.ex[h])}">${pct(r.ex[h])}</td></tr>`).join("")}</tbody></table>`);
+  patch($("#drPos"),`
      <div class="stat"><div class="lbl">From 52-wk high</div><div class="v ${cls(r.offHi)}">${pct(r.offHi,1)}</div><div class="ks">High ${money(r.hi)} · Low ${money(r.lo)}</div></div>
      <div class="stat"><div class="lbl">52-wk range position</div><div class="v">${r.pos==null?"–":Math.round(r.pos*100)+"%"}</div><div class="ks">0% at the low, 100% at the high</div></div>
-`;
+`);
   const M=maRead(r.t);
-  $("#drMA").innerHTML=!M?`<p class="hint" style="margin:0">Not enough price history yet.</p>`:`<p class="ma-lead">${M.lead}</p>
+  patch($("#drMA"),!M?`<p class="hint" style="margin:0">Not enough price history yet.</p>`:`<p class="ma-lead">${M.lead}</p>
      <table class="hz ma"><thead><tr><th>Average of the last</th><th>Price</th><th>${esc(r.t)} is</th></tr></thead><tbody>
      ${M.rows.map(x=>`<tr><td><b>${x.n} days</b> <small>${x.span}</small></td><td class="num">${money(x.v)}</td><td class="num ${cls(x.vs)}">${pct(Math.abs(x.vs),1).replace(/^[+−-]/,"")} ${x.vs>0?"above":"below"}</td></tr>`).join("")}</tbody></table>
-     ${M.cross?`<p class="hint" style="margin:10px 0 0"><b style="color:var(--ink)">${M.cross.golden?"Golden cross":"Death cross"} on ${shortDate(M.cross.day)}:</b> the 50-day average moved ${M.cross.golden?"above":"below"} the 200-day. Traders read it as a sign the longer trend ${M.cross.golden?"has turned up":"has turned down"}; it often comes after much of the move.</p>`:""}`;
+     ${M.cross?`<p class="hint" style="margin:10px 0 0"><b style="color:var(--ink)">${M.cross.golden?"Golden cross":"Death cross"} on ${shortDate(M.cross.day)}:</b> the 50-day average moved ${M.cross.golden?"above":"below"} the 200-day. Traders read it as a sign the longer trend ${M.cross.golden?"has turned up":"has turned down"}; it often comes after much of the move.</p>`:""}`);
   renderPeers(r);
-  $("#drHeld").innerHTML=inFunds.length?"":`<p class="hint" style="margin:0">None of ${FUND_LIST.slice(0,-1).join(", ")} or ${FUND_LIST.at(-1)}.</p>`;
-  if(inFunds.length){ $("#drHeld").innerHTML=inFunds.map(k=>{const h=base.funds[k].holdings.find(x=>x.t===r.t);return `<button class="chip hb" data-bench="${k}" aria-pressed="${k===fund}" title="${k===fund?`Comparing with ${k}`:`Compare with ${k}`}">${k} · ${h.w.toFixed(2)}%</button>`;}).join("")+(inFunds.length>1?`<p class="hint" style="margin:6px 0 0;flex-basis:100%">Compared with ${fund}${benchWhy(fund,r)}. Pick another fund to compare with it instead.</p>`:"");
-    $("#drHeld").querySelectorAll("[data-bench]").forEach(b=>b.onclick=()=>{ if(b.dataset.bench===fund) return; benchPick={t:r.t,k:b.dataset.bench}; renderDrawer(); loadChart(r.t,curRange()); }); }
+  patch($("#drHeld"),!inFunds.length?`<p class="hint" style="margin:0">None of ${FUND_LIST.slice(0,-1).join(", ")} or ${FUND_LIST.at(-1)}.</p>`:inFunds.map(k=>{const h=base.funds[k].holdings.find(x=>x.t===r.t);return `<button class="chip hb" data-bench="${k}" aria-pressed="${k===fund}" title="${k===fund?`Comparing with ${k}`:`Compare with ${k}`}">${k} · ${h.w.toFixed(2)}%</button>`;}).join("")+(inFunds.length>1?`<p class="hint" style="margin:6px 0 0;flex-basis:100%">Compared with ${fund}${benchWhy(fund,r)}. Pick another fund to compare with it instead.</p>`:""));
+  if(inFunds.length){ $("#drHeld").querySelectorAll("[data-bench]").forEach(b=>b.onclick=()=>{ if(b.dataset.bench===fund) return; benchPick={t:r.t,k:b.dataset.bench}; renderDrawer(); loadChart(r.t,curRange()); }); }
   const d=detailCache[r.t]; if(d&&!d.loading) renderAnalyst(r,d);
   if(!document.activeElement?.closest?.("#drawer form")) drawerMine(r);   // the lot editor keeps focus through render()
   renderInsights();
@@ -2194,12 +2280,12 @@ function renderPeers(r){
   const fund=r.bench, all=benchModel(fund).rows.filter(x=>!x.other&&x.sector===r.sector).sort((a,b)=>b.w-a.w);
   const rank=all.findIndex(x=>x.t===r.t)+1, sw=all.reduce((a,x)=>a+x.w,0);
   let list=all.slice(0,10); if(rank>10) list=[...all.slice(0,9),r];
-  if(r.sector==="Unclassified"||all.length<(r.held?2:1)){ $("#drPeers").innerHTML=`<p class="hint" style="margin:0">${r.sector==="Unclassified"?"Sector not loaded yet for this stock.":`No other ${esc(r.sector)} stocks in ${fund}.`}</p>`; return; }
+  if(r.sector==="Unclassified"||all.length<(r.held?2:1)){ patch($("#drPeers"),`<p class="hint" style="margin:0">${r.sector==="Unclassified"?"Sector not loaded yet for this stock.":`No other ${esc(r.sector)} stocks in ${fund}.`}</p>`); return; }
   const sumR=all.reduce((a,x)=>a+(x.r??0)*x.w,0)/sw;
-  $("#drPeersH").textContent=`${r.sector} peers in ${fund}`;
-  $("#drPeers").innerHTML=`<p class="hint" style="margin:0 0 8px">${r.held?`#${rank} of ${all.length}`:`${esc(r.t)} isn't in ${fund}. Its ${all.length}`} ${esc(r.sector)} stocks by weight. The sector is ${sw.toFixed(1)}% of ${fund} and returned ${pct(sumR)} over ${hz} (weighted).</p>
+  setText($("#drPeersH"),`${r.sector} peers in ${fund}`);
+  patch($("#drPeers"),`<p class="hint" style="margin:0 0 8px">${r.held?`#${rank} of ${all.length}`:`${esc(r.t)} isn't in ${fund}. Its ${all.length}`} ${esc(r.sector)} stocks by weight. The sector is ${sw.toFixed(1)}% of ${fund} and returned ${pct(sumR)} over ${hz} (weighted).</p>
    <table class="hz peers"><thead><tr><th>Stock</th><th>Weight</th><th>Today</th><th>${hz}</th><th>vs ${fund}</th></tr></thead><tbody>${
-   list.map(x=>`<tr data-sel="${esc(x.t)}" class="${x.t===r.t?"me":""}"><td><b class="mono">${esc(x.t)}</b> <span class="pn">${esc(trunc(x.n,22))}</span></td><td class="num">${x.w.toFixed(2)}%</td><td class="num ${cls(x.chg)}">${pct(x.chg,1)}</td><td class="num ${cls(x.r)}">${pct(x.r,1)}</td><td class="num ${cls(x.exh)}">${pct(x.exh,1)}</td></tr>`).join("")}</tbody></table>`;
+   list.map(x=>`<tr data-sel="${esc(x.t)}" class="${x.t===r.t?"me":""}"><td><b class="mono">${esc(x.t)}</b> <span class="pn">${esc(trunc(x.n,22))}</span></td><td class="num">${x.w.toFixed(2)}%</td><td class="num ${cls(x.chg)}">${pct(x.chg,1)}</td><td class="num ${cls(x.r)}">${pct(x.r,1)}</td><td class="num ${cls(x.exh)}">${pct(x.exh,1)}</td></tr>`).join("")}</tbody></table>`);
 }
 
 function renderDetail(){
@@ -2297,15 +2383,15 @@ function recCls(m){ return m==null?"":m<=2.2?"up":m>=3.5?"down":""; }
 function renderAnalyst(r,d,id="drAnalyst"){
   if(id==="drAnalyst"&&$("#drAnalyst2")) renderAnalyst(r,d,"drAnalyst2");
   const el=$("#"+id); if(!el) return; const i=d.info||{}, err=d.infoError?`<p class="hint" style="margin:0">${esc(d.infoError)} <button class="lnk" data-retry="1">Retry</button></p>`:"";
-  if(!i.numberOfAnalystOpinions&&!i.targetMeanPrice){ el.innerHTML=err||`<p class="hint" style="margin:0">No analyst coverage reported.</p>`; return; }
+  if(!i.numberOfAnalystOpinions&&!i.targetMeanPrice){ patch(el,err||`<p class="hint" style="margin:0">No analyst coverage reported.</p>`); return; }
   const m=i.recommendationMean, last=r.last;
   const lo=Math.min(i.targetLowPrice??last,last), hi=Math.max(i.targetHighPrice??last,last), X=v=>((v-lo)/(hi-lo||1)*100).toFixed(1)+"%";
-  el.innerHTML=`<div class="an">
+  patch(el,`<div class="an">
     <div><div class="lbl">Consensus</div><div class="v ${recCls(m)}">${esc(recLabel(i))}</div><div class="ks">${i.numberOfAnalystOpinions||"?"} analysts${m?` · ${m.toFixed(2)} on a 1 (strong buy) to 5 (sell) scale`:""}</div>
       ${m?`<div class="gauge"><i style="left:calc(${((m-1)/4*100).toFixed(1)}% - 5px)"></i></div><div class="meter-l"><span>Strong buy</span><span>Hold</span><span>Sell</span></div>`:""}</div>
     ${i.targetMeanPrice?`<div><div class="lbl">12-month price target</div><div class="v">${money(i.targetMeanPrice)} <span class="${cls(i.targetMeanPrice/last-1)}" style="font-size:13px">${pct(i.targetMeanPrice/last-1,1)} from here</span></div>
       <div class="tgt"><span class="band" style="left:${X(i.targetLowPrice??i.targetMeanPrice)};right:calc(100% - ${X(i.targetHighPrice??i.targetMeanPrice)})"></span><i class="mean" style="left:${X(i.targetMeanPrice)}" title="Average target"></i><i class="now" style="left:${X(last)}" title="Price now"></i></div>
-      <div class="meter-l"><span>Low ${money(i.targetLowPrice)}</span><span>High ${money(i.targetHighPrice)}</span></div><div class="ks" style="margin-top:4px">The dot is today's price, ${money(last)}; the tick is the average target.</div></div>`:""}</div>`;
+      <div class="meter-l"><span>Low ${money(i.targetLowPrice)}</span><span>High ${money(i.targetHighPrice)}</span></div><div class="ks" style="margin-top:4px">The dot is today's price, ${money(last)}; the tick is the average target.</div></div>`:""}</div>`);
 }
 
 /* price chart with volume, any range */
@@ -2436,7 +2522,8 @@ document.addEventListener("click",e=>{
 });
 document.addEventListener("keydown",e=>{
   if(e.target.matches("input,textarea,select,[contenteditable]")){ if(e.key==="Escape") e.target.blur(); return; }
-  if(e.key==="Escape"){ if($("#side2").classList.contains("open")) return closeAlerts(); return closeDrawer(); }
+  if(e.key==="Escape"){ if(e.target.closest?.("dialog[open]")) return;   // one Esc closes one thing: the dialog (Settings) closes itself
+    if($("#side2").classList.contains("open")) return closeAlerts(); return closeDrawer(); }
   if(e.key==="/"){ e.preventDefault(); $("#ts").focus(); return; }
   if((e.key==="f"||e.key==="F")&&drawerOpen&&!e.metaKey&&!e.ctrlKey){ toggleFull(); return; }
   if(e.metaKey||e.ctrlKey||e.altKey) return;
@@ -2512,9 +2599,11 @@ function buildPseudo(){
 }
 
 /* header bell + alerts panel */
-function renderBell(){ const b=$("#bell"); if(!b) return; const u=me?.unread||0; b.innerHTML=`${ic("bell",17)}${u?`<i class="bd">${u>9?"9+":u}</i>`:""}`; b.title=u?`${u} new alert${u>1?"s":""}`:"Alerts"; }
-function openAlerts(){ $("#side2").classList.add("open"); $("#scrim").classList.add("open"); $("#side2").setAttribute("aria-hidden","false"); renderAlertsPanel(); if(me?.unread) api("/api/me/read").catch(()=>{}); }
-function closeAlerts(){ $("#side2").classList.remove("open"); if(!drawerOpen) $("#scrim").classList.remove("open"); $("#side2").setAttribute("aria-hidden","true"); }
+function renderBell(){ const b=$("#bell"); if(!b) return; const u=me?.unread||0; patch(b,`${ic("bell",17)}${u?`<i class="bd">${u>9?"9+":u}</i>`:""}`); b.title=u?`${u} new alert${u>1?"s":""}`:"Alerts"; }
+function openAlerts(){ if(!$("#side2").classList.contains("open")) alFrom=focusMark("#side2");   /* opened from the stock page: back into it */ $("#side2").classList.add("open"); $("#scrim").classList.add("open"); $("#side2").setAttribute("aria-hidden","false"); renderAlertsPanel(); $("#side2").focus({preventScroll:true}); if(me?.unread) api("/api/me/read").catch(()=>{}); }
+function closeAlerts(){ const s=$("#side2"), was=s.classList.contains("open"), back=was&&(s.contains(document.activeElement)||document.activeElement===document.body);
+  s.classList.remove("open"); if(!drawerOpen) $("#scrim").classList.remove("open"); s.setAttribute("aria-hidden","true");
+  if(back) focusBack(alFrom||{el:$("#bell")}); if(was) alFrom=null; }
 /* older alerts were written with legal names ("Nvidia Corp is at…"); say them the way the app does */
 function tidyCo(x){ return String(x||"").replace(/,? (?:Inc\.?|Corporation|Corp\.?)(?=[\s.,;]|$)/g,"").replace(/\bNasdaq-100\b/g,"Nasdaq\u2011100").replace(/ +\./g,".").replace(/EPS estimate \$([\d.]+)\./,"Analysts expect $$$1 a share."); }
 const kindText=k=>me.kinds[k]||k;
@@ -2560,13 +2649,13 @@ function renderAlertsPanel(){
 /* portfolio / watchlist panel on the main page */
 function renderMine(){
   const el=$("#s-mine"); if(!el) return;
-  if(!isPseudo(fund)){ el.hidden=true; el.innerHTML=""; return; }
+  if(!isPseudo(fund)){ el.hidden=true; patch(el,""); return; }
   el.hidden=false;
   if(fund==="Watchlist"){
     const W=me.watch.filter(t=>base.px[t]), R=new Map((model?.rows||[]).map(r=>[r.t,r]));
-    el.innerHTML=`<div class="ph"><div><h2>${ic("star")}Your watchlist</h2><div class="hint">${W.length} stock${W.length===1?"":"s"}. Add more here or with Watch on any stock page.</div></div><form class="frm" id="wForm"><input id="wT" data-fk="wT" placeholder="Add tickers, e.g. AMD TSM" aria-label="Add tickers" autocomplete="off" autocapitalize="characters" spellcheck="false" style="width:220px"><button class="btn">Add</button><span class="err" id="wErr"></span></form></div>
+    patch(el,`<div class="ph"><div><h2>${ic("star")}Your watchlist</h2><div class="hint">${W.length} stock${W.length===1?"":"s"}. Add more here or with Watch on any stock page.</div></div><form class="frm" id="wForm"><input id="wT" data-fk="wT" placeholder="Add tickers, e.g. AMD TSM" aria-label="Add tickers" autocomplete="off" autocapitalize="characters" spellcheck="false" style="width:220px"><button class="btn">Add</button><span class="err" id="wErr"></span></form></div>
      <div class="wl"><div class="wh2" aria-hidden="true"><div class="wmain"><span>Ticker</span><span>Name</span><span>Price</span><span>Today</span><span>${hz}</span></div><i></i></div>${W.map(t=>{ const r=R.get(t)||{}, F=facts(t)||{}, last=lastValid(base.px[t]);
-       return `<div class="wr"><button type="button" class="wmain" data-sel="${esc(t)}"><b class="tk">${esc(t)}</b><span class="wn">${esc(nameOf(t))}</span><span class="num wp ${flashes[t]||""}">${money(last)}</span><span class="num wc ${cls(F.chg)}">${pct(F.chg)}</span><span class="num wh ${cls(r.r)}">${pct(r.r)}</span></button><button type="button" class="wx" data-unwatch="${esc(t)}" aria-label="Remove ${esc(t)} from your watchlist" title="Remove from watchlist">${ic("close",14)}</button></div>`; }).join("")}</div>`;
+       return `<div class="wr" data-key="${esc(t)}"><button type="button" class="wmain" data-sel="${esc(t)}"><b class="tk">${esc(t)}</b><span class="wn">${esc(nameOf(t))}</span><span class="num wp ${flashes[t]||""}">${money(last)}</span><span class="num wc ${cls(F.chg)}">${pct(F.chg)}</span><span class="num wh ${cls(r.r)}">${pct(r.r)}</span></button><button type="button" class="wx" data-unwatch="${esc(t)}" aria-label="Remove ${esc(t)} from your watchlist" title="Remove from watchlist">${ic("close",14)}</button></div>`; }).join("")}</div>`);
     $("#wForm").onsubmit=async e=>{ e.preventDefault(); const T=splitTickers($("#wT").value); if(!T.length) return; const b=$("#wForm .btn"); b.disabled=true; b.textContent="Adding…"; $("#wErr").textContent="";
       try{ await api("/api/me/watch/save",{add:T}); const i=$("#wT"); if(i) i.value=""; }catch(x){ if($("#wErr")) $("#wErr").textContent=x.message; }
       const b2=$("#wForm .btn"); if(b2){ b2.disabled=false; b2.textContent="Add"; } };
@@ -2580,18 +2669,18 @@ function renderMine(){
   rows.sort((a,b)=>b.value-a.value);
   const usd=(x,sg)=>x==null?"–":(x=Math.round(x*100)/100,0)||(sg?(x>0?"+":x<0?"−":""):(x<0?"−":""))+"$"+Math.abs(x).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
   const sample=(me.positions||[]).length&&(me.positions||[]).every(p=>p.note==="sample");
-  el.innerHTML=`${sample?`<div class="sbanner"><span><b>This is a sample portfolio.</b> Look around, then bring in your own. Importing or adding a position clears the sample.</span><button class="btn" id="sImp">Import yours</button><button class="btn ghost" id="sClr">Clear sample</button></div>`:""}<div class="ph"><div><h2>${ic("mine")}${sample?"Sample portfolio":"Your portfolio"}</h2><div class="hint">${rows.length} position${rows.length===1?"":"s"} at live prices. Contribution and the charts below treat today's shares as held for the whole period.</div></div><div class="phb" ${sample?"hidden":""}>${(me.links||[]).length?"":`<button class="btn ghost" id="pLink" title="Monarch, Interactive Brokers, Robinhood or another MCP server">${ic("link",14)}Link a brokerage</button>`}<button class="btn ghost" id="pImp" title="Read a positions CSV from Fidelity, Schwab, Vanguard, E*TRADE and others">Import a file</button></div></div>${sample?"":linksLine()}
+  patch(el,`${sample?`<div class="sbanner"><span><b>This is a sample portfolio.</b> Look around, then bring in your own. Importing or adding a position clears the sample.</span><button class="btn" id="sImp">Import yours</button><button class="btn ghost" id="sClr">Clear sample</button></div>`:""}<div class="ph"><div><h2>${ic("mine")}${sample?"Sample portfolio":"Your portfolio"}</h2><div class="hint">${rows.length} position${rows.length===1?"":"s"} at live prices. Contribution and the charts below treat today's shares as held for the whole period.</div></div><div class="phb" ${sample?"hidden":""}>${(me.links||[]).length?"":`<button class="btn ghost" id="pLink" title="Monarch, Interactive Brokers, Robinhood or another MCP server">${ic("link",14)}Link a brokerage</button>`}<button class="btn ghost" id="pImp" title="Read a positions CSV from Fidelity, Schwab, Vanguard, E*TRADE and others">Import a file</button></div></div>${sample?"":linksLine()}
    <div class="kf mine-k"><div><div class="lbl">Value</div><div class="v">${usd(V)}</div></div>
      <div><div class="lbl">Today</div><div class="v ${cls(D)}">${usd(D,1)}</div><div class="ks ${cls(D)}">${pct(V-D?D/(V-D):null)}</div>${XD!=null?`<div class="ks">${xLab} <span class="num ${cls(XD)}">${usd(XD,1)} · ${pct(V?XD/V:null)}</span></div>`:""}</div>
      <div><div class="lbl">Total gain</div><div class="v ${cls(V-C)}">${usd(V-C,1)}</div><div class="ks ${cls(V-C)}">${pct(C?V/C-1:null)} on ${usd(C)} cost</div></div></div>
    <div class="tbl-wrap mine-tw"><table class="hold mine-t"><thead><tr><th class="l">Ticker</th><th>Shares</th><th>Avg cost</th><th>Price</th><th>Value</th><th>Weight</th><th>Today</th><th>Total gain</th><th><span class="vh">Edit</span></th></tr></thead><tbody>${rows.map(r=>`<tr data-sel="${esc(r.t)}" class="${lotOpen.has(r.t)?"lot-on":""}">
      <td class="l tk">${esc(r.t)}${srcTag(r.t)}</td><td class="num">${(+r.shares.toFixed(4)).toLocaleString("en-US")}</td><td class="num">${money(r.avg)}</td><td class="num ${flashes[r.t]||""}">${money(r.last)}</td><td class="num">${usd(r.value)}</td><td class="num">${V?(r.value/V*100).toFixed(1):"–"}%</td>
-     <td class="num ${cls(r.day)}">${usd(r.day,1)} <small>${pct(r.dayPct,1)}</small>${r.x?`<span class="xh" title="${r.x.lab} ${money(r.x.p)} at ${extTime(r.x.ts)}">${r.x.lab} <span class="${cls(r.x.chg)}">${pct(r.x.chg,1)}</span></span>`:""}</td><td class="num ${cls(r.pl)}">${usd(r.pl,1)} <small>${pct(r.plPct,1)}</small></td><td class="num ed-c">${lotBtn(r)}</td></tr>${lotOpen.has(r.t)?`<tr class="lotx-row"><td colspan="9">${lotEditor(r.t,"p")}</td></tr>`:""}`).join("")}</tbody></table></div>
-   <div class="pcards">${rows.map(r=>`<div class="poscard ${lotOpen.has(r.t)?"open":""}"><button type="button" class="pcmain" data-sel="${esc(r.t)}"><div class="pc1"><b>${esc(r.t)}${srcTag(r.t)}</b><span class="num">${usd(r.value)}</span></div>
+     <td class="num ${cls(r.day)}">${usd(r.day,1)} <small>${pct(r.dayPct,1)}</small>${r.x?`<span class="xh" title="${r.x.lab} ${money(r.x.p)} at ${extTime(r.x.ts)}">${r.x.lab} <span class="${cls(r.x.chg)}">${pct(r.x.chg,1)}</span></span>`:""}</td><td class="num ${cls(r.pl)}">${usd(r.pl,1)} <small>${pct(r.plPct,1)}</small></td><td class="num ed-c">${lotBtn(r)}</td></tr>${lotOpen.has(r.t)?`<tr class="lotx-row" data-key="lot:${esc(r.t)}"><td colspan="9">${lotEditor(r.t,"p")}</td></tr>`:""}`).join("")}</tbody></table></div>
+   <div class="pcards">${rows.map(r=>`<div class="poscard ${lotOpen.has(r.t)?"open":""}" data-key="${esc(r.t)}"><button type="button" class="pcmain" data-sel="${esc(r.t)}"><div class="pc1"><b>${esc(r.t)}${srcTag(r.t)}</b><span class="num">${usd(r.value)}</span></div>
      <div class="pc2"><span class="num">${sharesTxt(r.shares)} at ${money(r.last)}</span><span class="num ${cls(r.day)}">${usd(r.day,1)} today</span></div>
      ${r.x?`<div class="pc2"><span>${r.x.lab} ${money(r.x.p)}</span><span class="num ${cls(r.xd)}">${usd(r.xd,1)} <small>${pct(r.x.chg,1)}</small></span></div>`:""}
      <div class="pc2"><span>Total gain</span><span class="num ${cls(r.pl)}">${usd(r.pl,1)} <small>${pct(r.plPct,1)}</small></span></div></button>${lotOpen.has(r.t)?lotEditor(r.t,"c"):`<div class="pc3">${lotBtn(r)}</div>`}</div>`).join("")}</div>
-   <form class="frm" id="pForm" style="margin-top:12px"><b style="font-size:13px">Add a position</b><input id="pT" data-fk="pT" placeholder="Ticker" aria-label="Ticker" maxlength="10" style="width:90px" required><input id="pS" data-fk="pS" type="number" step="any" min="0" placeholder="Shares" aria-label="Shares" style="width:100px" required><input id="pC" data-fk="pC" type="number" step="any" min="0" placeholder="Cost per share" aria-label="Cost per share" style="width:130px" required><input id="pD" data-fk="pD" type="date" aria-label="Date bought (optional)"><button class="btn">Add</button><span class="err" id="pErr"></span></form>`;
+   <form class="frm" id="pForm" style="margin-top:12px"><b style="font-size:13px">Add a position</b><input id="pT" data-fk="pT" placeholder="Ticker" aria-label="Ticker" maxlength="10" style="width:90px" required><input id="pS" data-fk="pS" type="number" step="any" min="0" placeholder="Shares" aria-label="Shares" style="width:100px" required><input id="pC" data-fk="pC" type="number" step="any" min="0" placeholder="Cost per share" aria-label="Cost per share" style="width:130px" required><input id="pD" data-fk="pD" type="date" aria-label="Date bought (optional)"><button class="btn">Add</button><span class="err" id="pErr"></span></form>`);
   $("#pForm").onsubmit=posSubmit("p"); $("#pImp").onclick=pickBrokerFile; $("#pLink")&&($("#pLink").onclick=()=>openSettings("accounts")); bindLinksLine();
   if(sample){ $("#sImp").onclick=pickBrokerFile; $("#sClr").onclick=()=>api("/api/me/positions/clear-sample").catch(()=>toast("Couldn't clear the sample. Try again.")); }
 }
@@ -2725,10 +2814,14 @@ function keepFocus(fn){
   const a=document.activeElement, k=a?.dataset?.fk, v=a?.value, s0=a?.selectionStart, s1=a?.selectionEnd, ty=a?.type;
   // what's typed in a form's other fields (Add a position) comes back too, not just the field you're in
   const kept=[...document.querySelectorAll("form [data-fk]")].filter(i=>i!==a&&typedIn(i)).map(i=>[i.dataset.fk,i.value]);
-  fn();
-  kept.forEach(([fk,x])=>{ const n=document.querySelector(`[data-fk="${CSS.escape(fk)}"]`); if(n&&n.value!==x) n.value=x; });
-  if(!k) return; const n=document.querySelector(`[data-fk="${CSS.escape(k)}"]`); if(!n||n===a) return;
-  if(v!=null){ if(ty&&n.type!==ty) n.type=ty; n.value=v; } n.focus({preventScroll:true}); try{ if(s0!=null) n.setSelectionRange(s0,s1); }catch(e){}
+  const was=drawing; drawing=true;
+  try{
+    fn();
+    kept.forEach(([fk,x])=>{ const n=document.querySelector(`[data-fk="${CSS.escape(fk)}"]`); if(n&&n.value!==x) n.value=x; });
+    if(!k) return; const n=document.querySelector(`[data-fk="${CSS.escape(k)}"]`); if(!n||n===a) return;
+    if(v!=null){ if(ty&&n.type!==ty) n.type=ty; n.value=v; } n.focus({preventScroll:true}); try{ if(s0!=null) n.setSelectionRange(s0,s1); }catch(e){}
+    if(a?.matches?.(".lx input")&&v!==a.defaultValue) n._unsaved=true;   // its change event was dropped below: save when you leave the row
+  }finally{ drawing=was; }
 }
 const numTxt=x=>x==null||x===""?"":String(+(+x).toFixed(6));
 function lotBtn(r){ const open=lotOpen.has(r.t); return `<button type="button" class="lotb" data-lot-open="${esc(r.t)}" aria-expanded="${open}" title="Change shares, cost or date">${open?"Done":`${ic("edit",13)}${r.lots>1?r.lots+" purchases":"Edit"}`}</button>`; }
@@ -2743,7 +2836,7 @@ function lotEditor(t,ctx){
   return `<div class="lotx" data-lot-t="${esc(t)}"><div class="lx lxh"><span>Shares</span><span>Cost per share</span><span>Bought</span><span>Gain</span><span></span></div>
     ${L.map(p=>row(p.id,p)).join("")}${d?row("new",d):""}
     ${linked.length?`<div class="lxnote">${ic("link",12)}<span>From ${esc(linked.join(" and "))}, synced each trading day. Change ${linked.length>1?"those":"it"} there, or add your own purchases below.</span></div>`:""}
-    <div class="lxf"><button type="button" class="lnk" data-lot-add="${esc(t)}" ${d?"hidden":""}>${ic("plus",13)}Add a purchase</button><span class="lxm" data-lot-msg></span>${ctx==="c"?`<button type="button" class="lnk lxdone" data-lot-open="${esc(t)}">Done</button>`:""}</div></div>`;
+    <div class="lxf"><button type="button" class="lnk" data-lot-add="${esc(t)}" ${d?"hidden":""}>${ic("plus",13)}Add a purchase</button><span class="lxm" data-lot-msg data-keep></span>${ctx==="c"?`<button type="button" class="lnk lxdone" data-lot-open="${esc(t)}">Done</button>`:""}</div></div>`;
 }
 let toastT;
 function toast(msg,undo){
@@ -2776,12 +2869,18 @@ async function saveLot(rowEl){
 }
 function refreshMine(){ keepFocus(()=>{ renderMine(); if(drawerOpen&&sel) renderDrawer(); }); }
 document.addEventListener("change",e=>{ const i=e.target.closest?.(".lx input"), r=i?.closest(".lx"); if(!r) return;
+  // Chrome fires change on a focused field that a redraw takes off the page: that half-typed number isn't the person's
+  // answer, so it isn't saved (keepFocus puts it back in the new field, which saves when they leave the row)
+  if(drawing||!i.isConnected){ if(i.isConnected) i._unsaved=true; return; }   // moved by a redraw: still yours, saved when you leave the row
   if(r.dataset.lot==="new"){ saveDraft(r); return; }   // saved by the focusout below, once you leave the row
   saveLot(r); });
+document.addEventListener("focusout",e=>{ const r=e.target.closest?.(".lx"); if(!r||drawing||r.contains(e.relatedTarget)) return;
+  const u=[...r.querySelectorAll("input")].filter(x=>x._unsaved); if(!u.length) return;
+  u.forEach(x=>x._unsaved=false); if(r.dataset.lot!=="new"&&!r.dataset.saving) setTimeout(()=>{ if(r.isConnected&&!r.dataset.saving) saveLot(r); },0); });
 document.addEventListener("focusout",e=>{ const r=e.target.closest?.('.lx[data-lot="new"]'); if(r&&!r.contains(e.relatedTarget)) setTimeout(()=>{ if(r.isConnected&&!r.contains(document.activeElement)) saveLot(r); },0); });
 document.addEventListener("keydown",e=>{ const i=e.target.closest?.(".lx input"); if(!i) return;
   if(e.key==="Enter"){ e.preventDefault(); i.blur(); }
-  else if(e.key==="Escape"){ e.stopPropagation(); i.value=i.defaultValue; i.classList.remove("bad"); i.blur(); } },true);
+  else if(e.key==="Escape"){ e.stopPropagation(); i.value=i.defaultValue; i.classList.remove("bad"); const m=i.closest(".lotx")?.querySelector("[data-lot-msg]"); if(m?.classList.contains("err")){ m.textContent=""; m.className="lxm"; } i.blur(); } },true);
 document.addEventListener("focusin",e=>{ const i=e.target; if(i.matches?.('.lx input[data-lot-f="opened"]')&&i.type==="text"){ i.type="date"; try{ i.showPicker?.(); }catch(x){} } });
 document.addEventListener("focusout",e=>{ const i=e.target; if(i.matches?.('.lx input[data-lot-f="opened"]')&&!i.value) setTimeout(()=>{ if(document.activeElement!==i&&!i.value) i.type="text"; },0); });
 document.addEventListener("click",e=>{
@@ -2810,7 +2909,7 @@ function reaction(t,date,hour){
 function renderEarnCal(){
   const el=$("#earnCal"); if(!el||!model) return;
   if(!Object.keys(EARN).length&&earnAt&&Date.now()-earnAt>60e3) earnAt=0;
-  el.innerHTML=earnGrid(new Map(model.f.holdings.map(h=>[h.t,fund==="Watchlist"?null:h.w])),fund==="Portfolio"?"your portfolio":fund,isPseudo(fund));
+  patch(el,earnGrid(new Map(model.f.holdings.map(h=>[h.t,fund==="Watchlist"?null:h.w])),fund==="Portfolio"?"your portfolio":fund,isPseudo(fund)));
 }
 function shiftDays(d,n){ const x=new Date(d+"T12:00:00Z"); x.setUTCDate(x.getUTCDate()+n); return x.toISOString().slice(0,10); }
 
@@ -2818,23 +2917,23 @@ function shiftDays(d,n){ const x=new Date(d+"T12:00:00Z"); x.setUTCDate(x.getUTC
 function drawerMine(r){
   const el=$("#drAct"); if(!el||!me) return;
   const on=me.watch.includes(r.t), L=lots(r.t), my=me.alerts.filter(a=>a.t===r.t), afOpen=$("#drAF")&&!$("#drAF").hidden, formOpen=$("#drPF")&&!$("#drPF").hidden;
-  el.innerHTML=`<button class="btn ${on?"":"ghost"}" id="drW" aria-pressed="${on}">${ic("star",14,on)}${on?"Watching":"Watch"}</button><button class="btn ghost" id="drP">${ic("plus",14)}Position</button><button class="btn ghost" id="drA">${ic("bell",14)}Price alert</button><button class="btn ghost askact" data-ask-scope="stock" data-ask-t="${esc(r.t)}" title="Ask Tick about ${esc(r.t)} (A)">${typeof tickFace==="function"?tickFace(16):ic("spark",14)}Ask Tick</button>
+  patch(el,`<button class="btn ${on?"":"ghost"}" id="drW" aria-pressed="${on}">${ic("star",14,on)}${on?"Watching":"Watch"}</button><button class="btn ghost" id="drP">${ic("plus",14)}Position</button><button class="btn ghost" id="drA">${ic("bell",14)}Price alert</button><button class="btn ghost askact" data-ask-scope="stock" data-ask-t="${esc(r.t)}" title="Ask Tick about ${esc(r.t)} (A)">${typeof tickFace==="function"?tickFace(16):ic("spark",14)}Ask Tick</button>
     <form class="frm" id="drAF" ${afOpen?"":"hidden"}><select id="drAK" aria-label="When to alert"><option value="above">Crosses above</option><option value="below">Crosses below</option><option value="move">Moves at least (%)</option></select><input id="drAV" type="number" step="any" placeholder="${money(r.last)}" aria-label="Price, or percent move" style="width:110px" required><button class="btn">Add</button><span class="err" id="drAErr"></span></form>
-    ${my.length?`<div class="mya">${my.map(a=>`<span class="chip">${esc(ruleText(a))}<button class="lnk" data-al-del="${a.id}" aria-label="Delete alert">✕</button></span>`).join("")}</div>`:""}`;
+    ${my.length?`<div class="mya">${my.map(a=>`<span class="chip">${esc(ruleText(a))}<button class="lnk" data-al-del="${a.id}" aria-label="Delete alert">✕</button></span>`).join("")}</div>`:""}`);
   $("#drW").onclick=()=>{ const b=$("#drW"), was=[b.className,b.getAttribute("aria-pressed"),b.innerHTML], want=was[1]!=="true";   // show it at once; put it back if the save fails
     b.className="btn "+(want?"":"ghost"); b.setAttribute("aria-pressed",want); b.innerHTML=`${ic("star",14,want)}${want?"Watching":"Watch"}`;
     api("/api/me/watch",{t:r.t,on:want}).catch(()=>{ if(b.isConnected){ [b.className]=was; b.setAttribute("aria-pressed",was[1]); b.innerHTML=was[2]; } toast("Couldn't save that. Try again."); }); };
   $("#drA").onclick=()=>{ $("#drAF").hidden=!$("#drAF").hidden; };
-  $("#drAF").onsubmit=async e=>{ e.preventDefault(); const k=$("#drAK").value, v=$("#drAV").value; try{ await api("/api/me/alert",{kind:k,t:r.t,value:v}); passedNote(k,r.t,v,r.last); }catch(x){ $("#drAErr").textContent=x.message; } };
+  $("#drAF").onsubmit=async e=>{ e.preventDefault(); const k=$("#drAK").value, v=$("#drAV").value; try{ await api("/api/me/alert",{kind:k,t:r.t,value:v}); passedNote(k,r.t,v,r.last); $("#drAF")?.reset(); }catch(x){ $("#drAErr").textContent=x.message; } };
   $("#drP").onclick=()=>{ const f=$("#drPF"); f.hidden=!f.hidden; $("#drMineSec").hidden=false; if(!f.hidden) $("#dS").focus(); };
   // your position
   const sec=$("#drMineSec"), box=$("#drMine"); if(!sec) return;
   const last=r.last, sh=L.reduce((a,p)=>a+p.shares,0), cost=L.reduce((a,p)=>a+p.shares*p.cost,0);
   sec.hidden=!L.length&&!formOpen;
-  box.innerHTML=(L.length?`<div class="stats"><div class="stat"><div class="lbl">Value</div><div class="v">${money(sh*last)}</div><div class="ks">${sharesTxt(sh)} at ${money(cost/sh)} avg</div></div>
+  patch(box,(L.length?`<div class="stats"><div class="stat"><div class="lbl">Value</div><div class="v">${money(sh*last)}</div><div class="ks">${sharesTxt(sh)} at ${money(cost/sh)} avg</div></div>
      <div class="stat"><div class="lbl">Total gain</div><div class="v ${cls(sh*last-cost)}">${pct(cost?sh*last/cost-1:null)}</div><div class="ks ${cls(sh*last-cost)}">${(sh*last-cost)>=0?"+":"−"}${money(Math.abs(sh*last-cost))}</div></div></div>
      ${lotEditor(r.t,"d")}`:"")+
-    `<form class="frm" id="drPF" ${formOpen?"":"hidden"}><input id="dS" type="number" step="any" min="0" placeholder="Shares" aria-label="Shares" style="width:100px" required><input id="dC" type="number" step="any" min="0" placeholder="Cost per share" aria-label="Cost per share" value="${last?last.toFixed(2):""}" style="width:130px" required><input id="dD" type="date" aria-label="Date bought (optional)"><button class="btn">Add purchase</button><span class="err" id="dErr"></span></form>`;
+    `<form class="frm" id="drPF" ${formOpen?"":"hidden"}><input id="dS" type="number" step="any" min="0" placeholder="Shares" aria-label="Shares" style="width:100px" required><input id="dC" type="number" step="any" min="0" placeholder="Cost per share" aria-label="Cost per share" value="${last?last.toFixed(2):""}" style="width:130px" required><input id="dD" type="date" aria-label="Date bought (optional)"><button class="btn">Add purchase</button><span class="err" id="dErr"></span></form>`);
   $("#drPF").onsubmit=posSubmit("d",r.t);
 }
 async function loadEarnHist(t){
@@ -2936,18 +3035,21 @@ async function poll0(){
     else{
       let changed=extNew; const fl={};
       for(const [t,v] of Object.entries(L.last)){ const a=base.px[t]; if(!a||v==null) continue; const old=a[a.length-1]; if(old!==v){ a[a.length-1]=v; changed=true; if(old!=null) fl[t]=v>old?"flash-up":"flash-down"; } }
-      if(changed){ flashes=fl; if(!document.hidden&&Date.now()-lastRender>4000) render(); }
+      if(changed){ flashes=fl; if(!document.hidden&&Date.now()-lastRender>4000){ reflash(); render(); } }
     }
     setStatus(L);
   }catch(e){ console.error(e); drawn=false; warn("Something went wrong showing this page. Reload to try again."); }
 }
+/* cells stay put through a tick now, so a price that moves again needs its flash taken off before render puts it back */
+function reflash(){ const f=document.querySelectorAll(".flash-up,.flash-down,.tick-up,.tick-down"); if(!f.length) return;
+  f.forEach(e=>e.classList.remove("flash-up","flash-down","tick-up","tick-down")); void document.body.offsetWidth; }
 function setStatus(L){
   const age=L.lastTick?Math.round(L.now-L.lastTick):null,dot=$("#dot"),st=$("#status");
   const t=new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",second:"2-digit"});
-  if(age!=null&&age<90){dot.className="dot on";st.textContent=`Live · updated ${t}`;}
-  else if(L.lastPoll&&L.now-L.lastPoll<180){dot.className="dot warn";st.textContent=`Stream quiet, polling · ${t}`;}
-  else if(L.open){const last=Math.max(L.lastTick||0,L.lastPoll||0);dot.className="dot warn";st.textContent=last?`Prices delayed · last update ${new Date(last*1000).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}`:"Market open · waiting for prices";}
-  else{dot.className="dot";st.textContent=L.date?`Market closed · as of ${shortDate(L.date)} close`:"Market closed";}
+  if(age!=null&&age<90){dot.className="dot on";setText(st,`Live · updated ${t}`);}
+  else if(L.lastPoll&&L.now-L.lastPoll<180){dot.className="dot warn";setText(st,`Stream quiet, polling · ${t}`);}
+  else if(L.open){const last=Math.max(L.lastTick||0,L.lastPoll||0);dot.className="dot warn";setText(st,last?`Prices delayed · last update ${new Date(last*1000).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}`:"Market open · waiting for prices");}
+  else{dot.className="dot";setText(st,L.date?`Market closed · as of ${shortDate(L.date)} close`:"Market closed");}
   dot.title=st.textContent;   // the text hides on narrow headers; the dot still explains itself on hover
 }
 // start once every script below has run, so a render never reaches for a function that isn't loaded yet

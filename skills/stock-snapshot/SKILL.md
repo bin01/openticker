@@ -19,7 +19,7 @@ metadata:
 2. **How it's trading**: today, 1 month and year to date against the S&P 500; where it sits against its 50- and 200-day averages; the distance from the 52-week high.
 3. **What the pros think**: the consensus, the average target as upside or downside, and the direction of the last few rating and target changes. Say whether EPS estimates are rising or falling over 30 and 90 days, since revisions move stocks more than ratings do.
 4. **Watch next**: the next earnings date and the move options imply; insider buying, if any; unusual options activity.
-5. **If the user owns it**: one line on their position, such as its size or gain.
+5. **If the user owns it**: one line on their position, such as its weight in the portfolio. Run `openticker portfolio` for the gain or dollar value only if they asked about it.
 
 ## Answer shape
 

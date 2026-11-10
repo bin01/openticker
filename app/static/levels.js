@@ -182,7 +182,7 @@ function renderLevels(){
       </section></div>`;
     lvWire();
   }
-  $("#lvRng").innerHTML=LV_IV.map(([k,l,sh])=>`<button data-lvr="${k}" aria-pressed="${k===lvIv}" aria-label="${l} bars"><span class="lg">${l}</span><span class="sh">${sh}</span></button>`).join("");
+  patch($("#lvRng"),LV_IV.map(([k,l,sh])=>`<button data-lvr="${k}" aria-pressed="${k===lvIv}" aria-label="${l} bars"><span class="lg">${l}</span><span class="sh">${sh}</span></button>`).join(""));
   document.querySelectorAll("#lvl .kma").forEach(x=>x.hidden=lvIv!=="1d");
   LV_TOP.forEach(([s])=>{ const c=xpeek("levels",lvQ(s)); if(c?.data||c?.error) lvCard(s); else { lvCard(s); const iv=lvIv; xget("levels",lvQ(s)).then(()=>{ if(page==="levels"&&lvIv===iv) lvCard(s); }); } });
   lvMain();
@@ -190,30 +190,30 @@ function renderLevels(){
 function lvCard(s){
   const el=document.querySelector(`.lvcard[data-lv="${CSS.escape(s)}"]`); if(!el) return;
   const c=xpeek("levels",lvQ(s)), t=lvSym(); el.setAttribute("aria-pressed",String(t===s));
-  if(!c?.data){ el.innerHTML=c?.error?`<div class="lvch"><b>${esc(lvLabel(s))}</b></div>${errBox(c.error)}`:sk(170); return; }
+  if(!c?.data){ patch(el,c?.error?`<div class="lvch"><b>${esc(lvLabel(s))}</b></div>${errBox(c.error)}`:sk(170)); return; }
   const d=c.data, last=lvLast(s,d), prev=lvPrev(s,d), chg=prev?last/prev-1:null;
   const w=Math.max(220,Math.round(el.clientWidth-26)), h=innerWidth<=600?96:80;
   el.title=`${LV_TOP.find(x=>x[0]===s)[2]}. Click to show it below`;
-  el.innerHTML=`<div class="lvch"><div><b>${esc(lvLabel(s))}</b>${lvTag(lvVerdict(s,d,last))}</div><div class="lvpx"><span class="num">${lvP(s,last)}</span><span class="num ${cls(chg)}">${pct(chg)}</span></div></div>
-    <div class="lvmini">${lvChart(s,d,{w,h,last})}</div>${lvMeter(s,d,last)}`;
+  patch(el,`<div class="lvch"><div><b>${esc(lvLabel(s))}</b>${lvTag(lvVerdict(s,d,last))}</div><div class="lvpx"><span class="num">${lvP(s,last)}</span><span class="num ${cls(chg)}">${pct(chg)}</span></div></div>
+    <div class="lvmini">${lvChart(s,d,{w,h,last})}</div>${lvMeter(s,d,last)}`);   // in place, so a focused card keeps focus
 }
 function lvMain(){
   const t=lvSym(), c=xpeek("levels",lvQ(t));
   document.querySelectorAll(".lvcard").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.lv===t)));
   const top=LV_TOP.find(x=>x[0]===t), nm=top?top[2]:LV_NAMES[t]?.[1]||nameOf(t);
-  $("#lvWho").innerHTML=`<h2>${esc(lvLabel(t))}</h2><span class="nm">${esc(nm&&nm!==t?nm:c?.data?.name||"")}</span>${lvIdx(t)?"":`<button class="lnk" data-sel="${esc(t)}">Open ${esc(t)} ›</button>`}`;
+  patch($("#lvWho"),`<h2>${esc(lvLabel(t))}</h2><span class="nm">${esc(nm&&nm!==t?nm:c?.data?.name||"")}</span>${lvIdx(t)?"":`<button class="lnk" data-sel="${esc(t)}">Open ${esc(t)} ›</button>`}`);
   const q=[...new Set([...(typeof recent!=="undefined"?recent:[]),...(me?.positions||[]).map(p=>p.t),...(me?.watch||[])])].filter(x=>x!==t).slice(0,5);
-  $("#lvQuick").innerHTML=q.map(x=>`<button class="chip" data-lv="${esc(x)}">${esc(x)}</button>`).join("");
+  patch($("#lvQuick"),q.map(x=>`<button class="chip" data-lv="${esc(x)}">${esc(x)}</button>`).join(""));
   if(!c?.data){
     if(c?.error){ $("#lvChart").innerHTML=errBox(c.error,"levels",lvQ(t)); $("#lvLad").innerHTML=""; $("#lvSum").innerHTML=""; return; }
     $("#lvChart").innerHTML=sk(lvHeight()); $("#lvLad").innerHTML=sk(300); $("#lvSum").innerHTML=`<span class="sk" style="display:block;height:44px;grid-column:1/-1"></span>`;
     const iv=lvIv; xget("levels",lvQ(t)).then(()=>{ if(page==="levels"&&lvSym()===t&&lvIv===iv) lvMain(); }); return;
   }
   const d=c.data, last=lvLast(t,d), prev=lvPrev(t,d), box=$("#lvChart");
-  $("#lvSum").innerHTML=`<div class="lvv">${lvTag(lvVerdict(t,d,last))}<p class="lvread">${lvRead(t,d,last)}</p></div>${lvMeter(t,d,last)}`;
+  patch($("#lvSum"),`<div class="lvv">${lvTag(lvVerdict(t,d,last))}<p class="lvread">${lvRead(t,d,last)}</p></div>${lvMeter(t,d,last)}`);
   const H=lvHeight(); box.innerHTML=lvChart(t,d,{w:Math.max(300,box.clientWidth),h:H,last,big:true});
   $(".lvside").style.maxHeight=innerWidth>1100?H+28+"px":"";     // the list scrolls beside the chart rather than running past it
-  const lad=$("#lvLad"); lad.innerHTML=lvLadder(t,d,last,prev);
+  const lad=$("#lvLad"); patch(lad,lvLadder(t,d,last,prev));
   const now=lad.querySelector(".now"), scr=lad.scrollHeight>lad.clientHeight+4; lad.classList.toggle("lvfade",scr); if(now&&scr) lad.scrollTop=now.offsetTop-lad.clientHeight/2+now.offsetHeight/2;   // keep "Now" in view
 }
 /* the big chart takes the rest of the window, so the page reads as one full screen on a Mac */
