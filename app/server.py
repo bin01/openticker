@@ -2370,7 +2370,7 @@ main{{max-width:360px;padding:24px;text-align:center}}b{{display:block;font-size
                                              "skill": sk["name"] if sk else None, "ts": time.time()})
             except PermissionError:
                 cid = ""
-        fit = None if sk else agent.match_skill(q, scope)   # a typed question a playbook says it covers
+        fit = None if sk else agent.match_skill(q, scope, prov)   # a typed question a playbook says it covers, if this agent can run it
         spec = {"q": q, "skill": sk["name"] if sk else fit["name"] if fit else None, "history": hist, "model": body.get("model"), "effort": body.get("effort"),
                 "scope": scope, "t": t or None}
         old = personal.chat_drop_answer(uid, cid) if cid and retry else []   # the new answer replaces the old one
@@ -2466,7 +2466,7 @@ main{{max-width:360px;padding:24px;text-align:center}}b{{display:block;font-size
             self.send(200, json.dumps({
                 "allowed": ok, "local": agent.is_local(self),
                 "providers": agent.providers(force="refresh" in (self.path.split("?") + [""])[1]) if ok else [],
-                "skills": [{k: s[k] for k in ("name", "label", "scope", "prompt", "description", "blurb")} for s in agent.skills()],
+                "skills": [{k: s[k] for k in ("name", "label", "scope", "prompt", "description", "blurb", "needs")} for s in agent.skills()],
                 "pair": self.pair_link(),
             }).encode(), "application/json")
         elif path == "/api/ask/run":
