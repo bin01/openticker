@@ -37,7 +37,7 @@ function priceItems(){
       out.push({t,kind:"reported",tone:cls(e.surprise),date:e.date,score:82,head:e.surprise==null?"Reported earnings":`${e.surprise>=0?"Beat":"Missed"} earnings estimates by ${pc(Math.abs(e.surprise)/100,0)}`,
         text:rx!=null?`and the stock moved ${pct(rx,1)} the next session`:"",tab:"overview",short:`${t} ${e.surprise==null?"reported":e.surprise>=0?"beat estimates":"missed estimates"}`}); }
     else if(e&&e.reported==null&&e.date>=today&&e.date<=shiftDays(today,7)) out.push({t,kind:"earnings",tone:"",date:e.date,future:true,score:60,
-      head:`Earnings ${dayLabel(e.date)==="Today"?"today":dayLabel(e.date)}`,text:`${e.timing==="BMO"?"before the open":e.timing==="AMC"?"after the close":""}${e.epsEst!=null?`${e.timing==="BMO"||e.timing==="AMC"?", ":""}EPS expected $${e.epsEst.toFixed(2)}`:""}`,tab:"options",short:`${t} reports ${dayLabel(e.date)==="Today"?"today":dayLabel(e.date)}`});
+      head:`Earnings ${dayLabel(e.date)==="Today"?"today":dayLabel(e.date)}`,text:`${e.timing==="BMO"?"before the open":e.timing==="AMC"?"after the close":""}${e.epsEst!=null?`${e.timing==="BMO"||e.timing==="AMC"?", ":""}EPS expected ${usd2(e.epsEst)}`:""}`,tab:"options",short:`${t} reports ${dayLabel(e.date)==="Today"?"today":dayLabel(e.date)}`});
   });
   return out;
 }
@@ -77,7 +77,7 @@ setInterval(()=>{ if(!document.hidden&&(page==="mine"||page==="market")&&me) loa
 /* ======================= Portfolio X-ray ======================= */
 function sectorOf(t){ const s=base.sectors?.[t]||detailCache[t]?.info?.sector||null; return s==="ETF"?"Funds":SECTOR_NAME[s]||s; }
 function fundSectorMix(f){ const m=new Map(); (base.funds[f]?.holdings||[]).forEach(h=>{ const s=sectorOf(h.t)||"Other"; m.set(s,(m.get(s)||0)+h.w/100); }); return m; }
-/* your exposure, looking through any of the four funds you hold, and the common twins that track the same index */
+/* your exposure, looking through any of the Funds page's funds you hold, and the common twins that track the same index */
 const SAME_INDEX={VOO:"SPY",IVV:"SPY",SPLG:"SPY",SPYM:"SPY",QQQM:"QQQ",IJR:"SPSM",VIOO:"SPSM",SLY:"SPSM"};
 function lookThrough(weights){
   const sec=new Map(), names=new Map();
@@ -112,7 +112,7 @@ function renderXray(){
   const mx=Math.max(...rows.map(r=>Math.max(r.me,r.m)),0.01);
   const ws=[...W.values()].sort((a,b)=>b-a), top1=ws[0]||0, top3=ws.slice(0,3).reduce((a,b)=>a+b,0), effN=1/ws.reduce((a,w)=>a+w*w,0);
   const overlap=k=>{ const fw=new Map(base.funds[k].holdings.map(h=>[h.t,h.w/100])); let s=0; names.forEach((w,t)=>s+=Math.min(w,fw.get(t)||0)); return s; };
-  const ov=["SPY","QQQ","SMH","SPSM"].filter(k=>base.funds[k]).map(k=>({k,v:overlap(k)})).sort((a,b)=>b.v-a.v);
+  const ov=FUND_LIST.filter(k=>base.funds[k]).map(k=>({k,v:overlap(k)})).sort((a,b)=>b.v-a.v);
   const R=riskStats(base.px[fund]||[],base.px.SPY||[]);
   let income=null, val=0, payers=0;
   if(isP){ income=0; positionsAgg().forEach(p=>{ const last=lastValid(base.px[p.t]||[]); if(last==null) return; val+=last*p.shares; const i=detailCache[p.t]?.info||{}; const dr=i.dividendRate??(i.trailingAnnualDividendRate||0); if(dr){ income+=dr*p.shares; payers++; } }); }
@@ -138,7 +138,7 @@ let showEv=load("ev","1")==="1";
 function chartEvents(t){
   const ev=[], today=nyToday();
   (earnHist[t]?.rows||[]).filter(x=>x.eps!=null&&x.date<=today).forEach(x=>ev.push({date:x.date,kind:"E",tone:x.surprise==null?"":x.surprise>=0?"up":"down",
-    text:`Earnings: ${x.surprise==null?"reported":`${x.surprise>=0?"beat":"missed"} by ${pc(Math.abs(x.surprise)/100,1)}`}${x.epsEst!=null?` (EPS $${x.eps.toFixed(2)} vs $${x.epsEst.toFixed(2)} expected)`:""}`}));
+    text:`Earnings: ${x.surprise==null?"reported":`${x.surprise>=0?"beat":"missed"} by ${pc(Math.abs(x.surprise)/100,1)}`}${x.epsEst!=null?` (EPS ${usd2(x.eps)} vs ${usd2(x.epsEst)} expected)`:""}`}));
   const e=EARN[t]; if(e&&e.reported==null&&e.date>=today) ev.push({date:e.date,kind:"E",tone:"",future:true,text:`Next earnings ${dayLabel(e.date)}`});
   (xpeek("analysts",{t})?.data?.changes||[]).forEach(c=>{ const a=(c.action||"").toLowerCase(); if(a==="up"||a==="down") ev.push({date:c.date,kind:a==="up"?"▲":"▼",tone:a==="up"?"up":"down",text:`${a==="up"?"Upgrade":"Downgrade"}: ${c.firm} to ${c.to}${c.pt?`, target ${money(c.pt)}`:""}`}); });
   (xpeek("events",{t})?.data?.dividends||[]).forEach(d=>ev.push({date:d.date,kind:"D",tone:"",text:`Dividend ${money(d.amount)} (ex-date)`}));

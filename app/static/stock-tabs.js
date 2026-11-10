@@ -34,7 +34,8 @@ function renderTab(){
   const r=stockRow(sel)||{}, d=c.data;
   el.innerHTML=({analysts:paneAnalysts,financials:paneFinancials,ownership:paneOwnership,options:paneOptions,events:paneEvents,holdings:paneEtf}[drTab])(d,r);
   if(drTab==="analysts"&&detailCache[sel]&&r.last!=null) renderAnalyst(r,detailCache[sel],"drAnalyst2");
-  if(drTab==="options") $("#optExp")?.addEventListener("change",async e=>{ const k={t:sel,exp:e.target.value}; el.querySelector("#optChain").innerHTML=sk(300); const x=await xget("options",k); if(drawerOpen) el.querySelector("#optChain").innerHTML=x.error?errBox(x.error):chainTable(x.data); });
+  if(drTab==="options") $("#optExp")?.addEventListener("change",async e=>{ const t=sel, box=el.querySelector("#optChain"), k={t,exp:e.target.value}; if(!box) return; box.innerHTML=sk(300); const x=await xget("options",k);
+    if(drawerOpen&&sel===t&&drTab==="options"&&box.isConnected) box.innerHTML=x.error?errBox(x.error):chainTable(x.data); });   // the person may have moved to another stock or tab meanwhile
   if(drTab==="financials") el.querySelectorAll("[data-freq]").forEach(b=>b.onclick=()=>{ finFreq=b.dataset.freq; save("finFreq",finFreq); renderTab(); });
 }
 document.addEventListener("click",e=>{ const b=e.target.closest("[data-tab]"); if(b&&b.closest("#drawer")){ e.preventDefault(); setTab(b.dataset.tab); } });
@@ -43,6 +44,7 @@ document.addEventListener("click",e=>{ const b=e.target.closest("[data-tab]"); i
 const usdB=x=>x==null||!isFinite(x)?"–":(x<0?"−":"")+"$"+(a=>a>=1e12?(a/1e12).toFixed(2)+"T":a>=1e9?(a/1e9).toFixed(a>=1e11?0:1)+"B":a>=1e6?(a/1e6).toFixed(0)+"M":a>=1e3?(a/1e3).toFixed(0)+"K":a.toFixed(0))(Math.abs(x));
 const shs=x=>x==null?"–":(a=>a>=1e9?(a/1e9).toFixed(2)+"B":a>=1e6?(a/1e6).toFixed(1)+"M":a>=1e3?(a/1e3).toFixed(0)+"K":String(Math.round(a)))(Math.abs(x));
 const qLabel=(d,freq)=>{ const x=new Date(d+"T12:00:00Z"); return freq==="annual"?"FY"+String(x.getUTCFullYear()).slice(2):x.toLocaleDateString("en-US",{month:"short",timeZone:"UTC"})+" \u2019"+String(x.getUTCFullYear()).slice(2); };   // "Jul ’25": a quarter ending in July 2025, not July 25th
+const usd2=x=>x==null||!isFinite(x)?"–":(x<0?"−":"")+"$"+Math.abs(x).toFixed(2);   // earnings per share: "−$0.25", like the rest of the app
 const PERIOD={"0q":"This quarter","+1q":"Next quarter","0y":"This year","+1y":"Next year","LTG":"Long-term (5 yr)"};
 
 /* ---------- small charts, drawn at the size they are shown (12px labels, light grid) ---------- */
@@ -116,7 +118,7 @@ function lineChart(labels,series,{h=140,fmt=v=>pc(v,0),missing=[],r=44}={}){
   series.forEach(se=>{ const pts=se.values.map((v,i)=>[i,v]).filter(p=>p[1]!=null); if(!pts.length) return;
     // solid between neighbouring quarters, dashed across quarters with no figure, so a gap never reads as a trend
     for(let j=1;j<pts.length;j++){ const a=pts[j-1],b=pts[j];
-      s+=`<line x1="${X(a[0]).toFixed(1)}" y1="${Y(a[1]).toFixed(1)}" x2="${X(b[0]).toFixed(1)}" y2="${Y(b[1]).toFixed(1)}" stroke="${se.color}" stroke-width="1.75" stroke-linecap="round" opacity="${se.soft?.6:1}"${b[0]-a[0]>1?` stroke-dasharray="2 4" opacity=".5"`:""}/>`; }
+      s+=`<line x1="${X(a[0]).toFixed(1)}" y1="${Y(a[1]).toFixed(1)}" x2="${X(b[0]).toFixed(1)}" y2="${Y(b[1]).toFixed(1)}" stroke="${se.color}" stroke-width="1.75" stroke-linecap="round" ${b[0]-a[0]>1?` stroke-dasharray="2 4" opacity=".5"`:` opacity="${se.soft?.6:1}"`}/>`; }
     pts.forEach(p=>{ s+=`<circle cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="${p===pts[pts.length-1]?2.75:2}" fill="${se.color}" opacity="${se.soft?.7:1}"><title>${finTip(se.name+" · "+labels[p[0]]+": "+fmt(p[1]))}</title></circle>`; });
     const e=pts[pts.length-1]; ends.push({x:X(e[0])+7,y:Y(e[1])+3.5,v:e[1],se}); });
   ends.sort((a,b)=>a.y-b.y).forEach((e,i,a)=>{ if(i&&e.y-a[i-1].y<13) e.y=a[i-1].y+13; });
@@ -173,7 +175,7 @@ function paneFinancials(d){
   // be plain about holes in Yahoo's data instead of drawing them as zeros
   const zero=labs.filter((_,i)=>s.incOk[i]&&s.rev[i]===0&&s.rev.some(v=>v>0)), gaps=labs.filter((_,i)=>!s.incOk[i]);
   if(zero.length||gaps.length) notes.push(`Yahoo ${zero.length?`shows no revenue for ${listAnd(zero)}${gaps.length?" and ":""}`:""}${gaps.length?`has no income statement for ${listAnd(gaps)}`:""}, so ${zero.length?"margins and growth skip those":"the charts leave "+(gaps.length>1?"those":"that")+" "+unit+(gaps.length>1?"s":"")+" empty"}.`);
-  const tbl=(blk)=>`<table class="hz fin"><thead><tr><th></th>${(blk.periods||[]).map(p=>`<th>${qLabel(p,finFreq)}</th>`).join("")}</tr></thead><tbody>${(blk.rows||[]).map(r=>`<tr><td>${esc(r.label)}</td>${r.values.map(v=>`<td class="num">${r.key==="Diluted EPS"?(v==null?"–":"$"+v.toFixed(2)):r.key==="Ordinary Shares Number"?shs(v):usdB(v)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  const tbl=(blk)=>`<table class="hz fin"><thead><tr><th></th>${(blk.periods||[]).map(p=>`<th>${qLabel(p,finFreq)}</th>`).join("")}</tr></thead><tbody>${(blk.rows||[]).map(r=>`<tr><td>${esc(r.label)}</td>${r.values.map(v=>`<td class="num">${r.key==="Diluted EPS"?usd2(v):r.key==="Ordinary Shares Number"?shs(v):usdB(v)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
   const R=44, anyCf=s.cfOk.some(Boolean), anyBs=s.bsOk.some(Boolean);
   return `<div class="seg sm" style="margin-bottom:12px"><button data-freq="quarterly" aria-pressed="${finFreq==="quarterly"}">Quarterly</button><button data-freq="annual" aria-pressed="${ann}">Annual</button></div>
     ${notes.length?insightList(notes.map(t=>({html:t}))):""}
@@ -186,17 +188,17 @@ function paneFinancials(d){
 
 /* ---------- Analysts ---------- */
 function paneAnalysts(d,r){
-  const tr=(d.trend||[]).slice().reverse(), names=["strongBuy","buy","hold","sell","strongSell"], cols=["var(--up)","color-mix(in oklab,var(--up) 55%,var(--panel))","var(--ink-3)","color-mix(in oklab,var(--down) 55%,var(--panel))","var(--down)"];
+  const tr=(d.trend||[]).slice().reverse(), names=["strongBuy","buy","hold","sell","strongSell"], labs=["Strong buy","Buy","Hold","Sell","Strong sell"], cols=["var(--up)","color-mix(in oklab,var(--up) 55%,var(--panel))","var(--ink-3)","color-mix(in oklab,var(--down) 55%,var(--panel))","var(--down)"];
   const lbl={"0m":"Now","-1m":"1 month ago","-2m":"2 months ago","-3m":"3 months ago"};
-  const trend=tr.length?`<div class="rtrend">${tr.map(p=>{ const tot=names.reduce((a,k)=>a+(p[k]||0),0)||1; return `<div class="rt"><span class="ks">${lbl[p.period]||p.period}</span><span class="rbar">${names.map((k,i)=>p[k]?`<i style="width:${(p[k]/tot*100).toFixed(1)}%;background:${cols[i]}" title="${k}: ${p[k]}"></i>`:"").join("")}</span><span class="num ks">${tot}</span></div>`; }).join("")}
-    <div class="meter-l" style="margin-left:100px"><span><i class="sw" style="background:${cols[0]}"></i>Strong buy</span><span><i class="sw" style="background:${cols[1]}"></i>Buy</span><span><i class="sw" style="background:${cols[2]}"></i>Hold</span><span><i class="sw" style="background:${cols[4]}"></i>Sell</span></div></div>`:"";
+  const trend=tr.length?`<div class="rtrend">${tr.map(p=>{ const tot=names.reduce((a,k)=>a+(p[k]||0),0)||1; return `<div class="rtrow"><span class="ks">${lbl[p.period]||p.period}</span><span class="rbar">${names.map((k,i)=>p[k]?`<i style="width:${(p[k]/tot*100).toFixed(1)}%;background:${cols[i]}" title="${labs[i]}: ${p[k]}"></i>`:"").join("")}</span><span class="num ks">${tot}</span></div>`; }).join("")}
+    <div class="meter-l" style="margin-left:100px">${labs.map((l,i)=>`<span><i class="sw" style="background:${cols[i]}"></i>${l}</span>`).join("")}</div></div>`:"";
   const et=d.eps_trend||{}, ev=d.eps_revisions||{}, ee=d.earnings_estimate||{}, re=d.revenue_estimate||{}, ge=d.growth_estimates||{};
   const per=["0q","+1q","0y","+1y"].filter(p=>et[p]||ee[p]);
   const chg=(a,b)=>a!=null&&b?a/b-1:null;
   const estT=per.length?`<table class="hz"><thead><tr><th>EPS estimate</th><th>Now</th><th>30 days ago</th><th>90 days ago</th><th>Change (90d)</th><th>Revisions (30d)</th></tr></thead><tbody>${per.map(p=>{ const e=et[p]||{}, v=ev[p]||{}, c=chg(e.current,e["90daysAgo"]);
-      return `<tr><td>${PERIOD[p]}</td><td class="num">${e.current!=null?"$"+e.current.toFixed(2):"–"}</td><td class="num ks">${e["30daysAgo"]!=null?"$"+e["30daysAgo"].toFixed(2):"–"}</td><td class="num ks">${e["90daysAgo"]!=null?"$"+e["90daysAgo"].toFixed(2):"–"}</td><td class="num ${cls(c)}">${pct(c,1)}</td><td class="num"><span class="up">▲${v.upLast30days??0}</span> <span class="down">▼${v.downLast30days??0}</span></td></tr>`; }).join("")}</tbody></table>`:"";
+      return `<tr><td>${PERIOD[p]}</td><td class="num">${usd2(e.current)}</td><td class="num ks">${usd2(e["30daysAgo"])}</td><td class="num ks">${usd2(e["90daysAgo"])}</td><td class="num ${cls(c)}">${pct(c,1)}</td><td class="num"><span class="up">▲${v.upLast30days??0}</span> <span class="down">▼${v.downLast30days??0}</span></td></tr>`; }).join("")}</tbody></table>`:"";
   const fT=per.length?`<table class="hz fct"><thead><tr><th>Forecast</th><th>EPS</th><th>Growth</th><th>Revenue</th><th>Growth</th><th>Analysts</th></tr></thead><tbody>${per.map(p=>{ const e=ee[p]||{}, v=re[p]||{};
-      return `<tr><td>${PERIOD[p]}</td><td class="num">${e.avg!=null?"$"+e.avg.toFixed(2):"–"}</td><td class="num ${cls(e.growth)}">${pct(e.growth,0)}</td><td class="num">${usdB(v.avg)}</td><td class="num ${cls(v.growth)}">${pct(v.growth,0)}</td><td class="num ks">${e.numberOfAnalysts??"–"}</td></tr>`; }).join("")}</tbody></table>`:"";
+      return `<tr><td>${PERIOD[p]}</td><td class="num">${usd2(e.avg)}</td><td class="num ${cls(e.growth)}">${pct(e.growth,0)}</td><td class="num">${usdB(v.avg)}</td><td class="num ${cls(v.growth)}">${pct(v.growth,0)}</td><td class="num ks">${e.numberOfAnalysts??"–"}</td></tr>`; }).join("")}</tbody></table>`:"";
   const gT=Object.keys(ge).length?`<p class="hint" style="margin:8px 0 0">${["0y","+1y","LTG"].filter(p=>ge[p]?.stockTrend!=null).map(p=>`${PERIOD[p]}: ${esc(sel)} ${pct(ge[p].stockTrend,0)}${ge[p].indexTrend!=null?` vs S&amp;P 500 ${pct(ge[p].indexTrend,0)}`:""}`).join(" · ")} expected earnings growth.</p>`:"";
   const ch=d.changes||[], ups=ch.filter(c=>/up/i.test(c.action)).length, downs=ch.filter(c=>/down/i.test(c.action)).length;
   const ptUp=ch.filter(c=>c.pt&&c.ptPrior&&c.pt>c.ptPrior).length, ptDn=ch.filter(c=>c.pt&&c.ptPrior&&c.pt<c.ptPrior).length;
@@ -268,7 +270,7 @@ function paneEvents(d,r){
   const divs=yrs.length?`<div class="kf" style="margin-top:0"><div><div class="lbl">Yield (last 4 payments)</div><div class="v">${y!=null?pc(y,2):"–"}</div><div class="ks">${money(ttm)} a share</div></div><div><div class="lbl">5-year dividend growth</div><div class="v ${cls(cagr)}">${cagr!=null?pct(cagr,1)+" a year":"–"}</div></div><div><div class="lbl">Last paid</div><div class="v">${last4.length?money(last4[last4.length-1].amount):"–"}</div><div class="ks">${last4.length?dayLabel(last4[last4.length-1].date):""}</div></div></div>
     ${barChart(yrs.map(x=>x.year===thisYear?x.year+"*":String(x.year)),[{name:"Dividends per share",values:yrs.map(x=>x.total),color:C1}],{fmt:v=>"$"+v.toFixed(2),h:150,note:"* this year so far"})}`:`<p class="hint">${isEtf(sel)?"No distributions on record.":"This company doesn't pay a dividend."}</p>`;
   const sp=d.splits||[];
-  const fl=(d.filings||[]).filter(f=>/^(10-K|10-Q|8-K|DEF 14A|S-1|S-3|S-4|424B|20-F|6-K|SC 13D)/.test(f.type||"")).slice(0,16), FT={"10-K":"Annual report","10-Q":"Quarterly report","8-K":"Major event","DEF 14A":"Proxy","S-1":"Registration","4":"Insider trade","SC 13G":"Large holder","SC 13G/A":"Large holder"};
+  const fl=(d.filings||[]).filter(f=>/^(10-K|10-Q|8-K|DEF 14A|S-1|S-3|S-4|424B|20-F|6-K|SC 13D)/.test(f.type||"")).slice(0,16), FT={"10-K":"Annual report","10-Q":"Quarterly report","8-K":"Major event","DEF 14A":"Proxy","S-1":"Registration"};
   const fT=fl.length?`<ul class="flist">${fl.map(f=>{ const u=safeUrl(f.url); return `<li><span class="ks">${f.date?new Date(f.date+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"}):""}</span><span class="chip">${esc(f.type||"")}</span><span>${u?`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(f.title||FT[f.type]||"Filing")}</a>`:esc(f.title||"")}</span></li>`; }).join("")}</ul>`:`<p class="hint">No filings listed.</p>`;
   return `<div class="dr-sec" style="margin-top:0"><h4>${isEtf(sel)?"Distributions":"Dividends"}</h4>${divs}</div>
     ${sp.length?`<div class="dr-sec"><h4>Stock splits</h4><p class="hint" style="margin:0">${sp.slice(-6).map(s=>`${s.ratio>=1?s.ratio+"-for-1":"1-for-"+Math.round(1/s.ratio)} on ${new Date(s.date+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",year:"numeric",timeZone:"UTC"})}`).join(" · ")}</p></div>`:""}
