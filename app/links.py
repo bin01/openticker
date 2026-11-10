@@ -136,17 +136,30 @@ def del_secret(lid):
 
 # ---------------------------------------------------------------- choosing tools that only read
 WRITEY = re.compile(r"order|trade|buy|sell|cancel|transfer|withdraw|deposit|create|update|delete|remove|place|modify|"
-                    r"submit|set_|write|allocate|merge|bulk|recategor|report", re.I)
+                    r"submit|set_|write|allocate|merge|bulk|recategor|report|close|liquidat|rebalanc|exercise|send|pay|"
+                    r"convert|swap|stake|approve|execut|redeem|reinvest|revoke|confirm|authoriz", re.I)
 HOLDY = re.compile(r"position|holding|portfolio|investment", re.I)
 ACCTY = re.compile(r"account", re.I)
+# A tool is read only when its name says so, not merely when it doesn't look like an action: a trading server (Robinhood's
+# sign-in can trade) may have "close_positions" or "rebalance_portfolio", and a list of bad words always misses one.
+READ_VERBS = {"get", "list", "fetch", "read", "search", "query", "show", "describe", "view", "lookup", "retrieve", "find", "load"}
+READ_NOUNS = {"account", "accounts", "position", "positions", "holding", "holdings", "portfolio", "portfolios", "investment",
+              "investments", "balance", "balances", "summary", "overview", "details", "info", "my", "all", "current",
+              "equity", "equities", "stock", "stocks"}
+
+
+def _words(name):
+    return [w.lower() for w in re.findall(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+", name or "")]
 
 
 def reads(tool):
-    """A tool OpenTicker may call: not named like an action, and not marked as one by the server."""
+    """A tool OpenTicker may call: the server doesn't mark it as an action, it isn't named like one, and its name says it
+    reads (get_positions, ListAccounts, holdings) or the server marks it read-only."""
     ann = tool.get("annotations") if isinstance(tool.get("annotations"), dict) else {}
-    if ann.get("readOnlyHint") is False or ann.get("destructiveHint") is True:
+    if ann.get("readOnlyHint") is False or ann.get("destructiveHint") is True or WRITEY.search(tool["name"]):
         return False
-    return not WRITEY.search(tool["name"])
+    w = _words(tool["name"])
+    return ann.get("readOnlyHint") is True or bool(w) and (w[0] in READ_VERBS or all(x in READ_NOUNS for x in w))
 
 
 def _required(tool):

@@ -159,7 +159,8 @@ def _work(lv, context=None, resume=False):
                 ctx = "(Live data wasn't available just now.)"
             spec["ctx"] = ctx
             spec["prompt"] = agent.build_prompt(spec["q"], ctx, agent.skill(spec["skill"]) if spec.get("skill") else None,
-                                                spec.get("history") or [], tools=prov != "ollama", bench=bench)
+                                                spec.get("history") or [], tools=prov in agent.LIVE_DATA, bench=bench,
+                                                offline=prov not in agent.LIVE_DATA)
             personal.run_set(row["id"], spec=json.dumps(spec))
             lv.append("status", {"text": f"Asking {label}"})
         session = None

@@ -383,6 +383,17 @@ class Replies(unittest.TestCase):
         hold, _ = links.pick_tools([{"name": "place_order"}, {"name": "sell_position"}, {"name": "update_portfolio"}])
         self.assertIsNone(hold)
 
+    def test_only_tools_named_as_reads(self):
+        # a trading server's actions that a list of bad words would miss, picked first because they're shorter
+        hold, _ = links.pick_tools([{"name": "close_positions"}, {"name": "exit_all_positions"}, {"name": "rebalance_portfolio"},
+                                    {"name": "liquidate_holdings"}, {"name": "get_equity_positions"}])
+        self.assertEqual(hold["name"], "get_equity_positions")
+        self.assertIsNone(links.pick_tools([{"name": "do_positions"}, {"name": "portfolio_sweep"}])[0])
+        for n in ("GetInvestments", "get_account_positions", "ListAccounts", "holdings", "PortfolioHoldings"):
+            self.assertTrue(links.reads({"name": n}), n)
+        self.assertTrue(links.reads({"name": "positions_v2", "annotations": {"readOnlyHint": True}}))
+        self.assertFalse(links.reads({"name": "get_positions", "annotations": {"destructiveHint": True}}))
+
     def test_read_scope(self):
         self.assertEqual(M.read_scope(["mcp:read", "mcp:write"]), "mcp:read")
         self.assertEqual(M.read_scope(["mcp.read", "mcp.write", "mcp.orders.submit"]), "mcp.read")

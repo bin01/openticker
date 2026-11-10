@@ -1298,12 +1298,12 @@ TOOLS_NOTE = """If you can run shell commands, the `openticker` command returns 
 Use it when the provided data isn't enough (for example, to compare with a peer). Use web search only for news newer than the data."""
 
 
-def build_prompt(q, ctx, skill_obj=None, history=None, tools=True, bench=False):
+def build_prompt(q, ctx, skill_obj=None, history=None, tools=True, bench=False, offline=False):
     parts = [SYSTEM]
     if tools:
         parts.append(TOOLS_NOTE)
     if bench:
-        parts.append(workbench.note())
+        parts.append(workbench.note(offline))
     if skill_obj:
         parts.append(f"Follow this playbook ({skill_obj['name']}):\n{skill_obj['body']}")
     parts.append("<data>\n" + ctx.strip() + "\n</data>")
@@ -1360,6 +1360,33 @@ def _env(provider=None):
 
 AGENT_CMDS = ("stock", "analysts", "earnings", "ownership", "options", "news", "financials", "events", "insiders", "technicals",
               "portfolio", "brief", "market", "fund", "compare", "history", "calendar", "search", "skills")
+
+# Agents whose shell can reach OpenTicker for the data commands. Codex's sandbox runs with its network off (see _run_codex),
+# and Ollama has no tools, so both answer from the data in the prompt.
+LIVE_DATA = ("claude", "opencode")
+
+OPENCODE_AGENT = "openticker-tick"
+SHELL_TRICKS = ("*;*", "*|*", "*&*", "*>*", "*<*", "*$(*", "*`*", "*\n*")
+
+
+def opencode_permissions():
+    """OpenCode's permissions for Tick: everything denied but the read-only data commands, web search and web pages.
+    Later rules win, so the denials for chained or redirected commands come after the allowed ones."""
+    bash = {"*": "deny"}
+    for c in AGENT_CMDS:
+        bash[f"openticker {c}"] = bash[f"openticker {c} *"] = "allow"
+    bash.update({t: "deny" for t in SHELL_TRICKS})
+    return {"*": "deny", "bash": bash, "webfetch": "allow", "websearch": "allow"}
+
+
+def opencode_config():
+    """OpenCode reads opencode.json from the folder it runs in: define Tick's agent there, every time, so an edit to the
+    file can't widen it."""
+    WORK_DIR.mkdir(parents=True, exist_ok=True)
+    cfg = {"$schema": "https://opencode.ai/config.json",
+           "agent": {OPENCODE_AGENT: {"mode": "primary", "description": "Tick, OpenTicker's analyst: read-only data and the web",
+                                      "permission": opencode_permissions()}}}
+    (WORK_DIR / "opencode.json").write_text(json.dumps(cfg, indent=2))
 
 
 def _tool_step(name, inp):
@@ -1479,6 +1506,18 @@ def _codex_add_dir():
         except Exception:
             _partial["codex"] = False
     return _partial["codex"]
+
+
+def _opencode_standalone():
+    """Newer OpenCode runs through a background service that keeps each folder's config from when it first saw it, so it
+    wouldn't know Tick's agent (and stops with "Agent not found"). --standalone runs a private one that reads it now."""
+    if "opencode-standalone" not in _partial:
+        try:
+            r = subprocess.run([_which("opencode"), "run", "--help"], capture_output=True, text=True, timeout=8, env=_env("opencode"))
+            _partial["opencode-standalone"] = "--standalone" in (r.stdout + r.stderr)
+        except Exception:
+            _partial["opencode-standalone"] = False
+    return _partial["opencode-standalone"]
 
 
 PLAIN_FAILURE = re.compile(r"isn.t signed in|not logged in|log ?in|usage limit|rate.?limit|couldn.t find|overloaded|credit|"
@@ -1619,10 +1658,13 @@ class Run:
                 self.emit("meta", {"model": None, "ms": ev.get("duration_ms")})
         self._finish()
 
-    # Codex: exec mode, JSON events; a sandbox that can only write to the empty work folder, with network so the openticker command works
+    # Codex: exec mode, JSON events; a sandbox that can only write to its folder, with the network off. With the network
+    # on, Codex's sandbox could also read the Keychain (a linked broker's sign-in), reach OpenTicker's server as this Mac
+    # and send anything it can read (the whole disk) anywhere, so a news story that talks it into it could do all three.
+    # It answers from the data in the prompt and its own web search, which runs on OpenAI's side.
     def _run_codex(self):
         args = [_which("codex"), "exec", "--json", "--skip-git-repo-check", "--color", "never",
-                "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true"]
+                "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=false"]
         if self.model:
             args += ["-m", self.model]
         if self.effort:
@@ -1657,9 +1699,12 @@ class Run:
                 self.emit("error", {"message": self._explain(msg)})
         self._finish()
 
-    # opencode: `opencode run`, JSON events when supported, else plain text
+    # opencode: `opencode run`, JSON events when supported, else plain text. OpenCode allows every tool by default and has
+    # no sandbox, so it runs as our own "tick" agent (opencode_config) that may only run the read-only data commands and
+    # read the web: news or a web page that tells it to do something else can't reach this Mac.
     def _run_opencode(self):
-        args = [_which("opencode"), "run", "--format", "json"]
+        opencode_config()
+        args = [_which("opencode"), "run", "--format", "json", "--agent", OPENCODE_AGENT] + (["--standalone"] if _opencode_standalone() else [])
         if self.model:
             args += ["--model", self.model]
         p = self._spawn(args)
