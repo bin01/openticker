@@ -1,7 +1,7 @@
 /* OpenTicker: the Levels page. Support and resistance for the S&P 500, VXX, the Nasdaq-100 and QQQ across the top, and
    one stock of your choice below, as large as the window allows. Levels come from /api/x/levels (key_levels in
    levels.py): swing highs and lows at the bar size you pick, from 5 minutes to quarterly, grouped into zones. The big chart
-   can also carry indicators (3 and 4 EMA, VWAP, volume, momentum), worked out here from the same bars. Uses globals from index.html and pages.js. */
+   can also carry indicators (4 and 13 EMA, VWAP, volume, momentum), worked out here from the same bars. Uses globals from index.html and pages.js. */
 
 const LV_TOP=[["^GSPC","S&P 500","The 500 largest US companies"],["VXX","VXX","Tracks VIX futures: rises when investors get nervous"],["^NDX","Nasdaq-100","The 100 largest Nasdaq companies"],
   ["QQQ","QQQ","The fund that tracks the Nasdaq-100: what most people buy and sell to trade it"]];
@@ -15,8 +15,8 @@ let lvT=load("lvT","")||null, lvHover=null, lvClipN=0;
 const lvIdx=t=>t.startsWith("^");
 const lvIntra=iv=>iv==="5m"||iv==="10m"||iv==="15m";
 /* indicators the big chart can carry: [key, label, what it is, color] */
-const LV_IND=[["ema3","3 EMA","Average of the last 3 bars, weighted toward the newest: the quickest read of the short-term push","var(--ema3)"],
-  ["ema4","4 EMA","Average of the last 4 bars, weighted toward the newest. When the 3 EMA crosses it, the short-term push has turned","var(--ema4)"],
+const LV_IND=[["ema4","4 EMA","Average of the last 4 bars, weighted toward the newest: the quickest read of the short-term push","var(--ema4)"],
+  ["ema13","13 EMA","Average of the last 13 bars, weighted toward the newest. When the 4 EMA crosses it, the short-term trend has turned","var(--ema13)"],
   ["vwap","VWAP","The average price paid, weighted by how many shares traded at each price. Intraday it starts fresh each session","var(--vwap)"],
   ["vol","Volume","Shares traded in each bar, and whether that is rising or dropping","var(--ink-3)"],
   ["mom","Momentum","RSI over 14 bars, from 0 to 100: above 70 the run is stretched, below 30 it is washed out","var(--accent)"]];
@@ -38,7 +38,7 @@ const lvMed=a=>{ const b=[...a].sort((x,y)=>x-y), m=b.length>>1; return b.length
 function lvVolTrend(d){ const v=d.v; if(!v||v.length<27) return null;
   const ok=a=>a.filter(x=>x>0), a=lvMed(ok(v.slice(-6,-1))), b=lvMed(ok(v.slice(-26,-6))); if(!(a>0&&b>0)) return null;   // 0 is a bar the server blanked
   const r=a/b-1, px=d.c[d.c.length-2]/d.c[d.c.length-7]-1; return {r,px,k:r>.15?"up":r<-.15?"down":"flat"}; }
-function lvIndData(d){ return {ema3:lvEma(d.c,3),ema4:lvEma(d.c,4),vwap:lvVwap(d),rsi:lvRsi(d.c),vt:lvVolTrend(d)}; }
+function lvIndData(d){ return {ema4:lvEma(d.c,4),ema13:lvEma(d.c,13),vwap:lvVwap(d),rsi:lvRsi(d.c),vt:lvVolTrend(d)}; }
 /* the other indexes the Market page's tiles open here: [short name, what it is] */
 const LV_NAMES={"^IXIC":["Nasdaq","The Nasdaq Composite: over 3,000 stocks listed on Nasdaq"],"^DJI":["Dow Jones","The Dow Jones Industrial Average: 30 large US companies"],"^RUT":["Russell 2000","2,000 smaller US companies"]};
 const lvLabel=t=>LV_TOP.find(x=>x[0]===t)?.[1]||LV_NAMES[t]?.[0]||t;
@@ -159,7 +159,7 @@ function lvChart(t,d,{w,h,last,big,ind}){
   const line=(a,col,wd,dash,brk)=>{ if(!a) return; let p="", pk=null; a.forEach((v,i)=>{ const k=brk?D[i].slice(0,10):""; if(v==null){ pk=null; return; } p+=(pk===k?"L":"M")+X(i).toFixed(1)+","+Y(v).toFixed(1); pk=k; });
     s+=`<path d="${p}" fill="none" stroke="${col}" stroke-width="${wd}" ${dash?`stroke-dasharray="${dash}"`:""} stroke-linejoin="round" clip-path="url(#${clip})"/>`; };
   if(I){ if(ind.has("vwap")) line(I.vwap,"var(--vwap)",1.6,"6 3",D[0].length>10);
-    if(ind.has("ema4")) line(I.ema4,"var(--ema4)",1.5); if(ind.has("ema3")) line(I.ema3,"var(--ema3)",1.5); }
+    if(ind.has("ema13")) line(I.ema13,"var(--ema13)",1.5); if(ind.has("ema4")) line(I.ema4,"var(--ema4)",1.5); }
   // the strips: volume bars colored by the bar's direction, then momentum with its 30 and 70 lines
   let y0=T+PH+gap; const bw0=Math.max(1,Math.min(9,step*.62));
   if(VH){ const sv=d.v.filter(x=>x>0).sort((a,b)=>a-b), mx=sv[Math.floor(sv.length*.95)]||sv[sv.length-1]||1, tr=I.vt;   // scaled to the 95th percentile so one huge bar doesn't flatten the rest
@@ -206,10 +206,10 @@ function lvIndRead(t,d,last){
   const I=lvIndData(d), P=x=>lvP(t,x), at=a=>a?.[a.length-1], out=[];
   const side=(v,lab)=>{ const r=last/v-1; return `Price ${Math.abs(r)<.0005?"is at":`is ${Math.abs(r*100).toFixed(Math.abs(r)<.1?1:0)}% ${r>0?"above":"below"}`} ${lab} (${P(v)})`; };
   const it=(k,cl,txt)=>`<span class="lvri ${cl}"><i style="background:${LV_IND.find(x=>x[0]===k)[3]}"></i>${txt}</span>`;
-  const e3=at(I.ema3), e4=at(I.ema4);
-  if(lvInd.has("ema3")&&lvInd.has("ema4")&&e3!=null&&e4!=null)
-    out.push(it("ema3",e3>=e4?"up":"down",`3 EMA ${e3>=e4?"above":"below"} 4 EMA: the short-term push is ${e3>=e4?"up":"down"}`));
-  else [["ema3",e3,"its 3 EMA"],["ema4",e4,"its 4 EMA"]].forEach(([k,v,lab])=>{ if(lvInd.has(k)&&v!=null) out.push(it(k,cls(last-v),side(v,lab))); });
+  const e4=at(I.ema4), e13=at(I.ema13);
+  if(lvInd.has("ema4")&&lvInd.has("ema13")&&e4!=null&&e13!=null)
+    out.push(it("ema4",e4>=e13?"up":"down",`4 EMA ${e4>=e13?"above":"below"} 13 EMA: the short-term trend is ${e4>=e13?"up":"down"}`));
+  else [["ema4",e4,"its 4 EMA"],["ema13",e13,"its 13 EMA"]].forEach(([k,v,lab])=>{ if(lvInd.has(k)&&v!=null) out.push(it(k,cls(last-v),side(v,lab))); });
   if(lvInd.has("vwap")){ const v=at(I.vwap), intra=d.d[0].length>10;
     out.push(v==null?it("vwap","flat","VWAP needs volume, and Yahoo sends none for this index")
       :it("vwap",cls(last-v),side(v,`VWAP, the average paid ${intra?"this session":"since "+lvFmt(d.d[0],{month:"short",day:"numeric",year:"numeric"})}`))); }
@@ -323,7 +323,7 @@ function lvWire(){
     const cx=g.left+g.step*(i+.5); line?.setAttribute("x1",cx); line?.setAttribute("x2",cx); line?.setAttribute("visibility","visible");
     const P=v=>lvP(g.t,v), ch1=i>0?g.C[i]/g.C[i-1]-1:null;
     let extra=""; if(g.ind){ const A=g.A, parts=[];
-      [["ema3",A.ema3,"3 EMA"],["ema4",A.ema4,"4 EMA"],["vwap",A.vwap,"VWAP"]].forEach(([k,a,lab])=>{ if(g.ind.has(k)&&a?.[i]!=null) parts.push(`${lab} ${P(a[i])}`); });
+      [["ema4",A.ema4,"4 EMA"],["ema13",A.ema13,"13 EMA"],["vwap",A.vwap,"VWAP"]].forEach(([k,a,lab])=>{ if(g.ind.has(k)&&a?.[i]!=null) parts.push(`${lab} ${P(a[i])}`); });
       if(g.ind.has("vol")&&g.V) parts.push(`Volume ${vol(g.V[i])}`);
       if(g.ind.has("mom")&&A.rsi[i]!=null) parts.push(`Momentum ${A.rsi[i].toFixed(0)}`);
       if(parts.length) extra=`<br><span style="opacity:.75">${parts.join(" · ")}</span>`; }
