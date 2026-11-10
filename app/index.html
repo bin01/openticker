@@ -1325,6 +1325,9 @@ body.tick-docked .live{margin-left:auto}
 .sig-track table th{white-space:normal}
 .sig-track tr.sig-all td{border-top:1px solid var(--rule);color:var(--ink-2)}
 .sig-track .hint{margin:8px 0 0;max-width:760px}
+.sig-track table{min-width:0}
+.sig-track td.l{white-space:nowrap}
+@media (max-width:760px){.sig-track .tk-n,.sig-track .tk-b3{display:none}.sig-track th{font-size:10px;letter-spacing:.04em}.sig-track td,.sig-track th{padding-left:6px;padding-right:6px}}
 /* Tick's evidence tally and suggested alerts */
 .md .tkv{margin:4px 0 14px;padding:12px 14px;border:1px solid var(--rule);border-left:3px solid var(--ink-3);border-radius:12px;background:var(--panel)}
 .md .tkv.up{border-left-color:var(--up)}.md .tkv.down{border-left-color:var(--down)}

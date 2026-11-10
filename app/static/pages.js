@@ -573,10 +573,10 @@ function trackHTML(){
   if(!T?.ratings) return `<section class="sig-track"><div class="lbl">How these ratings have done</div><p class="hint">${SIG?.running?"Worked out after this scan finishes.":"Being worked out: OpenTicker scores every stock again at earlier dates and checks what happened next. It takes a few minutes, once a day."}</p></section>`;
   const R=T.ratings, all=R.All?.["21"]||{}, mo=(m,y)=>new Date(y,m-1,15).toLocaleDateString("en-US",{month:"short",year:"numeric"});
   const span=T.from&&T.to?`${mo(+T.from.slice(5,7),+T.from.slice(0,4))} to ${mo(+T.to.slice(5,7),+T.to.slice(0,4))}`:"";
-  const lead=x=>x?.n?`<span class="${cls(x.vs)}">${x.vs>0?"+":x.vs<0?"−":""}${Math.abs(x.vs*100).toFixed(1)}</span>`:"–";
+  const lead=x=>{ if(!x?.n) return "–"; const v=Math.round(x.vs*1000)/10; return `<span class="${cls(v)}">${v>0?"+":v<0?"−":""}${Math.abs(v).toFixed(1)}</span>`; };
   const beat=x=>x?.n?`${Math.round(x.beat*100)}%`:"–";
   const row=(k,lab,c)=>{ const a=R[k]?.["21"], z=R[k]?.["63"]; if(!a?.n) return "";
-    return `<tr${k==="All"?' class="sig-all"':""}><td class="l">${c?`<span class="${sigCls(k)}">${lab}</span>`:lab}</td><td class="num">${a.n.toLocaleString()}</td><td class="num">${lead(a)}</td><td class="num">${beat(a)}</td><td class="num">${lead(z)}</td><td class="num">${beat(z)}</td></tr>`; };
+    return `<tr${k==="All"?' class="sig-all"':""}><td class="l">${c?`<span class="${sigCls(k)}">${lab}</span>`:lab}</td><td class="num tk-n">${a.n.toLocaleString()}</td><td class="num">${lead(a)}</td><td class="num">${beat(a)}</td><td class="num">${lead(z)}</td><td class="num tk-b3">${beat(z)}</td></tr>`; };
   const top=["Strong Buy","Buy"].map(k=>R[k]?.["21"]).filter(x=>x?.n), n=top.reduce((s,x)=>s+x.n,0);
   const topVs=n?top.reduce((s,x)=>s+x.vs*x.n,0)/n:null, av=R.Avoid?.["21"];
   let say;
@@ -588,7 +588,7 @@ function trackHTML(){
     else say=`Stocks rated Buy or better did no better than the average stock: ${vs}. Read the rating as a description of the trend, not an edge.`; }
   return `<section class="sig-track"><div class="lbl">How these ratings have done</div>
     <p class="sig-say">${say}</p>
-    <div class="tbl-wrap"><table class="hold qt"><thead><tr><th class="l">Rating then</th><th>Cases</th><th>Next month, points vs S&amp;P 500</th><th>Beat it</th><th>Next 3 months, vs S&amp;P 500</th><th>Beat it</th></tr></thead>
+    <div class="tbl-wrap"><table class="hold qt"><thead><tr><th class="l">Rating then</th><th class="tk-n">Cases</th><th>1 month later,<br>points vs S&amp;P 500</th><th>Beat it</th><th>3 months later,<br>points vs S&amp;P 500</th><th class="tk-b3">Beat it</th></tr></thead>
     <tbody>${SIG_RATINGS.map(([k])=>row(k,k,true)).join("")}${row("All","Every stock")}</tbody></table></div>
     <p class="hint">${T.stocks} stocks scored every two weeks${span?` from ${span}`:""}, each time using only the prices known that day, then followed for one and three months. "Points vs S&amp;P 500" is the average lead over the index. Most stocks trail the index in a typical month, because a few giants carry it, so compare each rating with the "Every stock" row rather than with 50%. These are today's index members, so stocks that dropped out aren't counted, which flatters every rating a little; two years is only one or two market phases.</p></section>`;
 }
