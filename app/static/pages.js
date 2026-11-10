@@ -141,7 +141,10 @@ function myToday(){
   return {V,D,dayPct:V-D?D/(V-D):null,own:movesOf([...owned]),watch:movesOf(watched),hasPos:pos.length>0,count:owned.size+watched.length,XD,xLab};
 }
 function myRows(xs){
-  return `<ul class="mlist">${xs.map(x=>`<li data-sel="${x.t}"><b class="mono">${x.t}</b><span class="num">${money(x.last)}</span><span class="num ${cls(x.chg)}">${pct(x.chg,1)}${x.x?`<span class="xh" title="${x.x.lab} ${money(x.x.p)} at ${extTime(x.x.ts)}">${ic(x.x.s==="pre"?"sun":"moon",10)} <span class="${cls(x.x.chg)}">${pct(x.x.chg,1)}</span></span>`:""}</span></li>`).join("")}</ul>`;
+  // one line per stock: ticker and name, price, today, then after hours in its own quiet column so the numbers line up
+  const ext=xs.some(x=>x.x);
+  return `<ul class="mlist${ext?" ext":""}">${xs.map(x=>{ const n=nameOf(x.t);
+    return `<li data-sel="${x.t}"><b class="mono">${x.t}</b><span class="mn">${n&&n!==x.t?esc(n):""}</span><span class="num">${money(x.last)}</span><span class="num ${cls(x.chg)}">${pct(x.chg,1)}</span>${ext?`<span class="num mx2 ${x.x?cls(x.x.chg):""}"${x.x?` title="${x.x.lab} ${money(x.x.p)} at ${extTime(x.x.ts)}"`:""}>${x.x?`${ic(x.x.s==="pre"?"sun":"moon",10)}${pct(x.x.chg,1)}`:""}</span>`:""}</li>`; }).join("")}</ul>`;
 }
 function overnightInsight(v){
   const ov=xpeek("macro")?.data?.overnight; if(!ov?.q||v.status?.status==="open") return null;
