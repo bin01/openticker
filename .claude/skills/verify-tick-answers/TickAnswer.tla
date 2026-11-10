@@ -22,11 +22,9 @@ vars == <<srv, up, resumes, answers, page>>
 \*   "ended"      "end" is in the saved log; the conversation has no answer yet
 \*   "saved"      the answer is in the conversation; the row still says "running"
 \*   "givingUp"   recover wrote "end" (GAVE_UP) to the log; the row still says "running"
-\*   "closing"    recover marked the row "error"; the conversation has no answer yet
 \*   "closed"     the row is done, stopped or error, and the conversation has its answer
-\*   "unanswered" OpenTicker stopped in "closing": the row is closed, so nothing will ever tell the conversation
 Open == {"gathering", "asking", "ended", "saved", "givingUp"}   \* personal.runs_open() returns it at start-up
-LogEnds == {"ended", "saved", "givingUp", "closing", "closed", "unanswered"}
+LogEnds == {"ended", "saved", "givingUp", "closed"}
 
 Init == srv = "none" /\ up = TRUE /\ resumes = 0 /\ answers = 0 /\ page = "idle"
 
@@ -75,15 +73,11 @@ ComesBackGivesUp == ~up /\ (srv = "gathering" \/ (srv = "asking" /\ resumes >= M
     /\ up' = TRUE /\ srv' = "givingUp"
     /\ UNCHANGED <<resumes, answers, page>>
 
-\* ... then personal.run_set(status="error")
-GiveUpClosed == srv = "givingUp" /\ up
-    /\ srv' = "closing"
-    /\ UNCHANGED <<up, resumes, answers, page>>
-
-\* ... then personal.chat_add(GAVE_UP)
-GiveUpTold == srv = "closing" /\ up
-    /\ srv' = "closed" /\ answers' = answers + 1
+\* ... then personal.chat_add(GAVE_UP): the log ends and the conversation has its reply, as in "saved"
+GiveUpTold == srv = "givingUp" /\ up
+    /\ srv' = "saved" /\ answers' = answers + 1
     /\ UNCHANGED <<up, resumes, page>>
+\* ... then personal.run_set(status="error"), which is RunClosed
 
 \* resume: run_set(resumes=+1) and _work(resume=True), which appends to the same log
 ComesBackResumes == ~up /\ srv = "asking" /\ resumes < MaxResumes
@@ -91,9 +85,9 @@ ComesBackResumes == ~up /\ srv = "asking" /\ resumes < MaxResumes
     /\ UNCHANGED <<srv, answers, page>>
 
 \* a closed run is not in runs_open(): start-up leaves it alone
-ComesBackIdle == ~up /\ srv \in {"closing", "closed", "unanswered"}
-    /\ up' = TRUE /\ srv' = (IF srv = "closing" THEN "unanswered" ELSE srv)
-    /\ UNCHANGED <<resumes, answers, page>>
+ComesBackIdle == ~up /\ srv = "closed"
+    /\ up' = TRUE
+    /\ UNCHANGED <<srv, resumes, answers, page>>
 
 \* ---- the page (askDrive)
 
@@ -112,10 +106,10 @@ PageGivesUp == page = "reconnecting" /\ ~up
     /\ page' = "lost"
     /\ UNCHANGED <<srv, up, resumes, answers>>
 
-Finished == up /\ srv \in {"closed", "unanswered"} /\ page \in {"shown", "lost"} /\ UNCHANGED vars
+Finished == up /\ srv = "closed" /\ page \in {"shown", "lost"} /\ UNCHANGED vars
 
 Next == YouAsk \/ PromptSaved \/ EndSaved \/ AnswerSaved \/ RunClosed \/ OpenTickerStops
-    \/ ComesBackCloses \/ ComesBackGivesUp \/ GiveUpClosed \/ GiveUpTold \/ ComesBackResumes \/ ComesBackIdle
+    \/ ComesBackCloses \/ ComesBackGivesUp \/ GiveUpTold \/ ComesBackResumes \/ ComesBackIdle
     \/ Reattach \/ ShowEnd \/ PageGivesUp \/ Finished
 
 Spec == Init /\ [][Next]_vars
@@ -126,7 +120,7 @@ Spec == Init /\ [][Next]_vars
 OneAnswer == answers <= 1
 
 \* Every question gets a reply in its conversation (an answer or why there isn't one), whenever OpenTicker stops.
-EveryQuestionAnswered == srv # "unanswered" /\ (srv = "closed" => answers = 1)
+EveryQuestionAnswered == srv = "closed" => answers = 1
 
 \* The page ends a question only once the log says it ended.
 PageEndsWithTheLog == page = "shown" => srv \in LogEnds

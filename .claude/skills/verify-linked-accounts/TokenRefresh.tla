@@ -1,6 +1,6 @@
 ---- MODULE TokenRefresh ----
-\* A linked account's sign-in across syncs that can run at once: the daily sync (links.loop -> sync) and Sync now
-\* (POST /api/me/links/sync -> sync), each one fetch() -> _session(). _session refreshes the token when it is about to
+\* A linked account's sign-in across syncs that can be asked for at once: the daily sync (links.loop -> sync), Sync now
+\* (POST /api/me/links/sync -> sync) and a read after a new sign-in, each one fetch() -> _session(). _session refreshes the token when it is about to
 \* run out (mcp_client.refresh) and saves the reply in the Keychain (put_secret). SKILL.md has the full map.
 EXTENDS Naturals, FiniteSets
 
@@ -24,8 +24,10 @@ vars == <<live, issued, keychain, pc, held, got, status>>
 Init == live = {1} /\ issued = 1 /\ keychain = 1 /\ pc = [s \in Syncs |-> "idle"] /\ held = [s \in Syncs |-> 0]
     /\ got = [s \in Syncs |-> 0] /\ status = "ok"
 
-\* fetch(): sec = get_secret(lid); the access token is about to run out (expires_at < now + 60)
+\* fetch() takes the link's lock (_fetch_locks[lid]), which it holds until this read is over, then _fetch():
+\* sec = get_secret(lid); the access token is about to run out (expires_at < now + 60)
 Start(s) == pc[s] = "idle" /\ status = "ok"
+    /\ (\A o \in Syncs \ {s} : pc[o] = "idle")
     /\ pc' = [pc EXCEPT ![s] = "read"] /\ held' = [held EXCEPT ![s] = keychain]
     /\ UNCHANGED <<live, issued, keychain, got, status>>
 

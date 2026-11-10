@@ -5,7 +5,7 @@ metadata:
   synced: 3218198
   covers: app/links.py app/mcp_client.py app/static/links.js
   models: LinkAccount.cfg OneSync.cfg NoRotation.cfg Overlap.cfg LostReply.cfg
-  known: LinkAccount.cfg:SignInCanFinish LinkAccount.cfg:SpinnerMeansWork LinkAccount.cfg:ReviewHasContent LinkAccount.cfg:CancelWorks LinkAccount.cfg:KeepsSyncing Overlap.cfg:StaysSignedIn LostReply.cfg:StaysSignedIn LostReply.cfg:KeychainWorks
+  known: LostReply.cfg:StaysSignedIn LostReply.cfg:KeychainWorks
   tests: tests.test_links
 ---
 
@@ -24,9 +24,9 @@ Two models, one per question.
 | Rule | In plain words | If it broke |
 | --- | --- | --- |
 | `SignInCanFinish` | "Waiting for you to sign in" means a sign-in can still finish. | The row waits forever; the browser says the link expired. |
-| `SpinnerMeansWork` | "Reading your holdings" means something is reading them. | A spinner that never stops. |
-| `ReviewHasContent` | The Review button opens something to review. | Review opens an empty sheet; Add says "Nothing to add yet". |
-| `CancelWorks` | Cancel and Remove do what they say on every row that shows them. | The button does nothing, and the row can't be got rid of. |
+| `SpinnerMeansWork` | "Reading your holdings" means something is reading them, or will as soon as OpenTicker finishes starting. | A spinner that never stops. |
+| `ReviewHasContent` | The Review button opens something to review, or reads it again. | Review opens an empty sheet; Add says "Nothing to add yet". |
+| `CancelWorks` | Cancel and Remove do what they say on every row that shows them: the row stops waiting. | The button does nothing, and the row can't be got rid of. |
 | `KeepsSyncing` | A synced account keeps its daily sync, or the row says why it can't. | Positions quietly stop updating. |
 | `StaysSignedIn` | Once syncs finish, OpenTicker isn't asking you to sign in again while the provider would still accept it. | "The sign-in expired" for no reason, and the daily sync stops until you sign in again. |
 | `KeychainWorks` | Between syncs, the Keychain holds a refresh token the provider accepts. | The next sync fails however the row looks. |
@@ -47,25 +47,27 @@ Yes if it changes any function in the maps, the statuses a link can have, which 
 
 | Action | Code |
 | --- | --- |
+| `StartRead` | `_refresh_async`: a link that synced before goes to `_sync_async` (sync straight away), a new one to `_fetch_async` (read for review); both set status "fetching" and add the link to `_reading` |
 | `YouConnect` | a preset's button → `connect()`: `PENDING[state]`, `add_link(status="signin")` |
-| `YouAllowInBrowser` | `callback()`: `PENDING.pop(state)`, `M.exchange`, `put_secret`, `_fetch_async` (status "fetching") |
-| `YouDenyInBrowser` | `callback()` with `error`, or the exchange fails: status "error" |
-| `YouCancel` | Cancel on a signin/fetching row → `cancel()`, which disconnects only a link that never synced |
+| `YouAllowInBrowser` | `callback()`: `PENDING.pop(state)`, `M.exchange`, `put_secret`, `_refresh_async` |
+| `YouDenyInBrowser` | `callback()` with `error`, or the exchange fails: "auth" for a synced link, "error" for a new one |
+| `YouCancel` | Cancel (signin/fetching), Remove (error, or auth on a never-synced link) → `cancel()`: a never-synced link is disconnected; a synced one drops `PENDING`/`PREVIEW` and goes to "auth" (from signin) or "ok" |
+| `YouReviewLost` | Review with the preview gone (`openLinkReview` gets none) → `retry()` → `_refresh_async`, and the sheet reopens when it's ready |
 | `YouAdd` | Review → Add → `apply()`: `PREVIEW.pop`, `mirror_link`, status "ok", `synced` |
-| `YouDontAdd` | Review → Don't add: `cancel()` the first time (`firstTime` in links.js), otherwise just closes |
-| `YouRetry` | Try again → `retry()` → `_fetch_async` |
-| `YouRemove` | Remove on an error row → `cancel()` |
-| `YouSignInAgain` | Sign in again → `reconnect()`: `PENDING[state]`, status "signin" |
-| `YouDisconnect` | Disconnect → Keep or Remove them → `disconnect()` |
-| `ReadWorks`, `ReadFails` | the `_fetch_async` thread: `PREVIEW[lid] = got`, status "review"; or status "auth"/"error" |
-| `SyncRuns` | `loop()` → `due()` → `sync()`, or Sync now: status stays "ok" (an error line on failure) or becomes "auth" on `AuthNeeded` |
-| `Restart` | the process starts again: `PENDING`, `PREVIEW` and the thread are gone, the row stays |
+| `YouDontAdd` | Review → Don't add on a first-time link → `cancel()` |
+| `YouRetry` | Try again → `retry()` → `_refresh_async` |
+| `YouSignInAgain` | Sign in again → `reconnect()`: old `PENDING` entries for the link dropped, a new one added, status "signin" |
+| `YouDisconnect` | Disconnect (ok, or auth on a synced link) → Keep or Remove them → `disconnect()`; a read still running sees the row gone and writes nothing |
+| `ReadWorks`, `ReadFails` | `_fetch_async` thread: `PREVIEW[lid] = got`, status "review"; or "auth"/"error" |
+| `SyncDone` | `_sync_async` thread: `sync()` → `apply()` sets "ok"; `AuthNeeded` sets "auth"; any other failure "ok" with an error line |
+| `SyncRuns` | `loop()` → `due()` → `sync()`, or Sync now |
+| `Restart` | `bind()` → `_after_restart()`: "signin" becomes "auth", "fetching" and "review" become "fetching"; `loop()` → `_read_again()` starts a read for each "fetching" row once prices have loaded. The model folds the two into one step, so the spinner shows while OpenTicker is still starting (longer if Yahoo is down at start-up). |
 
 ## The map: TokenRefresh
 
 | Action | Code |
 | --- | --- |
-| `Start` | `sync()` → `fetch()` → `get_secret(lid)`; the access token runs out within 60 s |
+| `Start` | `sync()` → `fetch()` takes the link's lock (`_fetch_locks`), held until the read ends, then `_fetch()` → `get_secret(lid)`; the access token runs out within 60 s |
 | `Refresh` | `_session`: `M.refresh(...)` → `_token`; `invalid_grant` raises `AuthNeeded`, and `sync()` sets status "auth"; a provider that keeps refresh tokens returns none, and `refresh()` keeps the old one |
 | `ReplyLost` | the provider acted but the reply never arrived (time-out, Wi-Fi, OpenTicker quit): `MCPError`, status stays "ok" |
 | `Save` | `_session`: `put_secret(link["id"], sec)`, then the holdings are read and `apply()` sets status "ok" |
@@ -74,22 +76,15 @@ Not modeled: the access token itself (only refresh tokens), the provider expirin
 
 ## Findings on the current code
 
-1. **The link's memory doesn't survive a restart** (`SignInCanFinish`, `SpinnerMeansWork`, `ReviewHasContent`). Quit OpenTicker while a row says "Waiting for you to sign in", "Reading your holdings" or "Ready. Review", and after the restart it says the same thing with nothing behind it. A new link stuck in "review" can't be removed, and the provider can't be linked again ("already linked").
-2. **Cancel and Remove do nothing on a link that synced before** (`CancelWorks`). Path: link, add, the sign-in expires, Sign in again, then Cancel. `cancel()` only disconnects links that never synced.
-3. **A synced link can stop syncing for good** (`KeepsSyncing`). Same path, then deny in the browser: status "error" with positions from before, Remove does nothing, and the daily sync needs status "ok". Signing in again on a synced link also goes through Review, and closing it leaves the link in "review", which never syncs.
+1. **A lost refresh reply signs you out, with a provider that rotates refresh tokens** (`LostReply.cfg`, known). If the provider rotates the token and its reply never arrives, the Keychain keeps a retired token and the next sync asks you to sign in again. No client can fully avoid this; it stays listed so a change that makes it worse (say, retrying a refresh in a loop) is noticed.
 
-These three were found in the third state machine audit and are fixed on the branch of the open pull request #16 ("Fix the state machine bugs in linked accounts, signals, the ticker tape and adding a purchase"). When it merges, update `LinkAccount.tla` to the new code (statuses survive a restart, `cancel()` works on synced links, a reconnect syncs straight away), check that these rules hold, and empty them from `known`.
-
-4. **Two syncs at once can sign you out, with a provider that rotates refresh tokens** (`Overlap.cfg:StaysSignedIn`). Path: the daily sync and Sync now both read the Keychain; the first refreshes (the provider retires the old refresh token), saves the new one and finishes; the second refreshes with the old one, gets `invalid_grant`, and sets the row to "The sign-in expired" while the Keychain holds a token that works. The daily sync then stops (`due()` needs status "ok") until you sign in again. Replayed on the real code with the fake provider rotating tokens and the two refreshes held in that order. Whether Monarch, Interactive Brokers or Robinhood rotate refresh tokens isn't known; `NoRotation` shows the same overlap is harmless when they don't. A fix: one lock per link around `_session`'s refresh-and-save, and re-reading the Keychain inside it before refreshing.
-5. **A lost refresh reply signs you out, with a rotating provider** (`LostReply.cfg`). If the provider rotates the token and the reply never arrives, the Keychain keeps a retired token. No client can fully avoid this; it's listed so a change that makes it worse (say, retrying a refresh in a loop) is noticed.
-
-None are fixed here: product code changes need the person's go-ahead.
+Fixed in #16: the three audit-3 bugs (the link's memory didn't survive a restart; Cancel and Remove did nothing on a synced link; a synced link could stop syncing for good), and two syncs at once signing you out with a rotating provider (`Overlap.cfg`), which the per-link lock in `fetch()` prevents. `test_two_syncs_at_once_stay_signed_in` runs the overlap on the real code and fails without the lock.
 
 ## Reading a result
 
 Read every TLC result with the pstack `/statechart` skill: it shows a broken rule as its shortest path in plain words, and draws the link's states when everything holds. The runner prints TLC's path as numbered steps with only the variables that changed.
 
-Before calling a broken rule a bug, replay its path on the real code one action per step. `tests.test_links.Links` shows how: `sign_in()` drives the fake provider, `links.PENDING.clear()` and `links.PREVIEW.clear()` stand in for a restart, `self.fake.rotate = True` makes the provider rotate, and setting `sec["token"]["expires_at"] = 0` forces a refresh. To force an overlap, wrap `M.refresh` so both syncs read the Keychain before either refreshes. If the code doesn't do what the path says, the model is wrong.
+Before calling a broken rule a bug, replay its path on the real code one action per step. `tests.test_links.Links` shows how: `sign_in()` drives the fake provider, `links.PENDING.clear()`, `links.PREVIEW.clear()` and `links._after_restart()` stand in for a restart, `self.fake.rotate = True` makes the provider rotate, and setting `sec["token"]["expires_at"] = 0` forces a refresh. To force an overlap, wrap `M.refresh` so both syncs read the Keychain before either refreshes. If the code doesn't do what the path says, the model is wrong.
 
 ## When you change the code on purpose
 
@@ -102,4 +97,4 @@ Before calling a broken rule a bug, replay its path on the real code one action 
 
 ## How the check was shown to catch breaks
 
-At 3218198, with `put_secret` removed after the refresh at the top of `_session` (a new refresh token never saved), the check failed twice over: `test_rotated_refresh_token_is_kept` failed on the real code, and with the same change mirrored in `Save` (the Keychain left as it was), `OneSync.cfg` broke both `StaysSignedIn` and `KeychainWorks`: one sync refreshes and doesn't save, the next one is refused. The five `LinkAccount` rules each break on the current code (the findings), and each path was replayed on the real code in the third audit.
+At 3218198, with `put_secret` removed after the refresh at the top of `_session` (a new refresh token never saved), the check failed twice over: `test_rotated_refresh_token_is_kept` failed on the real code, and with the same change mirrored in `Save` (the Keychain left as it was), `OneSync.cfg` broke both `StaysSignedIn` and `KeychainWorks`: one sync refreshes and doesn't save, the next one is refused. The five `LinkAccount` rules broke on the code before #16, each path replayed on the real code in the third audit; `Overlap.cfg` broke before the per-link lock, and `test_two_syncs_at_once_stay_signed_in` fails with the lock removed.

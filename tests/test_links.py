@@ -325,6 +325,39 @@ class Links(unittest.TestCase):
             self.assertIn(links.get_secret(lid)["token"]["refresh_token"], self.fake.refresh)
         self.assertEqual(personal.link("me", lid)["status"], "ok")
 
+    def test_two_syncs_at_once_stay_signed_in(self):
+        """The daily sync and Sync now at the same moment, with a provider that rotates refresh tokens and answers
+        slowly: the second waits for the first and uses the token it saved (the TokenRefresh model's Overlap config)."""
+        lid = self.sign_in()
+        links.apply("me", lid)
+        self.fake.rotate = True
+        sec = links.get_secret(lid)
+        sec["token"]["expires_at"] = 0
+        links.put_secret(lid, sec)
+        real, errs = M.refresh, []
+
+        def slow(*a):
+            threading.Event().wait(0.3)
+            return real(*a)
+
+        def go():
+            try:
+                links.sync("me", lid)
+            except ValueError as e:
+                errs.append(str(e))
+        M.refresh = slow
+        try:
+            ts = [threading.Thread(target=go) for _ in range(2)]
+            for t in ts:
+                t.start()
+            for t in ts:
+                t.join()
+        finally:
+            M.refresh = real
+        self.assertEqual(errs, [])
+        self.assertEqual(personal.link("me", lid)["status"], "ok")
+        self.assertIn(links.get_secret(lid)["token"]["refresh_token"], self.fake.refresh)
+
     def test_callback_needs_our_state(self):
         links.connect("me", "other", self.url)
         ok, _ = links.callback({"state": ["made-up"], "code": ["code-0"]})

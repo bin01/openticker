@@ -5,7 +5,7 @@ metadata:
   synced: 3218198
   covers: app/server.py app/static/pages.js
   models: Signals.cfg
-  known: Signals.cfg:ProgressMoves Signals.cfg:GetsNewClose
+  known:
   tests: tests.test_state_machines.SignalsScan tests.test_signals
 ---
 
@@ -19,7 +19,7 @@ The server scores every stock in the big funds once per close, in a background s
 | --- | --- | --- |
 | `OneScanAtATime` | Only one scan runs at a time. | Two or more scans download a year of prices for 600 stocks at once, Yahoo starts refusing, and both can fail. |
 | `ProgressMoves` | A progress bar on screen keeps moving: the page is still checking. | The bar freezes; the scores never appear until a reload. |
-| `GetsNewClose` | After a new close, the open screener gets the new scores. | The screener shows yesterday's ratings until a reload. |
+| `GetsNewClose` | After a new close, the open screener gets the new scores, within five minutes. | The screener shows yesterday's ratings until a reload. |
 
 ## Run it
 
@@ -39,21 +39,21 @@ Yes if it changes any function in the map, when scores count as stale, when the 
 | --- | --- |
 | `Answer` | the page's request: `loadSignals()` → `signals_payload`; stale with no scan running → under `_sig_lock`, `SIG["running"] = True` and a `signals_scan` thread, unless `failAt` is under 300 s old (answers with the last error); the page sets `SIG`, and `sigWait` for 3 s if `SIG.running` |
 | `Ask`, `TakeLock` | another device's request: `stale` worked out outside the lock, then the check-and-start inside `_sig_lock` |
-| `YouOpenScreener` | Screener → Momentum signals: `renderSignals` calls `loadSignals` only when `SIG` is null |
+| `YouOpenScreener` | Screener → Momentum signals: `renderSignals` loads when `SIG` is null, and otherwise calls `sigCheck()` (load again if a scan is running with no `sigWait` timer, or if the last load is over five minutes old) |
+| `Recheck` | the 60-second interval while the page is visible: `sigCheck()` (time is abstract, so "five minutes old" can be any time) |
 | `YouLeave` | any other page or screen |
-| `PollFires` | the `sigWait` timer: reloads only if `page === "screener" && scrSel === "signals"`, otherwise stops |
+| `PollFires` | the `sigWait` timer (sets `sigWait = null`): reloads only if `sigHere()`, otherwise stops |
 | `YouRetry` | Try again on an error: `SIG = null`, then `loadSignals` |
 | `ScanEnds` | `signals_scan` ends: `SIG.update(rows=..., running=False)`, or the `except` branch (error, `failAt`), then `finally: running = False` |
-| `NewClose` | a new close comes out, or six hours pass: `signals_payload` finds the scores stale |
+| `NewClose` | `signals_payload` finds the scores stale: a new close, six hours, or, after the close, scores still dated before today 15 minutes on |
 
 Not modeled: the 5-second wait while the first launch is still fetching holdings (same shape as `PollFires`), the `partial` re-scan, which stocks are scored, and the score (`tests.test_signals`).
 
 ## Findings on the current code
 
-1. **Leaving mid-scan freezes the progress bar** (`ProgressMoves`, known). Path: open Momentum signals, a scan starts; leave; the 3-second timer fires off the page and stops; come back: `SIG` is not null, so `renderSignals` draws the old "running" copy and never asks again.
-2. **An open screener never picks up a new close** (`GetsNewClose`, known). Path: the scan finishes and the page shows scores; a new close comes out; nothing on the page asks again, and coming back reuses `SIG`.
+None open. Every rule holds.
 
-Both were found in the third state machine audit and are fixed on the branch of the open pull request #16. When it merges, update `YouOpenScreener` and `PollFires` to the new code, check that both rules hold, and take them out of `known`.
+Fixed in #16: leaving the screener mid-scan froze the progress bar (`ProgressMoves`), and an open screener never picked up a new close (`GetsNewClose`). `sigCheck()` on each render and every minute keeps both true.
 
 ## Reading a result
 

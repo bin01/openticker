@@ -42,13 +42,21 @@ Answer == \/ /\ (running \/ srvFresh)
              /\ view' = "error" /\ polling' = FALSE /\ pageFresh' = FALSE
              /\ UNCHANGED <<scans, running>>
 
-\* you click Momentum signals: renderSignals calls loadSignals only when SIG is null
+\* sigCheck(): with SIG loaded, no load under way and the screener's signals on screen, load again if a scan is running
+\* and no sigWait timer is set, or if the last load is over five minutes old (time is abstract here, so any time)
+CheckDue == view # "none" /\ (view = "progress" => ~polling)
+
+\* you click Momentum signals: renderSignals loads SIG when it's null, and otherwise calls sigCheck()
 YouOpenScreener == ~onPage /\ onPage' = TRUE
-    /\ (IF view = "none" THEN Answer ELSE UNCHANGED <<view, polling, pageFresh, scans, running>>)
+    /\ (IF view = "none" \/ (view = "progress" /\ ~polling) THEN Answer
+        ELSE UNCHANGED <<view, polling, pageFresh, scans, running>>)
     /\ UNCHANGED <<srvFresh, asking>>
+
+\* the 60-second interval while the page is visible: sigCheck()
+Recheck == onPage /\ CheckDue /\ Answer /\ UNCHANGED <<onPage, srvFresh, asking>>
 YouLeave == onPage /\ onPage' = FALSE /\ UNCHANGED <<view, polling, scans, running, srvFresh, pageFresh, asking>>
 
-\* the sigWait timer fires: it reloads only if you are still on the screener's signals
+\* the sigWait timer fires (sigWait = null): it reloads only if you are still on the screener's signals
 PollFires == polling
     /\ IF onPage THEN Answer /\ UNCHANGED <<onPage, srvFresh, asking>>
        ELSE polling' = FALSE /\ UNCHANGED <<onPage, view, scans, running, srvFresh, pageFresh, asking>>
@@ -65,7 +73,7 @@ ScanEnds == scans > 0 /\ scans' = scans - 1 /\ running' = FALSE
 NewClose == srvFresh /\ ~running /\ srvFresh' = FALSE /\ pageFresh' = FALSE
     /\ UNCHANGED <<onPage, view, polling, scans, running, asking>>
 
-Next == Ask \/ TakeLock \/ YouOpenScreener \/ YouLeave \/ PollFires \/ YouRetry \/ ScanEnds \/ NewClose
+Next == Ask \/ TakeLock \/ YouOpenScreener \/ YouLeave \/ PollFires \/ Recheck \/ YouRetry \/ ScanEnds \/ NewClose
 Spec == Init /\ [][Next]_vars
 
 \* keeps the model finite even if a change lets scans pile up (OneScanAtATime still sees the second one)
@@ -79,6 +87,6 @@ OneScanAtATime == scans <= 1
 \* A progress bar on screen keeps moving: the page is still checking.
 ProgressMoves == onPage /\ view = "progress" => polling
 
-\* After a new close, the open screener gets the new scores.
-GetsNewClose == onPage /\ view = "scores" /\ ~pageFresh => polling
+\* After a new close, the open screener gets the new scores (within five minutes, from the 60-second check).
+GetsNewClose == onPage /\ view = "scores" /\ ~pageFresh => (polling \/ ENABLED Recheck)
 ====

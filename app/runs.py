@@ -341,12 +341,14 @@ def recover():
             _close_finished(row, events)
             continue
         if row["resumes"] >= 2 or not spec.get("prompt"):
-            # give up, and say so in the log too: a page reading it stops reconnecting and shows why
+            # give up, and say so in the log too: a page reading it stops reconnecting and shows why. The conversation
+            # hears it before the run is closed, as in _finish: a stop in between leaves an open run whose log ends,
+            # which the next start closes through _close_finished without telling the conversation twice
             personal.run_events_add(row["id"], [((events[-1][0] if events else 0) + 1, "end", {"error": GAVE_UP})])
-            personal.run_set(row["id"], status="error", ended=time.time())
             if row.get("chat_id"):
                 personal.chat_add(row["user_id"], row["chat_id"], {"role": "assistant", "text": "", "steps": [], "by": _label(row["provider"]),
                                                                    "error": GAVE_UP, "ts": time.time()})
+            personal.run_set(row["id"], status="error", ended=time.time())
             continue
         row = {**row, "spec": spec, "resumes": row["resumes"] + 1, "started": row["started"]}
         personal.run_set(row["id"], resumes=row["resumes"])
