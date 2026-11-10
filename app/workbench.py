@@ -411,7 +411,7 @@ def claude_settings(ws):
             else {"allowedDomains": DOMAINS, "allowLocalBinding": False},
         },
         "permissions": {"blockWritesOutsideWorkingDirectories": True,
-                        "deny": [f"{tool}(/{_abs(p)}/**)" for p in shared for tool in ("Edit", "Write")]},
+                        "deny": [f"Edit(/{_abs(p)}/**)" for p in shared]},   # Edit rules cover every file-editing tool
         "disableAllHooks": True,      # the person's own hooks and plugins (say one that redirects WebFetch) aren't Tick's
     }
 

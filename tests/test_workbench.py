@@ -140,7 +140,7 @@ class Settings(unittest.TestCase):
             self.assertIn(a(shared), fs["denyWrite"])
             self.assertFalse(any(w == a(shared) or w.startswith(a(shared) + "/") for w in fs["allowWrite"]), shared)
             self.assertIn(f"Edit(/{a(shared)}/**)", s["permissions"]["deny"])
-            self.assertIn(f"Write(/{a(shared)}/**)", s["permissions"]["deny"])
+        self.assertFalse(any(r.startswith("Write(") for r in s["permissions"]["deny"]))   # Claude Code ignores those, and says so
         self.assertIn(a(workbench.TOOLBOX), fs["allowRead"])                # but it may read and run it
         self.assertFalse(a(ws).startswith(a(workbench.TOOLBOX) + "/"))
         tools, allowed = workbench.claude_tools(ws, ("stock",))
