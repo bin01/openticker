@@ -63,7 +63,7 @@ function linksSection(){
     else if(l.status==="review") ctl=`<button type="button" class="btn" data-lk-act="review" data-lk="${l.id}">Review</button>`;
     else if(l.status==="signin"||l.status==="fetching") ctl=local?`<button type="button" class="btn ghost" data-lk-act="cancel" data-lk="${l.id}">Cancel</button>`:"";
     else if(l.status==="auth") ctl=local?`<button type="button" class="btn" data-lk-act="reconnect" data-lk="${l.id}">Sign in again</button><button type="button" class="btn ghost" data-lk-act="${l.synced?"ask":"remove"}" data-lk="${l.id}">${l.synced?"Disconnect":"Remove"}</button>`:"";
-    else if(l.status==="error") ctl=`<button type="button" class="btn" data-lk-act="retry" data-lk="${l.id}">Try again</button>${local?`<button type="button" class="btn ghost" data-lk-act="remove" data-lk="${l.id}">Remove</button>`:""}`;
+    else if(l.status==="error") ctl=`<button type="button" class="btn" data-lk-act="retry" data-lk="${l.id}">Try again</button>${local?`<button type="button" class="btn ghost" data-lk-act="${l.synced?"ask":"remove"}" data-lk="${l.id}">Remove</button>`:""}`;
     else ctl=`<button type="button" class="btn ghost" data-lk-act="sync" data-lk="${l.id}">Sync now</button>${local?`<button type="button" class="btn ghost" data-lk-act="ask" data-lk="${l.id}">Disconnect</button>`:""}`;
     const wait=l.status==="signin"||l.status==="fetching";
     return `<div class="srow lkrow"><span class="lkic${l.status==="ok"&&!l.error?" on":""}">${ic("landmark",16)}</span><div class="sl"><b>${esc(l.name)}</b><small class="${tone}">${wait?`<i class="lkspin" aria-hidden="true"></i>`:""}${esc(msg)}</small>${LK.err[l.id]?`<small class="bad">${esc(LK.err[l.id])}</small>`:""}</div><div class="sc">${ctl}</div></div>`
@@ -75,8 +75,8 @@ function linksSection(){
   const add=!local?setRow("Add an account","Connect accounts on the Mac that runs OpenTicker. The sign-in opens in its browser.",""):
     `<div class="srow col"><div class="sl"><b>${L.length?"Add another":"Keep your portfolio in sync"}</b><small>OpenTicker reads your positions and updates them every trading day. Monarch also brings in Fidelity, Schwab, Vanguard and anything else you track there. OpenTicker only reads, and your sign-in stays in this Mac's Keychain.</small></div>
      <div class="lkadd">${(I?.presets||[]).filter(p=>!have.has(p.id)).map(p=>`<button type="button" class="sag" data-lk-add="${p.id}">${ic("landmark",18)}<span><b>${esc(p.name)}</b><small title="${esc(p.blurb)}">${esc(p.blurb)}</small></span>${ic("plus",15)}</button>`).join("")}
-       <button type="button" class="sag" data-lk-add="other" aria-expanded="${!!LK.other}">${ic("link",18)}<span><b>Another MCP server</b><small>Any server with a positions tool</small></span>${ic("plus",15)}</button></div></div>
-     ${LK.other?`<form class="srow frm" id="lkOther"><input id="lkUrl" placeholder="https://example.com/mcp" inputmode="url" autocomplete="off" spellcheck="false" aria-label="Server address" required><button class="btn">Connect</button></form>`:""}
+       <button type="button" class="sag" data-lk-add="other" aria-expanded="${!!LK.other}">${ic("link",18)}<span><b>Another service</b><small>Any service with your positions</small></span>${ic("plus",15)}</button></div></div>
+     ${LK.other?`<div class="srow lkconf"><div class="sl"><small>Paste the link address the service gives for apps like this. It may call it an MCP server address.</small></div></div><form class="srow frm" id="lkOther"><input id="lkUrl" placeholder="https://example.com/mcp" inputmode="url" autocomplete="off" spellcheck="false" aria-label="The service's link address" required><button class="btn">Connect</button></form>`:""}
      ${LK.err.add?`<div class="srow lkconf"><div class="sl"><small class="bad">${esc(LK.err.add)}</small></div></div>`:""}`;
   return rows+add;
 }
@@ -112,7 +112,7 @@ async function linkAct(act,id){
   LK.busy[id]={sync:"Syncing…",keep:"Disconnecting…",drop:"Disconnecting…",cancel:"Cancelling…",remove:"Removing…"}[act]||"…"; LK.confirm=null; renderSettings();
   try{
     if(act==="sync"){ const r=await linkApi("sync",{id}); toast(`Synced ${l?.name||"your account"}: ${r.count} position${r.count===1?"":"s"}`); }
-    else if(act==="keep"||act==="drop") await linkApi("disconnect",{id,keep:act==="keep"});
+    else if(act==="keep"||act==="drop"||act==="remove") await linkApi("disconnect",{id,keep:act==="keep"});
     else await linkApi("cancel",{id});
   }catch(x){ LK.err[id]=x.message; }
   delete LK.busy[id]; await linksLoad(); renderSettings();

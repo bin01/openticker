@@ -6,6 +6,7 @@ metadata:
   order: 2
   label: "Deep dive"
   scope: stock
+  needs: "workbench web"
   match: "priced in|deep dive|investment case|growth (driver|engine)|where .{0,30}growth|what (growth|is the market|does the market|are investors).{0,40}(assum|expect|pric|bet)|implied growth|reverse dcf"
   prompt: "Give me a deep dive on {t}: the business, where its growth comes from, and what today's price assumes."
 ---

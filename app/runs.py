@@ -156,7 +156,7 @@ def _work(lv, context=None, resume=False):
                 agent.srv.log(f"ask context failed: {e!r}")
                 ctx = "(Live data wasn't available just now.)"
             spec["ctx"] = ctx
-            spec["prompt"] = agent.build_prompt(spec["q"], ctx, agent.skill(spec["skill"]) if spec.get("skill") else None,
+            spec["prompt"] = agent.build_prompt(spec["q"], ctx, _skill(spec, prov, bench),
                                                 spec.get("history") or [], tools=prov in agent.LIVE_DATA, bench=bench,
                                                 offline=prov not in agent.LIVE_DATA)
             personal.run_set(row["id"], spec=json.dumps(spec))
@@ -205,7 +205,7 @@ def _work(lv, context=None, resume=False):
             lv.ws, session = None, (str(uuid.uuid4()) if prov == "claude" else None)
             if session:
                 lv.append("session", {"id": session})
-            spec["prompt"] = agent.build_prompt(spec["q"], spec.get("ctx") or "", agent.skill(spec["skill"]) if spec.get("skill") else None,
+            spec["prompt"] = agent.build_prompt(spec["q"], spec.get("ctx") or "", _skill(spec, prov, False),
                                                 spec.get("history") or [], tools=True)
             lv.append("reset", {})
             lv.append("status", {"text": "Answering without the workbench"})
@@ -218,6 +218,12 @@ def _work(lv, context=None, resume=False):
     except Exception as e:
         lv.append("error", {"message": f"Something went wrong: {e}"})
     _finish(lv, label)
+
+
+def _skill(spec, prov, bench):
+    """The playbook to follow, unless this answer's agent can't run it (metadata.needs): then the question goes plainly."""
+    s = agent.skill(spec["skill"]) if spec.get("skill") else None
+    return s if agent.usable(s, prov, bench) else None
 
 
 def _finish(lv, label):

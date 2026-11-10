@@ -19,14 +19,14 @@ async function loadBrief(force){
 }
 function dailySd(a,n=60){ const r=[]; for(let k=a.length-1;k>0&&r.length<n;k--) if(a[k]!=null&&a[k-1]!=null) r.push(a[k]/a[k-1]-1); if(r.length<20) return null; const m=r.reduce((x,y)=>x+y,0)/r.length; return Math.sqrt(r.reduce((x,y)=>x+(y-m)**2,0)/(r.length-1)); }
 function priceItems(){
-  const out=[], today=nyToday();
+  const out=[], today=nyToday(), sess=base?.dates?.at(-1)||today;   // a move, high or low belongs to the last session, which may not be today
   mySyms().forEach(t=>{
     const a=base?.px?.[t], F=facts(t); if(!a||!F||F.last==null) return;
     const sd=dailySd(a), c=F.chg;
-    if(c!=null&&Math.abs(c)>=Math.max(0.03,sd?2*sd:0)) out.push({t,kind:"move",tone:cls(c),date:today,score:85+Math.min(10,Math.abs(c)*100),
-      head:`${c>0?"Up":"Down"} ${pc(Math.abs(c),1)} today`,text:sd?`about ${(Math.abs(c)/sd).toFixed(1)}× its usual daily move`:"",tab:"overview",short:`${t} ${pct(c,1)}`});
-    if(F.hi&&F.last>=F.hi*0.999&&F.lo<F.hi*0.9) out.push({t,kind:"high",tone:"up",date:today,score:65,head:"New 52-week high",text:`at ${money(F.last)}, ${pct(F.lo?F.last/F.lo-1:null,0)} above its low`,tab:"overview",short:`${t} at a 52-week high`});
-    else if(F.lo&&F.last<=F.lo*1.001&&F.hi>F.lo*1.1) out.push({t,kind:"low",tone:"down",date:today,score:65,head:"New 52-week low",text:`at ${money(F.last)}, ${pc(1-F.last/F.hi,0)} below its high`,tab:"overview",short:`${t} at a 52-week low`});
+    if(c!=null&&Math.abs(c)>=Math.max(0.03,sd?2*sd:0)) out.push({t,kind:"move",tone:cls(c),date:sess,score:85+Math.min(10,Math.abs(c)*100),
+      head:`${c>0?"Up":"Down"} ${pc(Math.abs(c),1)} ${sessWhen()}`,text:sd?`about ${(Math.abs(c)/sd).toFixed(1)}× its usual daily move`:"",tab:"overview",short:`${t} ${pct(c,1)}`});
+    if(F.hi&&F.last>=F.hi*0.999&&F.lo<F.hi*0.9) out.push({t,kind:"high",tone:"up",date:sess,score:65,head:"New 52-week high",text:`at ${money(F.last)}, ${pct(F.lo?F.last/F.lo-1:null,0)} above its low`,tab:"overview",short:`${t} at a 52-week high`});
+    else if(F.lo&&F.last<=F.lo*1.001&&F.hi>F.lo*1.1) out.push({t,kind:"low",tone:"down",date:sess,score:65,head:"New 52-week low",text:`at ${money(F.last)}, ${pc(1-F.last/F.hi,0)} below its high`,tab:"overview",short:`${t} at a 52-week low`});
     // 200-day cross in the last three sessions
     if(F.ma200){ for(let back=0;back<3;back++){ const k=a.length-1-back; if(a[k]==null||a[k-1]==null) continue;
       const ma=(j)=>{ let s=0,n=0; for(let i=j;i>j-200&&i>=0;i--) if(a[i]!=null){s+=a[i];n++;} return n>150?s/n:null; };

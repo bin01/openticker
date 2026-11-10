@@ -27,3 +27,5 @@ Open with the headline sentence, then a short paragraph or bullets for the rest.
 ## Before you send
 
 - If you can search the web, add the main news catalyst. Otherwise say the data shows what moved, not why.
+- The contributions you name add up to no more than the index move, and "broad" or "narrow" matches the average stock against the index from step 1.
+- For a longer window, the drivers and macro moves are over that same window, not today's.

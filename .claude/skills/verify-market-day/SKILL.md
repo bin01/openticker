@@ -60,7 +60,7 @@ On a closure the calendar doesn't know, the Market chip still says "open" and th
 
 ## Reading a result
 
-Read every TLC result with the pstack `/statechart` skill: it shows a broken rule as its shortest path in plain words, and draws the day's states when everything holds. The runner prints TLC's path as numbered steps with only the variables that changed.
+When a rule breaks, the runner prints TLC's path to it as numbered steps with only the variables that changed: it is the shortest way the code can break that rule. Retell it in plain words, one step per line, before acting on it.
 
 Before calling a broken rule a bug, replay its path on the real code one action per step. The `Holiday` tests show how: `clock()` fixes the time, `bars()` fakes the minute bars, `one_pass()` runs a loop body once.
 

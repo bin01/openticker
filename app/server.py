@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import gzip
+import hashlib
 import io
 import html
 import json
@@ -421,7 +423,8 @@ class State:
         # Yahoo's daily download sometimes leaves the latest session empty (it did on the evening of 2026-11-03),
         # which would quietly roll every "today" number back a day. Fill the session from minute bars instead.
         now_ny = dt.datetime.now(NY)
-        session = now_ny.strftime("%Y-%m-%d") if now_ny.weekday() < 5 and now_ny.time() >= dt.time(9, 30) else None
+        hours = X.session_hours(now_ny.date())     # None on weekends and market holidays
+        session = now_ny.strftime("%Y-%m-%d") if hours and now_ny.time() >= hours[0] else None
         if session and dates and dates[-1] < session:
             try:
                 m = download_closes(syms, period="1d", interval="1m")
@@ -774,7 +777,7 @@ def ext_loop():
             now = dt.datetime.now(NY)
             sess = ext_session(now)
             day = now.strftime("%Y-%m-%d")
-            late = now.weekday() < 5 and dt.time(20, 2) <= now.time() < dt.time(21, 0) and closing_done != day
+            late = X.session_hours(now.date()) is not None and dt.time(20, 2) <= now.time() < dt.time(21, 0) and closing_done != day
             due = (not last and not market_open()) or late or \
                 (sess and time.time() - last > 600 and time.time() - S.last_ext_tick > 180)
             if due:
@@ -851,14 +854,40 @@ def _absent(e):
     return bool(re.search(r"\b404\b|Not Found|No fundamentals data", str(e)))
 
 
+_inflight: dict = {}            # key -> [done Event, value, error] while one caller fetches it
+
+
 def cached(key, ttl, fn):
     """Small TTL cache. Yahoo fails now and then for a moment, so a failed fetch is tried once more; if it still
-    fails we serve the last good copy, from memory or from the last run (cache/detail.json), when there is one."""
+    fails we serve the last good copy, from memory or from the last run (cache/detail.json), when there is one.
+    Callers who ask for a key that is already being fetched wait for that answer instead of asking Yahoo again."""
     now = time.time()
     with _detail_lock:
         hit = _detail_cache.get(key)
-    if hit and now - hit[0] < ttl:
-        return hit[1]
+        if hit and now - hit[0] < ttl:
+            return hit[1]
+        job = _inflight.get(key)
+        first = job is None
+        if first:
+            job = _inflight[key] = [threading.Event(), None, None]
+    if not first:
+        job[0].wait()
+        if job[2] is not None:
+            raise job[2]
+        return job[1]
+    try:
+        job[1] = _fetch(key, fn, hit, now)
+        return job[1]
+    except BaseException as e:
+        job[2] = e
+        raise
+    finally:
+        with _detail_lock:
+            _inflight.pop(key, None)
+        job[0].set()
+
+
+def _fetch(key, fn, hit, now):
     _yf_fresh()
     try:
         try:
@@ -1436,7 +1465,8 @@ def alerts_loop():
                 dates = list(S.dates)
             names = symbol_names()
             for uid in personal.users():
-                for t, title, _ in personal.evaluate(uid, px, dates, names, EARN, LINK_BASE, explain=explain_move):
+                for t, title, _ in personal.evaluate(uid, px, dates, names, EARN, LINK_BASE, explain=explain_move,
+                                                         holidays=X.market_holidays):
                     log(f"alert for {uid}: {title}")
         except Exception as e:
             log(f"alerts failed: {e!r}")
@@ -1620,7 +1650,7 @@ def close_note(uid, fetch=True):
         ms = biggest(spy_hold)
         if ms:
             lines.append(movers_line("Biggest moves in the S&P 500", ms))
-    nxt = personal._next_day(day)
+    nxt = personal._next_day(day, X.market_holidays)
     rep = []
     for t in mine:
         e = earnings_info(t, fetch=False)
@@ -1980,6 +2010,17 @@ def brief(uid):
 STATIC = HERE / "static"
 STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml",
                 ".png": "image/png", ".webmanifest": "application/manifest+json", ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8"}
+STATIC_TEXT = (".js", ".css", ".svg", ".webmanifest", ".txt")   # gzipped; fonts and images are compressed already
+_GZ: dict = {}   # path -> (hash of the bytes, gzipped bytes): compressed once per content, not on every request
+
+
+def takes_gzip(accept):
+    """Whether an Accept-Encoding header allows gzip ("gzip;q=0" says no)."""
+    for part in (accept or "").lower().split(","):
+        name, _, q = part.partition(";")
+        if name.strip() in ("gzip", "*"):
+            return not re.fullmatch(r"\s*q\s*=\s*0(\.0*)?\s*", q)
+    return False
 
 
 # ---------------------------------------------------------------- http
@@ -1987,10 +2028,34 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
-    def send(self, code, body: bytes, ctype):
+    def send(self, code, body: bytes, ctype, cache="no-store", etag=False, gz=False):
+        """etag: tag the bytes and answer 304 when the browser already has them. gz: gzip them when the browser takes it."""
+        tag = hashlib.blake2b(body, digest_size=12).hexdigest() if etag or gz else None
+        zip_it = gz and code == 200 and len(body) > 512 and takes_gzip(self.headers.get("Accept-Encoding"))
+        if etag and code == 200:
+            have = {t.strip().removeprefix("W/").strip('"').removesuffix("-gz") for t in (self.headers.get("If-None-Match") or "").split(",")}
+            if tag in have or "*" in have:
+                self.send_response(304)
+                self.send_header("ETag", f'"{tag}{"-gz" if zip_it else ""}"')
+                self.send_header("Cache-Control", cache)
+                if gz:
+                    self.send_header("Vary", "Accept-Encoding")
+                return self.end_headers()
+        if zip_it:
+            path = self.path.split("?")[0]
+            hit = _GZ.get(path)
+            if not hit or hit[0] != tag:
+                hit = _GZ[path] = (tag, gzip.compress(body, 6, mtime=0))
+            body = hit[1]
         self.send_response(code)
         self.send_header("Content-Type", ctype)
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache)
+        if gz:
+            self.send_header("Vary", "Accept-Encoding")
+        if zip_it:
+            self.send_header("Content-Encoding", "gzip")
+        if etag and code == 200:
+            self.send_header("ETag", f'"{tag}{"-gz" if zip_it else ""}"')
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -2003,6 +2068,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send(403, json.dumps({"error": "Pair this phone first: on your Mac, open Settings, Your phone, QR code.", "pair": True}).encode(),
                   "application/json")
         return False
+
+    def pair_link(self):
+        """The link that pairs a phone (#pair=<key>), shown on this Mac only."""
+        if agent.is_local(self) and agent.host_ok(self):
+            return f"{LINK_BASE or 'http://' + (self.headers.get('Host') or '')}/#pair={agent.pair_token()}"
+        return None
 
     def do_POST(self):
         # JSON only: a cross-site form can't send application/json without a CORS preflight we never allow
@@ -2047,6 +2118,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, json.dumps({"ok": ok}).encode(), "application/json")
             except ValueError as e:
                 return self.send(400, json.dumps({"error": str(e)}).encode(), "application/json")
+        if self.path.split("?")[0] == "/api/app/pair/reset":
+            # a new pairing key: phones paired with the old one are locked out at once (agent.may_ask reads it each time)
+            if not (agent.is_local(self) and agent.host_ok(self)):
+                return self.send(403, b'{"error":"Only on the Mac itself."}', "application/json")
+            personal.set_setting(personal.DEFAULT_USER, "ask_token", secrets.token_urlsafe(18))
+            return self.send(200, json.dumps({"pair": self.pair_link()}).encode(), "application/json")
         if self.path.split("?")[0] == "/api/ask/terminal":
             if not (agent.is_local(self) and agent.host_ok(self)):
                 return self.send(403, b'{"error":"Only on the Mac itself."}', "application/json")
@@ -2061,6 +2138,8 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return self.send(400, b"bad json", "text/plain")
         uid, path = user_for(self), self.path.split("?")[0]
+        held = lambda: set(personal.watchlist(uid)) | {p["t"] for p in personal.positions(uid)}
+        had = held()
 
         def sym(raw=None):
             t = yahoo_symbol(str((body.get("t") if raw is None else raw) or ""))
@@ -2164,8 +2243,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, json.dumps(out).encode(), "application/json")
             elif path == "/api/me/positions/clear-sample":
                 personal.clear_sample(uid)
-            elif path == "/api/me/position/delete":
-                personal.delete_position(uid, body.get("id"))
             elif path == "/api/me/alert":
                 t = sym() if body.get("t") else None
                 personal.add_alert(uid, str(body.get("kind")), t, body.get("scope"), num("value", required=False))
@@ -2192,8 +2269,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(404, b"not found", "text/plain")
         except (ValueError, TypeError) as e:
             return self.send(400, json.dumps({"error": str(e)}).encode(), "application/json")
-        with S.lock:
-            S.version += 1   # pages refetch base, so new tickers show up with prices
+        if path.startswith("/api/me/position") or held() != had:
+            # the page refetches base when the version moves, so new tickers show up with prices. Position edits bump it
+            # too: the page redraws the portfolio after a share or cost change only then (poll in index.html)
+            with S.lock:
+                S.version += 1
         self.send(200, json.dumps(me_payload(uid)).encode(), "application/json")
 
     # ------------------------------------------------------------ linked accounts (links.py)
@@ -2290,7 +2370,7 @@ main{{max-width:360px;padding:24px;text-align:center}}b{{display:block;font-size
                                              "skill": sk["name"] if sk else None, "ts": time.time()})
             except PermissionError:
                 cid = ""
-        fit = None if sk else agent.match_skill(q, scope)   # a typed question a playbook says it covers
+        fit = None if sk else agent.match_skill(q, scope, prov)   # a typed question a playbook says it covers, if this agent can run it
         spec = {"q": q, "skill": sk["name"] if sk else fit["name"] if fit else None, "history": hist, "model": body.get("model"), "effort": body.get("effort"),
                 "scope": scope, "t": t or None}
         old = personal.chat_drop_answer(uid, cid) if cid and retry else []   # the new answer replaces the old one
@@ -2337,11 +2417,12 @@ main{{max-width:360px;padding:24px;text-align:center}}b{{display:block;font-size
                 body["preview"] = links.preview(uid, lid)
             return self.send(200, json.dumps(jsonable(body)).encode(), "application/json")
         if path in ("/", "/index.html"):
-            self.send(200, (HERE / "index.html").read_bytes(), "text/html; charset=utf-8")
+            # no-cache: revalidated on every load, so a page change shows after a reload; unchanged, it's a 304
+            self.send(200, (HERE / "index.html").read_bytes(), "text/html; charset=utf-8", cache="no-cache", etag=True, gz=True)
         elif path == "/api/base":
             if not S.dates:   # first launch, still downloading
                 return self.send(503, json.dumps({"loading": True, "step": S.boot}).encode(), "application/json")
-            self.send(200, json.dumps(S.snapshot_base(), separators=(",", ":")).encode(), "application/json")
+            self.send(200, json.dumps(S.snapshot_base(), separators=(",", ":")).encode(), "application/json", gz=True)
         elif path == "/api/live":
             self.send(200, json.dumps(S.snapshot_live(), separators=(",", ":")).encode(), "application/json")
         elif path == "/api/intraday":
@@ -2360,7 +2441,7 @@ main{{max-width:360px;padding:24px;text-align:center}}b{{display:block;font-size
             f = STATIC / name
             if not re.fullmatch(r"(fonts/)?[a-z0-9-]+\.(js|css|svg|png|webmanifest|woff2|txt)", name) or not f.is_file():
                 return self.send(404, b"not found", "text/plain")
-            self.send(200, f.read_bytes(), STATIC_TYPES[f.suffix])
+            self.send(200, f.read_bytes(), STATIC_TYPES[f.suffix], cache="no-cache", etag=True, gz=f.suffix in STATIC_TEXT)
         elif path.startswith("/api/agent/"):
             try:
                 text = agent.text_for(path[11:], parse_qs(urlsplit(self.path).query), user_for(self))
@@ -2385,8 +2466,8 @@ main{{max-width:360px;padding:24px;text-align:center}}b{{display:block;font-size
             self.send(200, json.dumps({
                 "allowed": ok, "local": agent.is_local(self),
                 "providers": agent.providers(force="refresh" in (self.path.split("?") + [""])[1]) if ok else [],
-                "skills": [{k: s[k] for k in ("name", "label", "scope", "prompt", "description", "blurb")} for s in agent.skills()],
-                "pair": (f"{LINK_BASE or 'http://' + (self.headers.get('Host') or '')}/#pair={agent.pair_token()}" if agent.is_local(self) and agent.host_ok(self) else None),
+                "skills": [{k: s[k] for k in ("name", "label", "scope", "prompt", "description", "blurb", "needs")} for s in agent.skills()],
+                "pair": self.pair_link(),
             }).encode(), "application/json")
         elif path == "/api/ask/run":
             if not agent.may_ask(self):

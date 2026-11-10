@@ -51,13 +51,13 @@ Yes if it changes any function in the maps, the statuses a link can have, which 
 | `YouConnect` | a preset's button → `connect()`: `PENDING[state]`, `add_link(status="signin")` |
 | `YouAllowInBrowser` | `callback()`: `PENDING.pop(state)`, `M.exchange`, `put_secret`, `_refresh_async` |
 | `YouDenyInBrowser` | `callback()` with `error`, or the exchange fails: "auth" for a synced link, "error" for a new one |
-| `YouCancel` | Cancel (signin/fetching), Remove (error, or auth on a never-synced link) → `cancel()`: a never-synced link is disconnected; a synced one drops `PENDING`/`PREVIEW` and goes to "auth" (from signin) or "ok" |
+| `YouCancel` | Cancel (signin/fetching) → `cancel()`: a never-synced link is disconnected; a synced one drops `PENDING`/`PREVIEW` and goes to "auth" (from signin) or "ok" |
 | `YouReviewLost` | Review with the preview gone (`openLinkReview` gets none) → `retry()` → `_refresh_async`, and the sheet reopens when it's ready |
 | `YouAdd` | Review → Add → `apply()`: `PREVIEW.pop`, `mirror_link`, status "ok", `synced` |
 | `YouDontAdd` | Review → Don't add on a first-time link → `cancel()` |
 | `YouRetry` | Try again → `retry()` → `_refresh_async` |
 | `YouSignInAgain` | Sign in again → `reconnect()`: old `PENDING` entries for the link dropped, a new one added, status "signin" |
-| `YouDisconnect` | Disconnect (ok, or auth on a synced link) → Keep or Remove them → `disconnect()`; a read still running sees the row gone and writes nothing |
+| `YouDisconnect` | `disconnect()`: Disconnect (ok, or auth on a synced link) or Remove (error on a synced link) → Keep or Remove them; Remove on an error or auth row of a never-synced link, straight away (`linkAct("remove")`, positions not kept). A read still running sees the row gone and writes nothing |
 | `ReadWorks`, `ReadFails` | `_fetch_async` thread: `PREVIEW[lid] = got`, status "review"; or "auth"/"error" |
 | `SyncDone` | `_sync_async` thread: `sync()` → `apply()` sets "ok"; `AuthNeeded` sets "auth"; any other failure "ok" with an error line |
 | `SyncRuns` | `loop()` → `due()` → `sync()`, or Sync now |
@@ -82,7 +82,7 @@ Fixed in #16: the three audit-3 bugs (the link's memory didn't survive a restart
 
 ## Reading a result
 
-Read every TLC result with the pstack `/statechart` skill: it shows a broken rule as its shortest path in plain words, and draws the link's states when everything holds. The runner prints TLC's path as numbered steps with only the variables that changed.
+When a rule breaks, the runner prints TLC's path to it as numbered steps with only the variables that changed: it is the shortest way the code can break that rule. Retell it in plain words, one step per line, before acting on it.
 
 Before calling a broken rule a bug, replay its path on the real code one action per step. `tests.test_links.Links` shows how: `sign_in()` drives the fake provider, `links.PENDING.clear()`, `links.PREVIEW.clear()` and `links._after_restart()` stand in for a restart, `self.fake.rotate = True` makes the provider rotate, and setting `sec["token"]["expires_at"] = 0` forces a refresh. To force an overlap, wrap `M.refresh` so both syncs read the Keychain before either refreshes. If the code doesn't do what the path says, the model is wrong.
 

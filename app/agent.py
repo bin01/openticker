@@ -1046,7 +1046,7 @@ def _parse_skill(path: Path):
     return {"name": meta.get("name") or path.parent.name, "description": meta.get("description", ""),
             "label": md.get("label") or meta.get("name"), "scope": md.get("scope", "any"),
             "prompt": md.get("prompt", ""), "blurb": md.get("blurb", ""), "order": int(md.get("order") or 9), "hidden": md.get("hidden") == "true", "body": body,
-            "match": md.get("match", "")}
+            "match": md.get("match", ""), "needs": re.findall(r"[a-z]+", md.get("needs", ""))}
 
 
 def skills():
@@ -1066,10 +1066,35 @@ def skill(name):
     return next((s for s in skills() if s["name"] == name), None)
 
 
-def match_skill(q, scope):
+# metadata.needs (optional, words from NEEDS): what a playbook can't work without. Agents that lack it don't see it on
+# the buttons and lists (ask.js) and never get it, picked or matched (usable, in runs._work). Example: the deep dive's
+# filings and math need `needs: "workbench web"`.
+NEEDS = {
+    "workbench": "writes and runs code in the conversation's workbench",
+    "web": "reads whole web pages, from its tools and from that code (Codex only searches, on OpenAI's side, and its code is offline)",
+}
+
+
+def can(pid, bench=None):
+    """What an agent has from NEEDS. bench: whether this answer got a workbench, when that's known."""
+    out = []
+    if pid in workbench.PROVIDERS and (bench if bench is not None else pid != "claude" or workbench.claude_ready()):
+        out.append("workbench")
+    if pid in LIVE_DATA:
+        out.append("web")
+    return out
+
+
+def usable(s, pid, bench=None):
+    return bool(s) and set(s.get("needs") or ()) <= set(can(pid, bench))
+
+
+def match_skill(q, scope, pid=None):
     """A playbook for a typed question, when one says it fits (metadata.match, a regex): "what's priced in at this
-    price?" gets the deep dive's method without the person picking it."""
+    price?" gets the deep dive's method without the person picking it. With pid, only playbooks that agent can run."""
     for s in skills():
+        if pid and not usable(s, pid):
+            continue
         try:
             # any scope: "what's priced in?" right after talking about TXN is about TXN, whatever page is open
             if s["match"] and re.search(s["match"], q or "", re.I):
@@ -1240,6 +1265,7 @@ def _with_seen(out):
     seen = _seen()
     for q in out:
         q["seen"] = {k.split(":", 1)[1]: v for k, v in seen.items() if k.startswith(q["id"] + ":")}
+        q["can"] = can(q["id"])   # fresh each time: Claude Code's workbench can switch off for an hour
     return out
 
 
@@ -1529,6 +1555,11 @@ def plain_failure(message):
     return bool(PLAIN_FAILURE.search(message or ""))
 
 
+# what an agent says when it isn't signed in: whole words only, so "author" or "authority" in other errors don't count
+SIGNED_OUT = re.compile(r"\b(?:log ?in|logged (?:in|out)|sign(?:ed)? ?in|o?auth|authenticat\w*|unauthori[sz]ed|authori[sz]ation|"
+                        r"invalid api key)\b", re.I)
+
+
 class Run:
     """One streaming agent run. emit(kind, payload) is called from this thread; cancel() stops it."""
     def __init__(self, provider, prompt, emit, model=None, effort=None, session=None, resume=None, workspace=None):
@@ -1586,7 +1617,7 @@ class Run:
 
     def _explain(self, tail):
         t = tail.lower()
-        if "login" in t or "auth" in t or "unauthorized" in t or "not logged in" in t:
+        if SIGNED_OUT.search(t):
             return f"{self.provider} isn't signed in on this Mac. Open Terminal, run `{self.provider}` once and sign in, then try again."
         if "rate" in t and "limit" in t or "usage limit" in t:
             return f"Your {self.provider} plan hit its usage limit. Try again later or pick another agent."
@@ -1602,7 +1633,6 @@ class Run:
                 self.emit("error", {"message": f"Something went wrong: {e}"})
         finally:
             self._disarm()
-        self.emit("done", {})
 
     # Claude Code: headless print mode, streaming JSON. In the workbench it gets a shell and file tools inside its macOS
     # sandbox (workbench.py); without one, only the read-only openticker data commands and web search.

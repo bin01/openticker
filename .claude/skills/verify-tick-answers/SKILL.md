@@ -63,7 +63,7 @@ Fixed: `EveryQuestionAnswered` used to break. `recover` marked a given-up run "e
 
 ## Reading a result
 
-Read every TLC result with the pstack `/statechart` skill: it turns a broken rule into its shortest path in plain words, and draws how a question moves between states when everything holds. The runner prints TLC's path as numbered steps with only the variables that changed, which is enough to start.
+When a rule breaks, the runner prints TLC's path to it as numbered steps with only the variables that changed: it is the shortest way the code can break that rule. Retell it in plain words, one step per line, before acting on it.
 
 A broken rule is either a bug or a model that no longer matches the code. Before calling it a bug, replay the path on the real code, one action per step, using the map. The `Restart` tests show how: they write a run row and its events, call `runs.recover()`, and read the conversation. If the code doesn't do what the path says, fix the model.
 

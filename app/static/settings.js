@@ -5,6 +5,8 @@ Object.assign(IC,{
   gear:'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
 });
 let APP=null;
+/* how pairing a phone works, in the same words wherever it's explained (ask.js's "Use on your phone" too) */
+const PAIR_TEXT="Open this link on your phone, or scan its QR code with the phone's camera, on the same Wi-Fi. It pairs the phone so your portfolio and Tick work there too. Anyone with the link can see them, so keep it to yourself.";
 const SET_SECTIONS=[["look","Appearance"],["accounts","Accounts"],["tick","Tick"],["notify","Notifications"],["phone","Your phone"],["data","Data"],["about","About"]];
 let HEALTH=null;
 async function loadHealth(){ try{ HEALTH=await (await fetch("/api/health")).json(); }catch(e){ HEALTH=null; } markGear(); return HEALTH; }
@@ -33,7 +35,7 @@ function closeSettings(now){ const d=$("#sets"); if(d){ now?d.remove():d.close()
 function renderSettings(){
   const d=$("#sets"); if(!d) return; const keep=d.querySelector(".sbody")?.scrollTop||0;
   const P=ASK.info?.providers||[], cur=askProv(), st=me?.settings||{}, a=APP||{}, local=a.local??ASK.info?.local;
-  const floatOn=load("tickFloatOff","")!=="1", openPref=load("tickOpen","");
+  const floatOn=load("tickFloatOff","")!=="1", startOn=load("tickStart","1")==="1";
   /* Tick's model choices for the agent in use, in plain words */
   let modelCtl="";
   if(cur){
@@ -44,6 +46,7 @@ function renderSettings(){
     else modelCtl=`<span class="sv">${esc(askModelName(cur)||"Its default")}</span>`;
   }
   const ef=cur&&cur.efforts?.length?askEffortOf(cur):null;
+  const red=(HEALTH?.rows||[]).filter(r=>!r.ok).map(r=>r.name);   // rows marked red: the headline never says all is well over one
   const sec=(id,title,body)=>`<section class="ssec" id="set-${id}"><h3>${title}</h3><div class="scard">${body}</div></section>`;
   d.innerHTML=`<div class="shead"><h2>Settings</h2><button class="x" id="setClose" aria-label="Close settings">${ic("close",16)}</button><nav class="snav" aria-label="Settings sections">${SET_SECTIONS.map(([k,l])=>`<a href="#set-${k}" data-set-go="${k}">${l}</a>`).join("")}</nav></div>
   <div class="sbody">
@@ -56,7 +59,7 @@ function renderSettings(){
          return `<button type="button" class="sag${on?" on":""}" ${p.available?`data-set-agent="${p.id}"`:`data-set-setup="${p.id}"`} aria-pressed="${on}">${agentIcon(p.id,20)}<span><b>${esc(p.label)}</b><small>${esc(p.available?AG_SUB[p.id]||p.note:(ST[p.state]||["Not ready"])[0])}</small></span>${on?ic("check",15):p.available?"":`<em>Set up</em>`}</button>`; }).join("")}</div></div>`
      +(cur?setRow("Model",cur.id==="claude"?"Opus reads deepest. Sonnet and Haiku answer faster.":cur.id==="ollama"?"Models you've pulled into Ollama.":`Change it in ${esc(cur.label)}'s own settings.`,modelCtl):"")
      +(ef!=null?setRow("Effort","How long Tick thinks before answering. Higher is more thorough and slower.",setSeg("effort",[...(cur.effort?[]:[["","Default"]]),...cur.efforts.map(e=>[e,EFFORT[e]||e])],ef),"wide"):"")
-     +setRow("Open Tick when OpenTicker starts",openPref===""?"Right now it opens on wide windows only.":"",setTgl("setOpen",openPref==="1"||(openPref===""&&innerWidth>=1280),"Open Tick at start"))
+     +setRow("Open Tick when OpenTicker starts","",setTgl("setOpen",startOn,"Open Tick at start"))
      +(innerWidth>760?setRow("Ask Tick button","The floating button in the corner when Tick's panel is closed.",setTgl("setFloat",floatOn,"Show the Ask Tick button"))
      +setRow("Side",`Or drag Tick's header across. Drag its inner edge to resize${ASK.w!==TICK_W0?`, or <button type="button" class="lnk" id="setW">reset the width</button>`:""}.`,setSeg("side",[["left","Left"],["right","Right"]],ASK.side)):""))}
   ${sec("notify","Notifications",
@@ -71,17 +74,19 @@ function renderSettings(){
      !local?setRow("You're on another device","These settings live on the Mac that runs OpenTicker.",""):
      setRow("Open OpenTicker on your phone",a.phone?`On. Your phone can reach it on the same Wi-Fi.`:`Off. Only this Mac can open it.`+(a.mac?` Changing this restarts OpenTicker in a Terminal window.`:""),
        a.mac?setTgl("setPhone",!!a.phone,"Let your phone open OpenTicker"):`<span class="sv">${a.phone?"On":"Off"}</span>`)
-     +(a.phone&&ASK.info?.pair?`<div class="srow col"><div class="sl"><b>Pair your phone</b><small>Scan the QR code with your phone's camera, or open this link on it. It also lets you ask Tick from there. Keep it to yourself.</small></div>${pairRow('id="setPair"')}</div>`:""))}
+     +(a.phone&&ASK.info?.pair?`<div class="srow col"><div class="sl"><b>Pair your phone</b><small>${PAIR_TEXT}</small></div>${pairRow('id="setPair"')}</div>`
+       +setRow("Reset pairing","Makes a new pairing link. Phones you paired before will need to pair again.",`<button type="button" class="btn ghost" id="setPairReset">Reset pairing</button>`):""))}
   ${sec("data","Data",
      !HEALTH?setRow("Checking…","",""):
      (HEALTH.problems.length?`<div class="srow col dprob"><div class="sl"><b>${HEALTH.problems.length===1?"One thing is off":`${HEALTH.problems.length} things are off`}</b>${HEALTH.problems.map(p=>`<small>${esc(p)}</small>`).join("")}</div></div>`
+       :red.length?`<div class="srow col dprob"><div class="sl"><b>Not everything is working</b><small>${esc(red.length>1?red.slice(0,-1).join(", ")+" and "+red.at(-1):red[0])} ${red.length===1?"isn't":"aren't"} fully working. The details are below.</small></div></div>`
        :setRow("Everything is up to date","Prices, holdings, the earnings calendar and Yahoo's research are all coming through.",`<span class="on-pill">OK</span>`))
      +HEALTH.rows.map(r=>`<div class="srow drow"><div class="sl"><b><i class="hdot ${r.ok?"ok":"bad"}"></i>${esc(r.name)}</b></div><div class="sc"><span class="sv">${esc(r.detail)}</span></div></div>`).join(""))}
   ${sec("about","About",
      setRow("OpenTicker",`Version ${esc(a.version||"…")}. Free and open source.`,`<a class="btn ghost" href="https://github.com/bin01/openticker" target="_blank" rel="noopener">GitHub</a>${local&&a.mac?`<button type="button" class="btn" id="setUpd">Update</button>`:""}`)
      +(local&&a.mac?setRow("Change OpenTicker","Ask your AI agent for anything: another fund, a new page, a different look, how Tick talks. This opens Claude Code or Codex in OpenTicker's code, which explains itself to the agent.",`<button type="button" class="btn ghost" id="setEdit">Open in Terminal</button>`):"")
      +(a.data?setRow("Your data",`Watchlist, positions, alerts and Tick's conversations stay on this Mac in <span class="mono">${esc(a.data)}</span>.`,""):"")
-     +setRow("Keyboard shortcuts","",`<dl class="keys"><dt><kbd>⌘</kbd><kbd>K</kbd></dt><dd>Search or run a command</dd><dt><kbd>A</kbd></dt><dd>Ask Tick</dd><dt><kbd>/</kbd></dt><dd>Search stocks</dd><dt><kbd>⌘</kbd><kbd>,</kbd></dt><dd>Settings</dd></dl>`,"col"))}
+     +setRow("Keyboard shortcuts","",`<dl class="keys"><dt><kbd>⌘</kbd><kbd>K</kbd> or <kbd>/</kbd></dt><dd>Search stocks or run a command</dd><dt><kbd>A</kbd></dt><dd>Ask Tick</dd><dt><kbd>⌘</kbd><kbd>,</kbd></dt><dd>Settings</dd></dl>`,"col"))}
   </div>`;
   d.querySelector(".sbody").scrollTop=keep;
   bindSettings(d,{cur,st});
@@ -97,14 +102,15 @@ function bindSettings(d,{cur,st}){
   on("[data-set-setup]","click",()=>{ d.close(); ASK.view="agents"; openAsk(); });
   $("#setModel")?.addEventListener("change",e=>{ const v=e.target.value; if(cur.id==="ollama"){ ASK.model=v; save("askModel",v); } else save("askModel."+cur.id,v); askRender(); });
   on("[data-set-effort]","click",e=>{ save("askEffort."+cur.id,e.currentTarget.dataset.setEffort); askRender(); renderSettings(); });
-  $("#setOpen").onchange=e=>save("tickOpen",e.target.checked?"1":"0");
+  $("#setOpen").onchange=e=>save("tickStart",e.target.checked?"1":"0");
   $("#setFloat")&&($("#setFloat").onchange=e=>{ save("tickFloatOff",e.target.checked?"":"1"); applyFloatPref(); });
   on("[data-set-side]","click",e=>{ const s=e.currentTarget.dataset.setSide; if(ASK.open) tickSide(s); else { ASK.side=s; save("tickSide",s); applyDock(); } renderSettings(); });
   $("#setW")?.addEventListener("click",()=>{ setTickW(TICK_W0,true); dispatchEvent(new Event("resize")); renderSettings(); });
   $("#setNt").onsubmit=async e=>{ e.preventDefault(); try{ await api("/api/me/settings",{ntfyTopic:$("#setTopic").value.trim(),ntfyServer:st.ntfyServer}); renderSettings(); }catch(x){ $("#setNtErr").textContent=x.message; } };
   $("#setNtTest")?.addEventListener("click",async()=>{ const m=$("#setNtErr"); try{ await api("/api/me/test-push"); m.textContent="Sent. Check your phone."; m.className="ok"; }catch(x){ m.textContent=x.message; } });
   $("#setNtOff")?.addEventListener("click",async()=>{ await api("/api/me/settings",{ntfyTopic:"",ntfyServer:st.ntfyServer}).catch(()=>{}); renderSettings(); });
-  $("#setCn").onchange=async e=>{ await api("/api/me/settings",{closeNote:e.target.checked}).catch(()=>{}); };
+  $("#setCn").onchange=async e=>{ const c=e.target; try{ await api("/api/me/settings",{closeNote:c.checked}); }
+    catch(x){ c.checked=!c.checked; toast(`Couldn't change the note at the close. ${x.message}`); } };
   $("#setCnPrev").onclick=async()=>{ const b=$("#setCnBox"); b.hidden=false; b.innerHTML=`<small>Writing it…</small>`;
     try{ const n=await (await fetch("/api/me/close-note",{headers:meHeaders()})).json();
       b.innerHTML=n.title?`<div class="cn"><b>${esc(n.title)}</b><p>${esc(n.body)}</p><small>${n.live?"With prices right now. The real one goes out after the close.":"From the last closing prices."}</small></div>`:`<small>There's no price data yet.</small>`; }
@@ -114,6 +120,10 @@ function bindSettings(d,{cur,st}){
   $("#setPhone")?.addEventListener("change",async e=>{ const r=await fetch("/api/app/terminal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({step:e.target.checked?"phone-on":"phone-off"})}).catch(()=>null);
     e.target.closest(".srow").querySelector("small").textContent=r?.ok?"Restarting OpenTicker in Terminal. This page reconnects in about a minute.":"Couldn't open Terminal. Run openticker start --lan yourself."; });
   $("#setPair")?.addEventListener("click",e=>{ navigator.clipboard?.writeText(ASK.info.pair); e.currentTarget.innerHTML=ic("check",13)+"Copied"; });
+  $("#setPairReset")?.addEventListener("click",async e=>{ const b=e.currentTarget; b.disabled=true; b.textContent="Resetting…";
+    const r=await fetch("/api/app/pair/reset",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}).catch(()=>null);
+    if(!r?.ok){ b.disabled=false; b.textContent="Reset pairing"; return toast("Couldn't reset pairing. Try again."); }
+    ASK.infoAt=0; await askInfo(); toast("Pairing reset. Open the new link on each phone to pair it again."); renderSettings(); });
   d.querySelector(".pairl [data-qr]")?.addEventListener("click",e=>qrToggle(e.currentTarget));
   $("#setEdit")?.addEventListener("click",async e=>{ const b=e.currentTarget; const r=await fetch("/api/app/terminal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({step:"edit"})}).catch(()=>null);
     b.textContent=r?.ok?"Opened in Terminal":"Run openticker edit"; });

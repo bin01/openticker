@@ -16,7 +16,7 @@ metadata:
 ## Cover
 
 1. **Rates**: the 10-year, 5-year and 3-month yields, their level and their change over the day and the month. Rising long yields weigh on expensive growth stocks; a falling 3-month yield hints the market expects Fed cuts.
-2. **Dollar, oil and gold**: what each did, and the usual read. A strong dollar hurts companies that sell abroad; oil feeds inflation and drives energy stocks; rising gold means investors want a hedge.
+2. **Dollar, oil, gold and bitcoin**: what each did (all four are in the Macro table), and the usual read. A strong dollar hurts companies that sell abroad; oil feeds inflation and drives energy stocks; rising gold means investors want a hedge; bitcoin tends to track the appetite for risk, so a sharp drop alongside falling tech stocks says speculation is being pulled back.
 3. **Fear gauge**: the VIX level and its change. Below 15 is calm, 15 to 25 is normal, and above 25 is stressed.
 4. **Net read**: a tailwind or a headwind for stocks, and the one release or level to watch next, with its date.
 
