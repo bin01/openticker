@@ -1273,14 +1273,15 @@ def reads_context(uid, t=None):
         ch = now / r["price"] - 1 if now and r["price"] else None
         sch = spy[-1] / r["spy"] - 1 if spy and r["spy"] else None
         lead = ch - sch if ch is not None and sch is not None else None
-        if lead is not None:
+        age = (srv.X.ny_today() - dt.date.fromisoformat(r["day"])).days
+        if lead is not None and age >= 28:   # a check needs about a month to say anything
             by.setdefault(r["lean"], []).append(lead)
         out.append([r["day"], r["t"], f"{r['lean']} ({r['pros']} for, {r['cons']} against, {r['neutral']} neutral)",
                     f"${r['price']:,.2f}", f"${now:,.2f}" if now else "n/a", _pct(ch), _pct(sch), _pct(lead), r["line"] or ""])
     L.append(_table(["Date", "Ticker", "Lean then", "Price then", "Now", "Change", "S&P 500", "Lead", "Why"], out))
-    if by:
-        L += ["", "So far: " + "; ".join(f"{k} checks led the S&P 500 by {_pct(sum(v) / len(v))} on average ({sum(1 for x in v if x > 0)} of {len(v)} ahead)"
-                                          for k, v in by.items()) + ". Recent checks haven't had time to play out; judge them after a month or more."]
+    L += ["", ("Checks at least four weeks old: " + "; ".join(f"{k} ones led the S&P 500 by {_pct(sum(v) / len(v))} on average ({sum(1 for x in v if x > 0)} of {len(v)} ahead)"
+                                                          for k, v in by.items()) + "." if by else
+               "None of these is four weeks old yet, so it's too soon to say how they've done.")]
     return "\n".join(L) + "\n"
 
 

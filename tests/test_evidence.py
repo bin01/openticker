@@ -128,7 +128,11 @@ class Reads(unittest.TestCase):
         self.assertIn("+10.0%", out)    # the stock since
         self.assertIn("+1.0%", out)     # the S&P 500 since
         self.assertIn("+9.0%", out)     # the lead
+        self.assertIn("Checks at least four weeks old: positive ones led the S&P 500 by +9.0%", out)
+
         self.assertIn("No evidence checks yet", agent.reads_context("me", "AMD"))
+        personal.read_add("me", "SPY", "negative", 1, 4, 1, "", 500.0, 500.0, "2026-11-09")
+        self.assertNotIn("negative ones", agent.reads_context("me"))   # a day old: too soon to count
         with self.assertRaises(ValueError):
             personal.read_add("me", "NVDA", "buy", 1, 1, 1, "", 1.0, 1.0, "2026-10-02")
 

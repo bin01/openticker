@@ -43,5 +43,5 @@ If the user doesn't own the stock, say so in one line and weigh the evidence ins
 ## Before you send
 
 - Dollar figures come from the person's own shares and the prices in the data. Show the arithmetic once if it isn't obvious.
-- No instruction to sell, trim or add. Lay out the tradeoff and what would change it.
+- No instruction to sell, trim or add. Lay out the tradeoff and what would change it, without announcing that you won't decide for them: the first line is the summary.
 - If the gain is large, add one line that taxes may matter and depend on how long they've held it and where they live.
