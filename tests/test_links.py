@@ -249,6 +249,16 @@ class Links(unittest.TestCase):
         self.assertFalse(any(v["lid"] == lid for v in links.PENDING.values()))
         self.assertTrue(any(p["source"] == lid for p in personal.positions("me")))
 
+    def test_sign_in_again_without_keychain_item_asks_for_read_only(self):
+        """The Keychain item is gone, so reconnect registers again: with the same read-only scope as the first time."""
+        lid = self.linked()
+        links.del_secret(lid)
+        self.fake.registered = None
+        personal.update_link("me", lid, status="auth")
+        self.sign_in(links.reconnect("me", lid))
+        self.assertEqual(self.fake.registered["scope"], "mcp.read")
+        self.assertEqual(personal.link("me", lid)["status"], "ok")
+
     def test_saying_no_to_sign_in_again_keeps_the_link(self):
         lid = self.linked()
         out = links.reconnect("me", lid)

@@ -422,6 +422,11 @@ _reading = set()        # link ids with a read under way in this process
 _lock = threading.Lock()
 
 
+def _scope(preset, meta):
+    """What to ask a provider for: the preset's scope, or the read-only ones the server offers."""
+    return preset["scope"] if preset and preset["scope"] is not None else M.read_scope(meta["scopes"])
+
+
 def connect(uid, provider, url=None, name=None):
     """Start linking. Returns {"id", "auth_url"} (open it in the browser) or {"id"} when the server needs no sign-in."""
     preset = PRESETS.get(provider)
@@ -443,7 +448,7 @@ def connect(uid, provider, url=None, name=None):
         _fetch_async(uid, lid)
         return {"id": lid}
     meta = M.discover(url, hint or None)
-    scope = preset["scope"] if preset and preset["scope"] is not None else M.read_scope(meta["scopes"])
+    scope = _scope(preset, meta)
     client = M.register(meta, _redirect(), scope)
     verifier, challenge = M.pkce()
     state = secrets.token_urlsafe(24)
@@ -622,9 +627,8 @@ def reconnect(uid, lid):
         raise ValueError("That link is gone.")
     sec = get_secret(lid) or {}
     meta = sec.get("meta") or M.discover(link["url"], M.needs_auth(link["url"]) or None)
-    client = sec.get("client") or M.register(meta, _redirect(), PRESETS.get(link["provider"], {}).get("scope", ""))
-    preset = PRESETS.get(link["provider"])
-    scope = preset["scope"] if preset else M.read_scope(meta["scopes"])
+    scope = _scope(PRESETS.get(link["provider"]), meta)   # the same read-only scope the first connection asked for
+    client = sec.get("client") or M.register(meta, _redirect(), scope)
     verifier, challenge = M.pkce()
     state = secrets.token_urlsafe(24)
     with _lock:
