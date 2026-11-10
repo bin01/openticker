@@ -2,15 +2,17 @@
 
 Each conversation gets its own folder that lasts across questions, so a script written for one answer can be reused
 in the next. Code runs with a Python toolbox kept apart from OpenTicker's own environment (pandas, numpy, scipy,
-matplotlib, yfinance; the agent can pip install more), and `import ot` hands it OpenTicker's prices and the person's
-positions without touching the server. Charts and files the code saves in out/ appear in the answer.
+matplotlib, yfinance), and `import ot` hands it OpenTicker's prices and the person's holdings as weights (never shares
+or cost) without touching the server. Charts and files the code saves in out/ appear in the answer.
 
 The sandbox is the agent's own. Claude Code runs every shell command inside macOS's sandbox (Seatbelt) with the
 settings below: it can read its workbench, the toolbox and the price history but nothing else in your home folder,
-and write only to its workbench and the toolbox. Its network goes through the small proxy below, which lets code
+and write only to its own workbench. The toolbox is shared by every conversation, so it is read-only to sandboxed code:
+its bytecode is compiled when it's built, and `pip install` from code goes into the conversation's own folder
+(.openticker/packages, on its PYTHONPATH), as do pip's and matplotlib's caches. Its network goes through the small proxy below, which lets code
 reach any public website but nothing on this Mac or its local network (so not OpenTicker's own server either).
 The read-only `openticker` data commands run outside the sandbox, as before. Codex uses its own workspace-write
-sandbox with the workbench as its folder and the network off: Codex's sandbox can read the whole disk and, with network,
+sandbox with the workbench as its only writable folder and the network off: Codex's sandbox can read the whole disk and, with network,
 the Keychain and OpenTicker's own server too, so its code works offline from `import ot`.
 """
 from __future__ import annotations
@@ -34,10 +36,11 @@ import paths
 BASE = paths.HOME / "workbench"
 SPACES = BASE / "spaces"                 # one folder per conversation
 TOOLBOX = BASE / "python"                # the Python the agent's code runs with
-CACHE = BASE / "cache"                   # pip's and matplotlib's caches, which the sandbox can write
+CACHE = BASE / "cache"                   # matplotlib's font list, made at build time and copied into each folder (read-only to code)
 SDK = paths.APP / "sdk"                  # `import ot`
 PACKAGES = ["pandas", "numpy", "scipy", "matplotlib", "yfinance"]
 KEEP_DAYS = 30
+TOOLBOX_VERSION = 2      # 2: pip included and bytecode compiled, so sandboxed code never needs to write to the toolbox
 
 # Where code may connect if the proxy below couldn't start: Python packages, market and economic data, filings.
 DOMAINS = [
@@ -68,7 +71,11 @@ def log(msg):
 def python():
     """The toolbox's Python, or None while it's being set up."""
     p = TOOLBOX / "bin" / "python"
-    return p if p.exists() and (TOOLBOX / ".ready").exists() else None
+    try:
+        ready = json.loads((TOOLBOX / ".ready").read_text()).get("v", 1) >= TOOLBOX_VERSION   # an older one is made again
+    except (OSError, ValueError, AttributeError):
+        ready = False
+    return p if ready and p.exists() else None
 
 
 def _uv():
@@ -80,25 +87,37 @@ def _uv():
 
 
 def _build():
+    """Make the toolbox, outside any sandbox (only OpenTicker writes it). Bytecode is compiled here and pip is included,
+    so code in a conversation's sandbox can import and `pip install --target` without writing to the toolbox."""
     try:
         uv = _uv()
         if uv:
             subprocess.run([uv, "venv", "-q", "--allow-existing", "--python", sys.executable, str(TOOLBOX)], check=True,
                            capture_output=True, timeout=300)
-            r = subprocess.run([uv, "pip", "install", "-q", "--python", str(TOOLBOX / "bin" / "python")] + PACKAGES,
-                               capture_output=True, text=True, timeout=900)
+            r = subprocess.run([uv, "pip", "install", "-q", "--compile-bytecode", "--python", str(TOOLBOX / "bin" / "python")]
+                               + PACKAGES + ["pip"], capture_output=True, text=True, timeout=900)
         else:
             subprocess.run([sys.executable, "-m", "venv", str(TOOLBOX)], check=True, capture_output=True, timeout=300)
-            r = subprocess.run([str(TOOLBOX / "bin" / "python"), "-m", "pip", "install", "-q"] + PACKAGES,
+            r = subprocess.run([str(TOOLBOX / "bin" / "python"), "-m", "pip", "install", "-q", "--compile"] + PACKAGES,
                                capture_output=True, text=True, timeout=900)
         if r.returncode != 0:
             raise RuntimeError((r.stderr or r.stdout).strip().splitlines()[-1:] or "install failed")
-        (TOOLBOX / ".ready").write_text(json.dumps({"packages": PACKAGES, "at": time.time()}))
+        _warm()
+        (TOOLBOX / ".ready").write_text(json.dumps({"packages": PACKAGES, "at": time.time(), "v": TOOLBOX_VERSION}))
         state.update(toolbox="ready", why="")
         log(f"Tick's workbench is ready ({', '.join(PACKAGES)})")
     except Exception as e:
         state.update(toolbox="failed", why=str(e)[:200], failed_at=time.time())
         log(f"setting up Tick's workbench failed: {e!r}")
+
+
+def _warm():
+    """Build matplotlib's font list once, here, so each conversation starts with a copy instead of a minute's scan."""
+    try:
+        subprocess.run([str(TOOLBOX / "bin" / "python"), "-c", "import matplotlib.font_manager"], capture_output=True, timeout=300,
+                       env=dict(os.environ, MPLCONFIGDIR=str(CACHE / "matplotlib"), MPLBACKEND="Agg"))
+    except Exception as e:
+        log(f"warming matplotlib's font cache failed: {e!r}")
 
 
 def ensure():
@@ -278,18 +297,28 @@ def _key(key):
     return k
 
 
+def _own(ws):
+    """The conversation's own writable places: pip's installs and caches, matplotlib's config, Python's scratch."""
+    o = Path(ws) / ".openticker"
+    return {"packages": o / "packages", "cache": o / "cache", "mpl": o / "cache" / "matplotlib"}
+
+
 def space(key, uid=None):
-    """The conversation's folder, made if needed, with a fresh copy of the person's positions for `ot`."""
+    """The conversation's folder, made if needed, with a fresh copy of the person's holdings for `ot`: tickers and
+    weights only. The agent also reads the web, so shares, cost, dates, notes and dollar values aren't written here;
+    `openticker portfolio` has them for a question that needs them."""
     d = SPACES / _key(key)
     (d / "out").mkdir(parents=True, exist_ok=True)
+    own = _own(d)
+    for p in (own["packages"], own["cache"]):
+        p.mkdir(parents=True, exist_ok=True)
+    if not own["mpl"].exists() and (CACHE / "matplotlib").is_dir():
+        shutil.copytree(CACHE / "matplotlib", own["mpl"], ignore=shutil.ignore_patterns("*.lock"), dirs_exist_ok=True)
     os.utime(d)
     if uid is not None:
         try:
-            import personal
-            pos = [{k: p.get(k) for k in ("t", "shares", "cost", "opened", "note")} for p in personal.positions(uid)]
-            snap = {"positions": pos, "watchlist": [w.get("t") if isinstance(w, dict) else w for w in personal.watchlist(uid)],
-                    "at": time.time()}
-            (d / ".openticker").mkdir(exist_ok=True)
+            import agent
+            snap = dict(agent.for_code(uid), at=time.time())
             (d / ".openticker" / "you.json").write_text(json.dumps(snap))
         except Exception as e:
             log(f"workbench snapshot failed: {e!r}")
@@ -297,7 +326,7 @@ def space(key, uid=None):
 
 
 def remove(key):
-    """Delete a conversation's folder (its code, saved files and the copy of the person's positions). Never raises."""
+    """Delete a conversation's folder (its code, saved files, packages and the copy of the person's holdings). Never raises."""
     try:
         shutil.rmtree(SPACES / _key(key), ignore_errors=True)
     except Exception:
@@ -335,14 +364,17 @@ def file_path(key, name):
 
 # ---------------------------------------------------------------- running agents there
 def env(ws, base):
-    """The agent's environment: the toolbox first on PATH, `ot` importable, caches where the sandbox can write."""
+    """The agent's environment: the toolbox first on PATH, `ot` and the conversation's own packages importable, and
+    every cache and `pip install` inside the conversation's folder, since the toolbox is read-only to its code."""
     e = dict(base)
     py = python() or (paths.ROOT / ".venv" / "bin" / "python")   # while the toolbox is being made: OpenTicker's own (pandas, numpy)
     if py.exists():
         e["PATH"] = str(py.parent) + os.pathsep + e.get("PATH", "")
         e["VIRTUAL_ENV"] = str(py.parent.parent)
-    e.update(PYTHONPATH=str(SDK), MPLBACKEND="Agg", MPLCONFIGDIR=str(CACHE / "matplotlib"), PIP_CACHE_DIR=str(CACHE / "pip"),
-             XDG_CACHE_HOME=str(CACHE), PIP_DISABLE_PIP_VERSION_CHECK="1", PYTHONDONTWRITEBYTECODE="1",
+    own = _own(ws)
+    e.update(PYTHONPATH=str(SDK) + os.pathsep + str(own["packages"]), MPLBACKEND="Agg", MPLCONFIGDIR=str(own["mpl"]),
+             PIP_TARGET=str(own["packages"]), PIP_CACHE_DIR=str(own["cache"] / "pip"), XDG_CACHE_HOME=str(own["cache"]),
+             PIP_DISABLE_PIP_VERSION_CHECK="1", PYTHONDONTWRITEBYTECODE="1",
              OT_WORKSPACE=str(ws), OT_PRICES=str(paths.CACHE / "history.json"), OT_NAMES=str(paths.CACHE / "names.json"))
     return e
 
@@ -352,8 +384,11 @@ def _abs(p):
 
 
 def claude_settings(ws):
-    """Settings for Claude Code's sandbox, passed with --settings. Paths are absolute (//...)."""
-    readable = [ws, TOOLBOX, CACHE, SDK, paths.ROOT, paths.CACHE / "history.json", paths.CACHE / "names.json",
+    """Settings for Claude Code's sandbox, passed with --settings. Paths are absolute. Code may write only to its own
+    conversation's folder: the toolbox (shared by every conversation) and OpenTicker's own code are read and run, never
+    written, so code from one conversation can't change what another one imports."""
+    shared = [TOOLBOX, CACHE, SDK, paths.ROOT]
+    readable = [ws, TOOLBOX, SDK, paths.ROOT, paths.CACHE / "history.json", paths.CACHE / "names.json",
                 Path.home() / ".local" / "share" / "uv", Path.home() / ".claude" / "shell-snapshots"]
     py = python()
     if py:
@@ -366,7 +401,8 @@ def claude_settings(ws):
             "allowUnsandboxedCommands": False,
             "excludedCommands": ["openticker *"],
             "filesystem": {
-                "allowWrite": [_abs(ws), _abs(TOOLBOX), _abs(CACHE)],
+                "allowWrite": [_abs(ws)],
+                "denyWrite": [_abs(p) for p in shared],
                 "denyRead": ["~/"],
                 "allowRead": sorted({_abs(p) for p in readable}),
             },
@@ -374,7 +410,8 @@ def claude_settings(ws):
             "network": {"httpProxyPort": state["proxy"], "allowedDomains": [], "allowLocalBinding": False} if state["proxy"]
             else {"allowedDomains": DOMAINS, "allowLocalBinding": False},
         },
-        "permissions": {"blockWritesOutsideWorkingDirectories": True},
+        "permissions": {"blockWritesOutsideWorkingDirectories": True,
+                        "deny": [f"{tool}(/{_abs(p)}/**)" for p in shared for tool in ("Edit", "Write")]},
         "disableAllHooks": True,      # the person's own hooks and plugins (say one that redirects WebFetch) aren't Tick's
     }
 
@@ -385,10 +422,6 @@ def claude_tools(ws, data_cmds):
     allowed = [f"Bash(openticker {c}:*)" for c in data_cmds] + [f"Edit(/{w}/**)", f"Write(/{w}/**)", f"Read(/{w}/**)",
                                                                "Glob", "Grep", "WebSearch", "WebFetch"]
     return ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "WebSearch", "WebFetch"], allowed
-
-
-def codex_args(ws):
-    return ["--add-dir", str(TOOLBOX), "--add-dir", str(CACHE)]   # the folder itself is Codex's working folder
 
 
 def claude_ready():
@@ -418,14 +451,19 @@ def note(offline=False):
         out = out.replace(_TOOLS_LINE, _TOOLS_LINE_OFFLINE).replace(_TOOLS_LINE_EARLY, _TOOLS_LINE_OFFLINE)
         out = "\n".join(ln for ln in out.split("\n") if not ln.startswith("- Some sites refuse scripts"))
         out = out.replace("  For anything else, use the `openticker` commands or yfinance.", "  Prices for other tickers aren't available offline.")
+        out = out.replace(_EXACT_LINE, "  Exact shares, cost and dollar values aren't available here; work from the weights.")
     return out
 
 
-_TOOLS_LINE = ("- `python3` has pandas, numpy, scipy, matplotlib and yfinance; `pip install` more if you need it. Code can download "
+_TOOLS_LINE = ("- `python3` has pandas, numpy, scipy, matplotlib and yfinance; `pip install` more if you need it (it installs into this "
+               "conversation's folder, so later questions here have it too). Code can download "
                "from any public website (filings, economic data, CSVs), but nothing on this Mac or its local network.")
 _TOOLS_LINE_EARLY = ("- The Python toolbox is still being set up, so `python3` has only pandas, numpy and yfinance for now: no scipy, "
                      "no matplotlib and no `pip install`. Charts from code aren't possible yet, so use a ```chart block. Code can "
                      "download from any public website (filings, economic data, CSVs), but nothing on this Mac or its local network.")
+
+_EXACT_LINE = ("  For exact shares, cost or dollar values, run `openticker portfolio`, and only when the question needs them. Never put "
+               "holdings or amounts into a URL, search or request your code sends.")
 
 _TOOLS_LINE_OFFLINE = ("- `python3` has pandas, numpy and, once the toolbox is ready, scipy and matplotlib. Your sandbox has no network: "
                        "code can't download anything or install packages, so work from `import ot` and the data above.")
@@ -436,7 +474,8 @@ Use it whenever an answer needs real math (returns, volatility, drawdowns, corre
 - `import ot` gives OpenTicker's data without a network call:
   ot.prices(["NVDA", "SPY"])  daily closes, a DataFrame (dates down, tickers across), about two years, for ~1,100 stocks and ETFs; others come from Yahoo
   ot.returns(["NVDA", "SPY"])  daily returns of the same
-  ot.positions()  the person's positions (t, shares, cost); ot.watchlist()  their watchlist
+  ot.positions()  the person's holdings as tickers and portfolio weights (t, weight; no shares or cost); ot.watchlist()  their watchlist
+""" + _EXACT_LINE + """
   ot.style()  call before plotting so charts match the app
   For anything else, use the `openticker` commands or yfinance.
 - Some sites refuse scripts that don't say who they are. SEC EDGAR (sec.gov, data.sec.gov) does, so fetch from it with ot.get(url) or ot.get_json(url), which send a declared user agent and keep under SEC's 10 requests a second; set the same User-Agent header if you use another library. A 403 that says "OpenTicker's workbench refused" means the address is local, not that the site blocked you.

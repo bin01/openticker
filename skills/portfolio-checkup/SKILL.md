@@ -11,7 +11,7 @@ metadata:
 
 # Portfolio check-up
 
-**Data**: `openticker portfolio`, then `openticker stock TICKER` for the one or two biggest positions or biggest movers.
+**Data**: `openticker portfolio` (the exact shares, cost, value and gain the scorecard needs; the data given with the question has only weights), then `openticker stock TICKER` for the one or two biggest positions or biggest movers.
 
 ## Cover
 
@@ -27,5 +27,6 @@ Use these headings: **Scorecard**, **Shape**, **What changed**, **Coming up**, *
 
 ## Before you send
 
+- If you couldn't run `openticker portfolio`, the scorecard uses today's move in percent and the weights, and says the dollar figures weren't available.
 - With no positions, review the watchlist instead, and say positions are added under My stocks, then Positions.
 - The question at the end is a question, not an instruction to trade.

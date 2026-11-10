@@ -36,15 +36,15 @@ Yes if it changes any function in the map below, the 30-second `quick_fail` test
 
 | Action | Code |
 | --- | --- |
-| `ToolboxBuilt` | `workbench._build`: `uv venv` and `pip install`, then `TOOLBOX/.ready` and `state["toolbox"] = "ready"` |
+| `ToolboxBuilt` | `workbench._build`: `uv venv` and `pip install` (bytecode compiled, pip included), `_warm()` (matplotlib's font list), then `TOOLBOX/.ready` and `state["toolbox"] = "ready"` |
 | `ToolboxFails` | `_build`'s `except`: `toolbox = "failed"`, `failed_at = now` |
 | `AnHourPasses` | `RETRY_AFTER` seconds since `failed_at` or `claude_off` |
 | `AgentChanges` | Claude Code signs out, hits its limit, crashes, comes back (outside OpenTicker) |
 | `YouAsk` | one question with Claude Code, `runs._work`: `bench` from `claude_ready()` (which turns `claude_ok` back on after an hour); `workbench.build()` (retries a failed install after an hour, finds a ready one on disk); `build_prompt(bench=...)` → `note()` picks the full or the early note by `python()`; then `go()`. If there's no text and the error is `sandbox_failed(...)` or a `quick_fail` (inside 30 s and not `agent.plain_failure`), `claude_failed()` and `go(None, None)` without the workbench. |
 | `Restart` | the process starts again: `state` is rebuilt (`claude_ok` True, toolbox "missing"), `workbench.ensure()` → `build()` |
-| `Note(tb)` | `workbench.note()`: `NOTE` when `python()` finds the toolbox, else the "still being set up" variant |
+| `Note(tb)` | `workbench.note()`: `NOTE` when `python()` finds the toolbox (a `.ready` written at `TOOLBOX_VERSION`; an older toolbox counts as missing and is made again), else the "still being set up" variant |
 
-The agent states: "plain" is an error matched by `agent.PLAIN_FAILURE`; "odd" is any other error inside 30 seconds with no text, which `_work` can't tell from a sandbox that didn't start. Codex's workbench (`codex_args`) has no such switch and isn't modeled. Not modeled: the proxy, the folder pruning, what code runs inside the sandbox (that's `tests.test_workbench`).
+The agent states: "plain" is an error matched by `agent.PLAIN_FAILURE`; "odd" is any other error inside 30 seconds with no text, which `_work` can't tell from a sandbox that didn't start. Codex's workbench (its own folder as its only writable root, no `--add-dir`) has no such switch and isn't modeled. Not modeled: the proxy, the folder pruning, what code runs inside the sandbox, and that the shared toolbox is read-only to it (`claude_settings` writes only the conversation's folder; `env` sends `pip install` and caches there): that's `tests.test_workbench` (`Settings.test_toolbox_is_read_only`, `Settings.test_installs_and_caches_stay_in_the_conversation`).
 
 ## Findings on the current code
 

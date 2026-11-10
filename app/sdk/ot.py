@@ -4,7 +4,7 @@ the sandbox with no network. See app/workbench.py.
     import ot
     px = ot.prices(["NVDA", "SPY"])      # daily closes, dates down, tickers across
     r = ot.returns(["NVDA", "SPY"])      # daily returns
-    ot.positions(), ot.watchlist()       # the person's own
+    ot.positions(), ot.watchlist()       # the person's own: tickers and portfolio weights, never shares or cost
     ot.style()                           # charts that match the app, in light and dark
     ot.get_json("https://data.sec.gov/submissions/CIK0001045810.json")   # web data, with a declared user agent
 """
@@ -88,9 +88,12 @@ def _you():
 
 
 def positions():
-    """The person's positions as a DataFrame: t, shares, cost (per share), opened, note."""
+    """The person's holdings as a DataFrame: t, weight (share of the portfolio at the last close, 0.12 for 12%; None
+    for a ticker without a price). Shares, cost and dollar values aren't here: this code can reach the web, so they
+    come only from `openticker portfolio`, when a question needs them. Never send any of it to a website."""
     import pandas as pd
-    return pd.DataFrame(_you().get("positions") or [], columns=["t", "shares", "cost", "opened", "note"])
+    rows = [{"t": p.get("t"), "weight": p.get("weight")} for p in (_you().get("positions") or []) if isinstance(p, dict)]
+    return pd.DataFrame(rows, columns=["t", "weight"])
 
 
 def watchlist():
