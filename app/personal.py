@@ -24,13 +24,15 @@ _lock = threading.Lock()
 _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 _conn.row_factory = sqlite3.Row
 
-SCHEMA = """
+# AUTOINCREMENT: an alert's id never comes back after a delete (see _alert_ids_never_reused)
+ALERTS = """(id integer primary key autoincrement, user_id text, kind text, t text,
+    scope text, value real, active integer default 1, created real)"""
+SCHEMA = f"""
 create table if not exists users(id text primary key, name text, created real);
 create table if not exists watch(user_id text, t text, added real, primary key(user_id, t));
 create table if not exists positions(id integer primary key, user_id text, t text, shares real,
     cost real, opened text, note text, created real);
-create table if not exists alerts(id integer primary key, user_id text, kind text, t text,
-    scope text, value real, active integer default 1, created real);
+create table if not exists alerts{ALERTS};
 create table if not exists events(id integer primary key, user_id text, ts real, t text, kind text,
     title text, body text, dedup text, read integer default 0, unique(user_id, dedup));
 create table if not exists settings(user_id text, key text, value text, primary key(user_id, key));
@@ -87,7 +89,31 @@ def init():
             if c not in cols:
                 _conn.execute(f"alter table positions add column {c} text default ''")
         _conn.commit()
+        _alert_ids_never_reused(_conn)
     ensure_user(DEFAULT_USER, "Me")
+
+
+def _alert_ids_never_reused(c):
+    """An alert's id is in its events' dedup keys ("7|AAPL|2026-11-06"), so a new alert that got a deleted one's id would
+    look already fired. A database from before AUTOINCREMENT gets its alerts table rebuilt with it, ids and rows kept,
+    and the counter starts above every id seen in alerts or in those keys. Safe to run on every start."""
+    if "autoincrement" not in c.execute("select sql from sqlite_master where type='table' and name='alerts'").fetchone()[0].lower():
+        cols = "id, user_id, kind, t, scope, value, active, created"
+        try:
+            c.execute("begin")
+            c.execute(f"create table alerts_new{ALERTS}")
+            c.execute(f"insert into alerts_new({cols}) select {cols} from alerts")
+            c.execute("drop table alerts")
+            c.execute("alter table alerts_new rename to alerts")
+            c.execute("commit")
+        except Exception:
+            c.execute("rollback")
+            raise
+    top = c.execute("select max(m) from (select max(id) m from alerts union all select max(cast(substr(dedup, 1, instr(dedup, '|') - 1) "
+                    "as integer)) from events where dedup glob '[0-9]*|*')").fetchone()[0] or 0
+    c.execute("insert into sqlite_sequence(name, seq) select 'alerts', 0 where not exists (select 1 from sqlite_sequence where name='alerts')")
+    c.execute("update sqlite_sequence set seq=? where name='alerts' and seq<?", (top, top))
+    c.commit()
 
 
 def ensure_user(uid, name=""):
@@ -204,10 +230,6 @@ def clear_sample(uid):
 def update_position(uid, pid, shares, cost, opened=""):
     _exec("update positions set shares=?, cost=?, opened=? where id=? and user_id=? and coalesce(source, '')=''",
           (float(shares), float(cost), opened or "", int(pid), uid))
-
-
-def delete_position(uid, pid):
-    _exec("delete from positions where id=? and user_id=? and coalesce(source, '')=''", (int(pid), uid))
 
 
 # ---------------------------------------------------------------- linked accounts (links.py)
@@ -333,9 +355,10 @@ def _last2(a):
     return vals[-1][1], vals[-2][1], vals[-1][0]
 
 
-def evaluate(uid, px, dates, names, earnings, link_base="", explain=None):
+def evaluate(uid, px, dates, names, earnings, link_base="", explain=None, holidays=lambda year: ()):
     """Check this user's rules against current prices. px: {t: [daily closes]}, last = today/live.
-    explain(t), if given, returns a sentence on why t moved, added to price alerts."""
+    explain(t), if given, returns a sentence on why t moved, added to price alerts. holidays(year): the exchange's
+    closed days (yahoo_extra.market_holidays), so "tomorrow" is the next trading day."""
     if not dates:
         return []
     day = dates[-1]
@@ -400,7 +423,7 @@ def evaluate(uid, px, dates, names, earnings, link_base="", explain=None):
                 if not e or not e.get("date"):
                     continue
                 d = e["date"][:10]
-                if d in (day, _next_day(day)) and e.get("reported") is None:
+                if d in (day, _next_day(day, holidays)) and e.get("reported") is None:
                     when = {"BMO": "before the open", "AMC": "after the close"}.get(e.get("timing"), "")
                     est = f" Analysts expect ${e['epsEst']:.2f} a share." if e.get("epsEst") is not None else ""
                     when_day = "today" if d == day else "tomorrow"
@@ -409,10 +432,11 @@ def evaluate(uid, px, dates, names, earnings, link_base="", explain=None):
     return fired
 
 
-def _next_day(day):
+def _next_day(day, holidays=lambda year: ()):
+    """The trading day after day: weekends skipped, and the dates in holidays(year) (yahoo_extra.market_holidays)."""
     import datetime as dt
     d = dt.date.fromisoformat(day) + dt.timedelta(days=1)
-    while d.weekday() >= 5:
+    while d.weekday() >= 5 or d in holidays(d.year):
         d += dt.timedelta(days=1)
     return d.isoformat()
 

@@ -150,8 +150,11 @@ class OT(unittest.TestCase):
             self.assertEqual(list(px.columns), ["AAA", "BRK-B"])
             self.assertTrue(px["AAA"].isna().iloc[1])
             self.assertAlmostEqual(ot.returns("BRK-B").iloc[-1, 0], 0.5)
-            with self.assertRaises(KeyError):
+            asked = []   # a ticker OpenTicker doesn't keep goes to Yahoo; here Yahoo is a stub that has nothing
+            yf = mock.Mock(download=lambda t, **k: asked.append(t) or importlib.import_module("pandas").DataFrame())
+            with mock.patch.dict(sys.modules, {"yfinance": yf}), self.assertRaises(KeyError):
                 ot.prices("ZZZ")
+            self.assertEqual(asked, [["ZZZ"]])
             self.assertEqual(len(ot.positions()), 0)
 
 
