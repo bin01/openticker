@@ -21,6 +21,8 @@ RATINGS = [(10.0, "Strong Buy"), (7.0, "Buy"), (4.0, "Accumulate"), (1.0, "Hold"
 ORDER = ["Strong Buy", "Buy", "Accumulate", "Hold", "Avoid"]
 CROSS_DAYS = 5      # "bullish cross last 5d", AlphaLens's window for MACD and EMA crosses
 MA_CROSS_DAYS = 20  # not published: a golden or death cross counts as fresh for about a month of sessions
+WINDOW = 300        # sessions each score reads: a year for the 52-week high, plus room for the 200-day and the averages to settle
+HORIZONS = (21, 63)  # the track record checks a rating one and three months (21 and 63 sessions) later
 
 
 def rating_for(s):
@@ -126,7 +128,7 @@ def _pct(x):
 def score(bars, spy, sector=None, sector_name=None):
     """bars: DataFrame with High, Low, Close, Volume (daily, oldest first, at least 220 sessions).
     spy, sector: Series of daily closes on the same calendar. Returns the rating with every signal's points and reason."""
-    bars = bars.dropna(subset=["Close"])
+    bars = bars.dropna(subset=["Close"]).iloc[-WINDOW:]   # the same span today and in the track record (track())
     if len(bars) < 220:
         return None
     h, l, c, v = bars["High"], bars["Low"], bars["Close"], bars["Volume"].fillna(0)
@@ -304,3 +306,77 @@ def score(bars, spy, sector=None, sector_name=None):
         "accum": _num(ud), "entry": _num(entry), "stop": _num(stop), "target": _num(target),
         "gates": gates, "signals": {"core": core, "boost": boost, "combo": combos},
     }
+
+
+# ---------------------------------------------------------------- the track record
+def track(bars_by_t, spy, sector_of=None, step=10, horizons=HORIZONS):
+    """Scores every stock again at earlier dates, every `step` sessions, using only the bars up to that date, and
+    records what the stock and the S&P 500 did in the `horizons` sessions after. No future data reaches a score.
+
+    bars_by_t: {ticker: DataFrame of daily bars}; spy: Series of closes; sector_of: {ticker: (Series or None, name)}.
+    Returns {ticker: [[date, rating, score, up_market, ret_h1, spy_h1, ret_h2, spy_h2, ...], ...]}, oldest first.
+    up_market: whether the S&P 500 closed above its 200-day average that day. A return is None until it's known."""
+    sector_of = sector_of or {}
+    out = {}
+    for t, f in bars_by_t.items():
+        f = f.dropna(subset=["Close"])
+        c = f["Close"]
+        if len(c) < 220:
+            continue
+        sp = spy.reindex(c.index).ffill()
+        up = (sp > sp.rolling(200, min_periods=200).mean()).values
+        sec, name = sector_of.get(t) or (None, None)
+        rows = []
+        for i in range(len(c) - 1, 218, -step):
+            try:
+                r = score(f.iloc[:i + 1], spy, sec, name)
+            except Exception:
+                r = None
+            if not r:
+                continue
+            row = [c.index[i].strftime("%Y-%m-%d"), r["rating"], r["score"], bool(up[i]) if i >= 199 else None]
+            for h in horizons:
+                ok = i + h < len(c) and c.iloc[i] and sp.iloc[i] == sp.iloc[i]
+                row += [_num(c.iloc[i + h] / c.iloc[i] - 1, 4), _num(sp.iloc[i + h] / sp.iloc[i] - 1, 4)] if ok else [None, None]
+            rows.append(row)
+        out[t] = rows[::-1]
+    return out
+
+
+def track_summary(stocks, horizons=HORIZONS):
+    """How each rating did afterwards: per horizon, the number of cases, the average return, the average lead over the
+    S&P 500 and the share that beat it. Also split by whether the market was above its 200-day then, since momentum
+    tends to work better in a rising market. "All" is every stock and date, the yardstick each rating is judged against."""
+    def agg(rows, k):
+        got = [(r[4 + 2 * k], r[5 + 2 * k]) for r in rows if r[4 + 2 * k] is not None and r[5 + 2 * k] is not None]
+        if not got:
+            return {"n": 0}
+        n = len(got)
+        return {"n": n, "avg": _num(sum(a for a, _ in got) / n, 4), "vs": _num(sum(a - b for a, b in got) / n, 4),
+                "beat": _num(sum(1 for a, b in got if a > b) / n, 3)}
+    rows = [r for v in stocks.values() for r in v]
+    out = {"horizons": list(horizons), "ratings": {}, "upMarket": {}, "downMarket": {}}
+    for name, keep in (("ratings", lambda r: True), ("upMarket", lambda r: r[3] is True), ("downMarket", lambda r: r[3] is False)):
+        for rating in ORDER + ["All"]:
+            sel = [r for r in rows if keep(r) and (rating == "All" or r[1] == rating)]
+            out[name][rating] = {str(h): agg(sel, k) for k, h in enumerate(horizons)}
+    dates = sorted(r[0] for r in rows)
+    out["from"], out["to"] = (dates[0], dates[-1]) if dates else (None, None)
+    out["stocks"] = len(stocks)
+    return out
+
+
+def breadth(bars_by_t, back=21):
+    """The share of stocks above their 50- and 200-day averages, now and `back` sessions ago. Most stocks above their
+    200-day is a healthy market; few, a weak one, where buy signals fail more often."""
+    def share(k, ago):
+        ok = tot = 0
+        for f in bars_by_t.values():
+            c = f["Close"].dropna()
+            if len(c) < k + ago + 1:
+                continue
+            tot += 1
+            ok += c.iloc[-1 - ago] > c.iloc[-1 - ago - k + 1:len(c) - ago].mean()
+        return _num(ok / tot, 3) if tot else None, tot
+    (a50, n), (a200, _), (a50b, _), (a200b, _) = share(50, 0), share(200, 0), share(50, back), share(200, back)
+    return {"above50": a50, "above200": a200, "above50Then": a50b, "above200Then": a200b, "n": n, "back": back}

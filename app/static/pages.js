@@ -528,7 +528,7 @@ function renderSignals(main){
   const funds=(SIG.funds||["SPY","QQQ","SMH"]).join(", ");
   const head=`<div class="ph" style="margin:0"><div><h2>Momentum signals</h2>
     <div class="hint">Every stock in ${funds}, plus yours, scored from daily price and volume. Weak trends are capped at Hold, six core signals and six boosters add or take away points, and a bonus comes when several line up. It measures momentum, not value, and the ratings, stops and targets are a score, not advice to buy or sell.</div></div>
-    <div class="sig-asof">${SIG.asOf?`As of the close on ${sigDay(SIG.asOf)}`:""}${SIG.running&&all.length?` · <span class="sig-busy">refreshing</span>`:""}</div></div>`;
+    <div class="sig-asof">${SIG.asOf?`As of the close on ${sigDay(SIG.asOf)}`:""}${SIG.running&&all.length?` · <span class="sig-busy">refreshing</span>`:""}${breadthHTML()}</div></div>`;
   let body;
   if(!all.length&&SIG.running){
     const f=SIG.total?Math.round(100*SIG.done/SIG.total):0;
@@ -557,9 +557,37 @@ function renderSignals(main){
         ${open?`<tr class="sig-why"><td colspan="10">${why(r)}</td></tr>`:""}`; };
     const table=rows.length?`<div class="tbl-wrap"><table class="hold qt sig"><thead><tr>${th("","Stock","l")}${th("rating","Rating","l")}${th("score","Score")}${th("price","Price")}<th data-c="adx" class="sortable ${sigSort.k==="adx"?"on":""}" data-sig-k="adx" title="Average Directional Index: how strong the trend is. Under 20 is no trend.">Trend${sigSort.k==="adx"?(sigSort.dir>0?" ↑":" ↓"):""}</th>${th("rs6","vs S&P, 6 mo")}${th("fromHigh","From high")}<th data-c="stop">Stop</th><th data-c="target">Target</th><th></th></tr></thead>
       <tbody>${rows.map(tr).join("")}</tbody></table></div>`:`<p class="hint" style="margin:14px 0">${sigScope==="mine"&&!scoped.length?"None of your stocks are scored yet. Add some to your watchlist or portfolio.":"No stocks have this rating."}</p>`;
-    body=filt+`<p class="hint" style="margin:10px 0 0">${rows.length} stocks. Click a row to see why it scored what it did; click the ticker to open the stock.</p>`+table+method();
+    body=filt+`<p class="hint" style="margin:10px 0 0">${rows.length} stocks. Click a row to see why it scored what it did; click the ticker to open the stock.</p>`+table+trackHTML()+method();
   }
   main.innerHTML=head+`<div id="scrRes">${body}</div>`;
+}
+/* how much of the market is in an uptrend: momentum ratings work better when most stocks are */
+function breadthHTML(){
+  const b=SIG?.breadth; if(!b||b.above200==null) return "";
+  const a=Math.round(b.above200*100), was=b.above200Then==null?null:Math.round(b.above200Then*100);
+  return `<div class="sig-breadth" title="Of the ${b.n} stocks in ${(SIG.funds||[]).join(", ")}. A broad market, with most stocks above their 200-day average, is where momentum ratings have worked best.">${a}% of these stocks are above their 200-day average${was!=null&&was!==a?` (${was}% a month ago)`:""}</div>`;
+}
+/* the score's track record: every stock scored again every two weeks over two years, then followed for 1 and 3 months */
+function trackHTML(){
+  const T=SIG?.track;
+  if(!T?.ratings) return `<section class="sig-track"><div class="lbl">How these ratings have done</div><p class="hint">${SIG?.running?"Worked out after this scan finishes.":"Being worked out: OpenTicker scores every stock again at earlier dates and checks what happened next. It takes a few minutes, once a day."}</p></section>`;
+  const R=T.ratings, all=R.All?.["21"]||{}, mo=(m,y)=>new Date(y,m-1,15).toLocaleDateString("en-US",{month:"short",year:"numeric"});
+  const span=T.from&&T.to?`${mo(+T.from.slice(5,7),+T.from.slice(0,4))} to ${mo(+T.to.slice(5,7),+T.to.slice(0,4))}`:"";
+  const lead=x=>x?.n?`<span class="${cls(x.vs)}">${x.vs>0?"+":x.vs<0?"−":""}${Math.abs(x.vs*100).toFixed(1)}</span>`:"–";
+  const beat=x=>x?.n?`${Math.round(x.beat*100)}%`:"–";
+  const row=(k,lab,c)=>{ const a=R[k]?.["21"], z=R[k]?.["63"]; if(!a?.n) return "";
+    return `<tr${k==="All"?' class="sig-all"':""}><td class="l">${c?`<span class="${sigCls(k)}">${lab}</span>`:lab}</td><td class="num">${a.n.toLocaleString()}</td><td class="num">${lead(a)}</td><td class="num">${beat(a)}</td><td class="num">${lead(z)}</td><td class="num">${beat(z)}</td></tr>`; };
+  const top=["Strong Buy","Buy"].map(k=>R[k]?.["21"]).filter(x=>x?.n), n=top.reduce((s,x)=>s+x.n,0);
+  const topVs=n?top.reduce((s,x)=>s+x.vs*x.n,0)/n:null, av=R.Avoid?.["21"];
+  let say;
+  if(topVs==null||!all.n) say="Not enough Buy ratings yet to judge.";
+  else if(topVs>all.vs+0.003) say=`Stocks rated Buy or better led the S&P 500 by ${(topVs*100).toFixed(1)} points over the next month on average, against ${(all.vs*100).toFixed(1)} for every stock${av?.n&&av.vs<all.vs?`, and Avoid-rated stocks trailed the rest`:""}. The rating has added something, though a month is a short, noisy window.`;
+  else say=`Stocks rated Buy or better did no better over the next month than the average stock here (${(topVs*100).toFixed(1)} against ${(all.vs*100).toFixed(1)} points ahead of the S&P 500). Read the rating as a description of the trend, not an edge.`;
+  return `<section class="sig-track"><div class="lbl">How these ratings have done</div>
+    <p class="sig-say">${say}</p>
+    <div class="tbl-wrap"><table class="hold qt"><thead><tr><th class="l">Rating then</th><th>Cases</th><th>Next month, points vs S&amp;P 500</th><th>Beat it</th><th>Next 3 months, vs S&amp;P 500</th><th>Beat it</th></tr></thead>
+    <tbody>${SIG_RATINGS.map(([k])=>row(k,k,true)).join("")}${row("All","Every stock")}</tbody></table></div>
+    <p class="hint">${T.stocks} stocks scored every two weeks${span?` from ${span}`:""}, each time using only the prices known that day, then followed for one and three months. "Points vs S&amp;P 500" is the average lead over the index. These are today's index members, so stocks that dropped out aren't counted, which flatters every rating a little; two years is only one or two market phases.</p></section>`;
 }
 function dist(rows){
   if(!rows.length) return "";

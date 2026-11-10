@@ -25,6 +25,9 @@ Data, as Markdown (for you or any agent)
   openticker analysts NVDA           one section (also: earnings, ownership, options, news, financials, events)
   openticker insiders NVDA           insider trades in depth: who, how much, against what they still hold
   openticker technicals NVDA         trend, moving averages, RSI, MACD, volume, support and resistance
+  openticker signals NVDA            the Screener's momentum score, its parts, and how the score has done before
+  openticker valuation NVDA          multiples now, and the P/E against the stock's own past
+  openticker reads [NVDA]            Tick's past evidence checks and how the stocks did since
   openticker portfolio               your positions, watchlist, upcoming earnings and brief
   openticker brief                   what changed for your stocks
   openticker market                  SPY, QQQ, SMH, SPSM, sectors, macro and today's movers
@@ -77,8 +80,8 @@ CONFIG = paths.HOME / "config.json"
 LOG = paths.LOGS / "server.log"
 MAC = sys.platform == "darwin"
 INSTALLED = any((v / "bin" / "python").exists() for v in (ROOT / ".venv", APP / ".venv"))
-SECTIONS = ("analysts", "earnings", "ownership", "options", "news", "financials", "events", "insiders", "technicals")
-DATA_CMDS = {"stock", "portfolio", "brief", "market", "fund", "compare", "history", "calendar", "search"} | set(SECTIONS)
+SECTIONS = ("analysts", "earnings", "ownership", "options", "news", "financials", "events", "insiders", "technicals", "signals", "valuation")
+DATA_CMDS = {"stock", "portfolio", "brief", "market", "fund", "compare", "history", "calendar", "search", "reads"} | set(SECTIONS)
 
 # --------------------------------------------------------------------------- output
 TTY = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
@@ -663,6 +666,10 @@ def cmd_check(args):
             bad = set(re.findall(r"[a-z]+", nd.group(1))) - {"workbench", "web"} if nd else set()   # agent.NEEDS
             if bad:
                 fails.append(f"skills/{d.name}/SKILL.md: needs can only list workbench and web, not {', '.join(sorted(bad))}")
+            da = re.search(r"^\s+data:\s*(.*)$", meta, re.M)
+            bad = set(re.findall(r"[a-z]+", da.group(1))) - set(SECTIONS) if da else set()   # agent.SECTIONS
+            if bad:
+                fails.append(f"skills/{d.name}/SKILL.md: data can only list {', '.join(SECTIONS)}, not {', '.join(sorted(bad))}")
     t = subprocess.run([py(), "-m", "unittest", "discover", "-s", str(ROOT / "tests"), "-t", str(ROOT)], capture_output=True, text=True, cwd=str(ROOT))
     if t.returncode != 0:
         fails.append("tests failed (run openticker test to see which):\n" + "\n".join(t.stderr.strip().splitlines()[-6:]))
@@ -802,6 +809,8 @@ def data_query(cmd, rest):
         q["t"] = ",".join(rest).upper()
     elif cmd == "search":
         q["q"] = " ".join(rest)
+    elif cmd == "reads" and rest:
+        q["t"] = rest[0].upper()
     return q
 
 

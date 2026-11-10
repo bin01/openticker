@@ -6,12 +6,13 @@ metadata:
   order: 5
   label: "Read the chart"
   scope: stock
+  data: "technicals signals"
   prompt: "Read {t}'s chart for me."
 ---
 
 # Technical analysis
 
-**Data**: `openticker technicals TICKER`. Add `openticker earnings TICKER` only to check whether earnings fall inside the next two weeks, since a report overrides any chart setup.
+**Data**: `openticker technicals TICKER`, and `openticker signals TICKER` for the Screener's momentum rating and how that rating has done before. Add `openticker earnings TICKER` only to check whether earnings fall inside the next two weeks, since a report overrides any chart setup.
 
 ## Read it in this order
 
@@ -20,7 +21,8 @@ metadata:
 3. **Volume.** It confirms or questions the move. Up days on heavier volume than down days means buyers are in control. A breakout on light volume is suspect. Call out any day above 1.5× average volume and what price did that day.
 4. **Levels.** Name the nearest support below and resistance above, with their distance in %. More touches make a level stronger. Use the 52-week high and low and the 200-day as reference levels too.
 5. **Relative strength.** A stock beating both the S&P 500 and its sector is a leader. One lagging both is weak even if it's rising.
-6. **Volatility.** Use the average true range to say what a normal day's swing is, so a level 2% away means something. Mention a Bollinger squeeze when the data flags one.
+6. **The momentum rating.** Say the rating in one line and whether it agrees with your read. Quote its track record only if the rating has beaten the "All" row; otherwise say it hasn't added much lately.
+7. **Volatility.** Use the average true range to say what a normal day's swing is, so a level 2% away means something. Mention a Bollinger squeeze when the data flags one.
 
 ## Answer shape
 

@@ -207,6 +207,24 @@ def gather(sym, names, timeout=25):
 
 
 # ---------------------------------------------------------------- sections
+def _short_trend(info):
+    """How short interest moved since the month before, and days to cover. Rising short interest into strength is a
+    crowd betting against the move; a high days-to-cover means shorts would take days of normal volume to buy back."""
+    now, before = info.get("sharesShort"), info.get("sharesShortPriorMonth")
+    out = []
+    if now and before:
+        out.append(f"{'up' if now > before else 'down'} {_pct(abs(now / before - 1), 0, False)} from a month earlier")
+    if info.get("shortRatio"):
+        out.append(f"{info['shortRatio']:.1f} days of average volume to cover")
+    when = info.get("dateShortInterest")
+    if when and out:
+        try:
+            out.append("as of " + dt.datetime.fromtimestamp(int(when), srv.NY).strftime("%Y-%m-%d"))
+        except Exception:
+            pass
+    return f" ({', '.join(out)})" if out else ""
+
+
 def sec_company(info):
     if not info:
         return []
@@ -246,7 +264,7 @@ def sec_company(info):
         dy = info["dividendYield"]
         o.append(f"dividend yield {dy:.2f}%" if dy > 0.2 else f"dividend yield {dy * 100:.2f}%")
     if info.get("shortPercentOfFloat"):
-        o.append(f"short interest {_pct(info['shortPercentOfFloat'], 1, False)} of float")
+        o.append(f"short interest {_pct(info['shortPercentOfFloat'], 1, False)} of float" + _short_trend(info))
     if info.get("heldPercentInstitutions"):
         o.append(f"institutions hold {_pct(info['heldPercentInstitutions'], 0, False)}")
     if o:
@@ -290,6 +308,16 @@ def sec_analysts(a, info, price):
             rows.append([lab, f"${r['current']:.2f}", chg("30daysAgo"), chg("90daysAgo")])
     if rows:
         L += ["EPS estimate trend:", _table(["Period", "EPS estimate", "vs 30 days ago", "vs 90 days ago"], rows), ""]
+    rv = a.get("eps_revisions") or {}
+    rows = []
+    for p, lab in (("0q", "This quarter"), ("+1q", "Next quarter"), ("0y", "This year"), ("+1y", "Next year")):
+        r = rv.get(p) or {}
+        if any(r.get(k) is not None for k in ("upLast30days", "downLast30days")):
+            rows.append([lab, r.get("upLast7days") or 0, r.get("downLast7Days", r.get("downLast7days")) or 0,
+                         r.get("upLast30days") or 0, r.get("downLast30days") or 0])
+    if rows:
+        L += ["How many analysts raised or cut their EPS estimate (more raising than cutting is the signal, whatever the rating):",
+              _table(["Period", "Raised, 7 days", "Cut, 7 days", "Raised, 30 days", "Cut, 30 days"], rows), ""]
     ee, re_ = a.get("earnings_estimate") or {}, a.get("revenue_estimate") or {}
     rows = []
     for p, lab in (("0q", "This quarter"), ("0y", "This year"), ("+1y", "Next year")):
@@ -545,6 +573,165 @@ def sec_technicals(sym, b, info):
     return L
 
 
+# ---------------------------------------------------------------- the momentum score and its track record
+def _frame(b):
+    import pandas as pd
+    return pd.DataFrame({"High": b["h"], "Low": b["l"], "Close": b["c"], "Volume": [x or 0 for x in b["v"]]},
+                        index=pd.to_datetime(b["d"])).dropna(subset=["Close"])
+
+
+def _closes(sym):
+    import pandas as pd
+    b = srv.extra("ohlc", {"t": [sym]})
+    return pd.Series(b["c"], index=pd.to_datetime(b["d"])).dropna()
+
+
+def _score_now(sym, b, info):
+    """The stock's row from the Screener's last scan, or, for a stock the scan doesn't cover, the same score worked out
+    now from its own bars. Returns (row, how)."""
+    row = next((r for r in srv.SIG.get("rows") or [] if r.get("t") == sym), None)
+    if row:
+        return row, f"From the Screener's scan of the close on {srv.SIG.get('asOf')}."
+    if not b or len(b.get("c") or []) < 220:
+        return None, ""
+    chips = {h["t"] for h in srv.S.holdings.get("SMH", {}).get("holdings", [])}
+    etf = "SMH" if sym in chips else _sector_etf(info)
+    name = "Chip stocks (SMH)" if etf == "SMH" else next((f"{n} ({e})" for e, n, _ in srv.X.SECTOR_ETFS if e == etf), None)
+    f = _frame(b)
+    today = srv.X.ny_today().isoformat()
+    if srv.market_open():            # finished sessions only, like the scan
+        f = f[f.index.strftime("%Y-%m-%d") < today]
+    try:
+        sec = _closes(etf) if etf else None
+    except Exception:
+        sec = None
+    r = srv.signals.score(f, _closes("SPY"), sec, name)
+    return r, f"Worked out now from {len(f)} daily bars to {f.index[-1].strftime('%Y-%m-%d')} (this stock isn't in the Screener's scan)."
+
+
+def _beat(x):
+    return f"{x['vs'] * 100:+.1f} pts, beat it {x['beat'] * 100:.0f}% of the time" if x.get("n") else "no cases"
+
+
+def sec_signals(sym, b, info):
+    try:
+        r, how = _score_now(sym, b, info)
+    except Exception as e:
+        srv.log(f"signals for {sym} failed: {e!r}")
+        r, how = None, ""
+    if not r:
+        return ["Not enough price history for the momentum score (it needs about a year of daily bars)."]
+    L = [f"Momentum rating: **{r['rating']}**, score {r['score']:+.2f} (Strong Buy at 10 or more, Buy 7, Accumulate 4, Hold 1, Avoid below 1)."
+         + (f" The points alone say {r['raw']}; a failed check caps it." if r.get("raw") else ""), how,
+         "The score adds points for trend, relative strength, volume and momentum patterns over the past year. It reads price "
+         "and volume only: nothing about earnings, valuation or news. It looks one to three months ahead, not years."]
+    L.append("Checks: " + "; ".join(f"{g['name']} {'passed' if g['pass'] else 'failed'} ({g['why']})" for g in r.get("gates") or []) + ".")
+    for grp, lab in (("core", "Core signals"), ("boost", "Boosters"), ("combo", "Combinations")):
+        rows = [[x["name"], f"{x['points']:+.2f}" + (f" of {x['max']:g}" if x.get("max") else ""), x["why"]] for x in (r.get("signals") or {}).get(grp) or []]
+        if rows:
+            L += ["", f"{lab} ({r.get(grp, 0):+.2f}):", _table(["Signal", "Points", "Why"], rows)]
+    if r.get("entry"):
+        L.append(f"\nThe method's own risk levels: entry ${r['entry']:,.2f} (half a percent over the close), stop ${r['stop']:,.2f} "
+                 f"(the higher of 2% under the 200-day average and two average daily ranges under the price), target ${r['target']:,.2f} "
+                 "(2.5 times the distance to the stop). They come from the formula, not from support and resistance.")
+
+    # how the score has done: across the Screener's stocks, then this one
+    T = srv.TRACK
+    sm = T.get("summary") or {}
+    hs = [str(h) for h in sm.get("horizons") or ()]
+    if sm.get("ratings") and len(hs) == 2:
+        rows = []
+        for k in srv.signals.ORDER + ["All"]:
+            a, z = sm["ratings"][k].get(hs[0], {}), sm["ratings"][k].get(hs[1], {})
+            if a.get("n"):
+                rows.append([("**" + k + "**") if k == r["rating"] else k, a["n"], _pct(a["avg"]), _beat(a), _pct(z.get("avg")) if z.get("n") else "n/a", _beat(z)])
+        L += ["", f"How the score has done: {sm.get('stocks')} stocks scored every two weeks from {sm.get('from')} to {sm.get('to')}, "
+              "using only the prices known on each date, then followed for one and three months. \"vs S&P 500\" is the average lead over the S&P 500 in points.",
+              _table(["Rating then", "Cases", "1M return", "1M vs S&P 500", "3M return", "3M vs S&P 500"], rows)]
+        up, dn = (sm.get("upMarket") or {}).get(r["rating"], {}), (sm.get("downMarket") or {}).get(r["rating"], {})
+        if up.get(hs[0], {}).get("n") or dn.get(hs[0], {}).get("n"):
+            L.append(f"{r['rating']} ratings 1 month later, by market: with the S&P 500 above its 200-day average {_beat(up.get(hs[0], {}))} "
+                     f"({up.get(hs[0], {}).get('n', 0)} cases); below it {_beat(dn.get(hs[0], {}))} ({dn.get(hs[0], {}).get('n', 0)} cases).")
+        L.append("Limits: the stocks are today's index members, so ones that fell out aren't counted, which flatters every rating a little; "
+                 "two years is only one or two market phases; cases overlap in time, so they aren't independent.")
+    mine = T.get("stocks", {}).get(sym)
+    if mine is None and b and len(b.get("c") or []) >= 240:
+        try:
+            mine = srv.signals.track({sym: _frame(b)}, _closes("SPY"))[sym]
+        except Exception:
+            mine = None
+    if mine:
+        done = [x for x in mine if x[4] is not None]
+        same = [x for x in done if x[1] == r["rating"]]
+        rows = [[x[0], x[1], f"{x[2]:+.2f}", _pct(x[4] - x[5]) if x[4] is not None else "not yet", _pct(x[6] - x[7]) if x[6] is not None else "not yet"]
+                for x in mine[-8:][::-1]]
+        L += ["", f"{sym}'s own record: rated {len(mine)} times; {len(same)} of them {r['rating']} with a known 1-month result"
+              + (f", after which it led the S&P 500 by {_pct(sum(x[4] - x[5] for x in same) / len(same))} on average and beat it "
+                 f"{sum(1 for x in same if x[4] > x[5])} of {len(same)} times." if same else "."),
+              _table(["Date", "Rating", "Score", "Next month vs S&P 500", "Next 3 months vs S&P 500"], rows)]
+    br = srv.SIG.get("breadth") or {}
+    if br.get("above200") is not None:
+        L += ["", breadth_line(br)]
+    return L
+
+
+def breadth_line(br):
+    a, then = br["above200"], br.get("above200Then")
+    tone = "a broad, healthy market" if a >= 0.6 else "a narrow market, where buy signals fail more often" if a < 0.4 else "a middling market"
+    return (f"Market breadth: {a * 100:.0f}% of {br.get('n')} large stocks are above their 200-day average"
+            + (f" ({then * 100:.0f}% a month ago)" if then is not None else "")
+            + (f" and {br['above50'] * 100:.0f}% above their 50-day" if br.get("above50") is not None else "")
+            + f": {tone}.")
+
+
+# ---------------------------------------------------------------- valuation against its own history
+def sec_valuation(sym, info, hist, b):
+    L = []
+    v = []
+    for k, lab in (("trailingPE", "P/E on the last 12 months"), ("forwardPE", "P/E on next year's expected earnings"),
+                   ("trailingPegRatio", "PEG (forward P/E divided by expected growth; near 1 is fair for the growth)"),
+                   ("priceToSalesTrailing12Months", "price to sales"), ("enterpriseToEbitda", "enterprise value to EBITDA"),
+                   ("priceToBook", "price to book")):
+        if info.get(k):
+            v.append(f"{lab} {info[k]:.1f}" + ("" if k == "trailingPegRatio" else "×"))
+    if info.get("freeCashflow") and info.get("marketCap"):
+        v.append(f"free cash flow yield {info['freeCashflow'] / info['marketCap'] * 100:.1f}% (free cash flow over market value)")
+    if v:
+        L.append("Now: " + "; ".join(v) + ".")
+    g = [f"{lab} {_pct(info[k])}" for k, lab in (("earningsGrowth", "earnings growth last quarter"), ("revenueGrowth", "revenue growth last quarter"))
+         if info.get(k) is not None]
+    if g:
+        L.append("Growth (year over year): " + ", ".join(g) + ".")
+
+    # the P/E on the last four reported quarters at each report date, against today's
+    rep = sorted([h for h in hist or [] if h.get("eps") is not None], key=lambda h: h["date"])
+    if b and len(rep) >= 5:
+        d, c = b["d"], b["c"]
+        def close_on(day):
+            i = max((k for k, x in enumerate(d) if x <= day), default=None)
+            return c[i] if i is not None else None
+        pts = []
+        for i in range(3, len(rep)):
+            ttm = sum(x["eps"] for x in rep[i - 3:i + 1])
+            px = close_on(rep[i]["date"])
+            if ttm > 0 and px:
+                pts.append((rep[i]["date"], px, ttm, px / ttm))
+        if pts:
+            ttm, now = pts[-1][2], c[-1]
+            cur = now / ttm
+            ps = sorted(p[3] for p in pts)
+            rank = sum(1 for x in ps if x < cur) / len(ps)
+            L += ["", f"P/E against its own past: today {cur:.1f}× the last four quarters' earnings per share (${ttm:.2f}). "
+                  f"At the last {len(pts)} reports it ranged {ps[0]:.1f}× to {ps[-1]:.1f}× (median {ps[len(ps) // 2]:.1f}×), so today is "
+                  + ("above all of them" if rank == 1 else "below all of them" if cur < ps[0] else f"above {rank * 100:.0f}% of them") + ". "
+                  "This uses Yahoo's reported quarterly EPS, which is usually the company's adjusted figure, so it can differ from the P/E above; "
+                  "compare it only with itself.",
+                  _table(["Report", "Price then", "EPS, last 4 quarters", "P/E then"], [[p[0], f"${p[1]:,.2f}", f"${p[2]:.2f}", f"{p[3]:.1f}×"] for p in pts[::-1]])]
+        elif rep:
+            L.append("P/E against its own past: earnings over the last four quarters were negative, so there's no P/E to compare.")
+    return L
+
+
 # ---------------------------------------------------------------- insider trades in depth
 WHAT = {"buy": "Open-market buy", "sell": "Sale", "exercise": "Option exercise", "award": "Stock award", "gift": "Gift", "other": "Other"}
 
@@ -697,10 +884,38 @@ def _my_position(sym, uid):
         sh = sum(p["shares"] for p in ps)
         cost = sum(p["shares"] * p["cost"] for p in ps)
         L.append(f"You own {sh:g} shares, average cost ${cost / sh:,.2f}, now worth {_money(sh * last)}"   # a $0 cost (gifted shares, RSUs) has no gain %
-                  + (f" ({_pct(sh * last / cost - 1)} total gain)." if cost > 0 else "."))
+                  + (f" ({_pct(sh * last / cost - 1)} total gain, {_money(sh * last - cost)})." if cost > 0 else "."))
+        total = 0
+        for p in snap["positions"]:
+            _, a = _series(p["t"])
+            a = _trim(a)
+            total += p["shares"] * (a[-1] if a else p["cost"] or 0)
+        if total:
+            L.append(f"It's {sh * last / total * 100:.1f}% of the portfolio's {_money(total)}.")
+        L += _since_bought(sym, ps)
     elif sym in snap["watch"]:
         L.append("It's on your watchlist; you don't own it.")
     return L
+
+
+def _since_bought(sym, ps):
+    """Each purchase with a date: how the stock did since against the S&P 500, and the momentum rating then."""
+    dates, arr = _series(sym)
+    _, spy = _series("SPY")
+    track = srv.TRACK.get("stocks", {}).get(sym) or []
+    out = []
+    for p in sorted((p for p in ps if p.get("opened")), key=lambda p: p["opened"])[:6]:
+        day = str(p["opened"])[:10]
+        i = next((k for k, d in enumerate(dates) if d >= day), None)
+        bits = [f"{p['shares']:g} shares bought {day}" + (f" at ${p['cost']:,.2f}" if p.get("cost") else "")]
+        if i is not None and dates and dates[0] <= day and arr[i] and i < len(spy) and spy[i] and arr[-1] and spy[-1]:
+            a, b = arr[-1] / arr[i] - 1, spy[-1] / spy[i] - 1
+            bits.append(f"the stock is {_pct(a)} since, the S&P 500 {_pct(b)}")
+        then = [x for x in track if x[0] <= day]
+        if then and day >= track[0][0]:
+            bits.append(f"the momentum rating then was {then[-1][1]} (score {then[-1][2]:+.2f}, as of {then[-1][0]})")
+        out.append("; ".join(bits) + ".")
+    return (["Purchases:"] + ["- " + x for x in out]) if out else []
 
 
 SECTIONS = {
@@ -713,6 +928,8 @@ SECTIONS = {
     "events": ("Dividends, splits and filings", ["events"]),
     "insiders": ("Insider trades", ["ownership"]),
     "technicals": ("Technicals", ["ohlc"]),
+    "signals": ("Momentum score", ["ohlc"]),
+    "valuation": ("Valuation", ["earnhist", "ohlc"]),
 }
 
 
@@ -747,7 +964,9 @@ def stock_context(sym, uid=None, only=None, timeout=25):
                 "financials": lambda: sec_financials(got.get("financials")),
                 "events": lambda: sec_events(got.get("events")),
                 "insiders": lambda: sec_insiders(got.get("ownership"), price),
-                "technicals": lambda: sec_technicals(sym, got.get("ohlc"), info)}[k]()
+                "technicals": lambda: sec_technicals(sym, got.get("ohlc"), info),
+                "signals": lambda: sec_signals(sym, got.get("ohlc"), info),
+                "valuation": lambda: sec_valuation(sym, info, got.get("earnhist"), got.get("ohlc"))}[k]()
         missing = [n for n in SECTIONS[k][1] if n not in got]
         L += ["", f"## {SECTIONS[k][0]}"] + (body or [f"(Yahoo didn't return this just now{': ' + ', '.join(missing) if missing else ''}.)"])
         old = [a for a in (srv.stale_age(_cache_key(n, sym)) for n in SECTIONS[k][1]) if a]
@@ -902,6 +1121,9 @@ def market_context():
             L.append(f"Status: {st['message']}.")
     except Exception:
         pass
+    br = srv.SIG.get("breadth") or {}
+    if br.get("above200") is not None:
+        L += ["", "## Breadth", breadth_line(br) + f" From the close on {srv.SIG.get('asOf')}."]
     c = sorted(_contrib("SPY", 1), key=lambda x: -x[4])
     if c:
         L += ["", "S&P 500 today, biggest lifts: " + ", ".join(f"{x[0]} {_pct(x[3])}" for x in c[:6]) + ".",
@@ -993,6 +1215,69 @@ def calendar_context(uid):
     return "\n".join(L) + "\n"
 
 
+# ---------------------------------------------------------------- Tick's evidence checks, looked back on
+VERDICT = re.compile(r"```verdict\s*\n(.*?)\n```", re.S)
+
+
+def verdict_in(text):
+    """The ```verdict block the weigh-the-evidence playbook ends with, checked, or None."""
+    m = VERDICT.search(text or "")
+    if not m:
+        return None
+    try:
+        v = json.loads(m.group(1))
+        t = str(v.get("t") or "").upper()
+        n = [int(v.get(k) or 0) for k in ("for", "against", "neutral")]
+    except Exception:
+        return None
+    if not srv.VALID.fullmatch(t) or v.get("lean") not in srv.personal.LEANS or not all(0 <= x <= 12 for x in n):
+        return None
+    return {"t": t, "lean": v["lean"], "for": n[0], "against": n[1], "neutral": n[2], "line": str(v.get("line") or "")[:300]}
+
+
+def record_verdict(uid, spec, text, chat_id=None):
+    """Keep an evidence check with the day's prices, so a later look can say how it went. Only for the stock that was
+    asked about: the verdict is the answer's own, and the answer read pages written by strangers."""
+    v = verdict_in(text)
+    if not v or (spec.get("t") and srv.yahoo_symbol(spec["t"]) != v["t"]):
+        return None
+    _, a = _series(v["t"])
+    _, s = _series("SPY")
+    a, s = _trim(a), _trim(s)
+    if not a or not s:
+        return None
+    srv.personal.read_add(uid, v["t"], v["lean"], v["for"], v["against"], v["neutral"], v["line"], a[-1], s[-1],
+                          srv.X.ny_today().isoformat(), chat_id)
+    return v
+
+
+def reads_context(uid, t=None):
+    rows = srv.personal.reads(uid, t)
+    if not rows:
+        return ("No evidence checks yet" + (f" for {t}" if t else "") + ". They're kept when Tick weighs the evidence on a stock.\n")
+    L = [f"# Tick's evidence checks" + (f" on {t}" if t else ""), f"Prices as of {_now_ny()}.", "",
+         "Each row is an earlier check: which way the evidence leaned then, the price then, and how the stock and the S&P 500 did since.", ""]
+    _, spy = _series("SPY")
+    spy = _trim(spy)
+    out, by = [], {}
+    for r in rows:
+        _, a = _series(r["t"])
+        a = _trim(a)
+        now = a[-1] if a else None
+        ch = now / r["price"] - 1 if now and r["price"] else None
+        sch = spy[-1] / r["spy"] - 1 if spy and r["spy"] else None
+        lead = ch - sch if ch is not None and sch is not None else None
+        if lead is not None:
+            by.setdefault(r["lean"], []).append(lead)
+        out.append([r["day"], r["t"], f"{r['lean']} ({r['pros']} for, {r['cons']} against, {r['neutral']} neutral)",
+                    f"${r['price']:,.2f}", f"${now:,.2f}" if now else "n/a", _pct(ch), _pct(sch), _pct(lead), r["line"] or ""])
+    L.append(_table(["Date", "Ticker", "Lean then", "Price then", "Now", "Change", "S&P 500", "Lead", "Why"], out))
+    if by:
+        L += ["", "So far: " + "; ".join(f"{k} checks led the S&P 500 by {_pct(sum(v) / len(v))} on average ({sum(1 for x in v if x > 0)} of {len(v)} ahead)"
+                                          for k, v in by.items()) + ". Recent checks haven't had time to play out; judge them after a month or more."]
+    return "\n".join(L) + "\n"
+
+
 def text_for(cmd, args, uid):
     """Dispatch for /api/agent/<cmd> and the openticker CLI."""
     t = (args.get("t") or [""])[0]
@@ -1020,6 +1305,8 @@ def text_for(cmd, args, uid):
         res = srv.search_tickers((args.get("q") or [""])[0][:40])
         return "\n".join(f"- {r.get('t')}: {r.get('n') or ''}" + "".join(f" ({x})" for x in [", ".join(v for v in (r.get('type', '').title().replace('Etf', 'ETF').replace('Equity', 'Stock'), r.get('exch')) if v)] if x)
                          for r in res) + "\n" if res else "No matches.\n"
+    if cmd == "reads":
+        return reads_context(uid, srv.yahoo_symbol(t) if t else None)
     if cmd == "skills":
         return "\n".join(f"- {s['name']}: {s['description']}" for s in skills()) + "\n"
     raise ValueError(f"Unknown command {cmd}.")
@@ -1046,7 +1333,8 @@ def _parse_skill(path: Path):
     return {"name": meta.get("name") or path.parent.name, "description": meta.get("description", ""),
             "label": md.get("label") or meta.get("name"), "scope": md.get("scope", "any"),
             "prompt": md.get("prompt", ""), "blurb": md.get("blurb", ""), "order": int(md.get("order") or 9), "hidden": md.get("hidden") == "true", "body": body,
-            "match": md.get("match", ""), "needs": re.findall(r"[a-z]+", md.get("needs", ""))}
+            "match": md.get("match", ""), "needs": re.findall(r"[a-z]+", md.get("needs", "")),
+            "data": [k for k in re.findall(r"[a-z]+", md.get("data", "")) if k in SECTIONS]}
 
 
 def skills():
@@ -1319,7 +1607,7 @@ How to answer:
 TOOLS_NOTE = """If you can run shell commands, the `openticker` command returns more live data from the app as Markdown:
   openticker stock T | analysts T | earnings T | ownership T | options T | news T | financials T | events T
   openticker portfolio | brief | market | fund SPY --h 1M | compare NVDA AMD AVGO | calendar | search "name"
-  openticker insiders T | technicals T | history T T2 --h 3M
+  openticker insiders T | technicals T | signals T | valuation T | history T T2 --h 3M | reads T
 Use it when the provided data isn't enough (for example, to compare with a peer). Use web search only for news newer than the data."""
 
 
@@ -1384,6 +1672,7 @@ def _env(provider=None):
 
 
 AGENT_CMDS = ("stock", "analysts", "earnings", "ownership", "options", "news", "financials", "events", "insiders", "technicals",
+              "signals", "valuation", "reads",
               "portfolio", "brief", "market", "fund", "compare", "history", "calendar", "search", "skills")
 
 # Agents whose shell can reach OpenTicker for the data commands. Codex's sandbox runs with its network off (see _run_codex),
@@ -1795,9 +2084,12 @@ class Run:
                     break
 
 
-def context_for(scope, t, uid):
+def context_for(scope, t, uid, skill_name=None):
     if scope == "stock" and t:
-        return stock_context(t, uid)
+        more = (skill(skill_name) or {}).get("data") if skill_name else None
+        # a playbook's metadata.data: the sections it always reads, sent with the question so no agent has to ask
+        # (Codex and Ollama can't) and the answer starts sooner
+        return stock_context(t, uid) + ("\n" + stock_context(t, uid, only=more) if more else "")
     if scope == "portfolio":
         return portfolio_context(uid)
     if scope == "fund" and t:
