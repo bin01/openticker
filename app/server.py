@@ -1878,7 +1878,7 @@ def extra(name, q):
         ttl = _live_ttl(300, 6 * 3600)
     if name == "levels":       # a 5-minute chart goes stale in a minute, a quarterly one in a day
         iv = (q.get("iv") or ["1d"])[0]
-        ttl = {"5m": _live_ttl(60, 3600), "15m": _live_ttl(120, 3600), "1h": _live_ttl(300, 3600),
+        ttl = {"5m": _live_ttl(60, 3600), "10m": _live_ttl(90, 3600), "15m": _live_ttl(120, 3600), "1h": _live_ttl(300, 3600),
                "1wk": 6 * 3600, "3mo": 24 * 3600}.get(iv, _live_ttl(300, 6 * 3600))
     if name == "macro":
         return jsonable(fn(sym, q))

@@ -224,12 +224,25 @@ def ohlc(sym):
 # Levels come from every bar fetched (daily: the last year); the chart shows the latest `show` bars.
 LEVEL_BARS = {
     "5m":  ("5d", "5m", 6, 0.0015, 260, 0.06),     # five sessions; a swing is the extreme of half an hour each side
+    "10m": ("5d", "5m", 3, 0.002, 260, 0.08),      # Yahoo has no 10-minute bars: five sessions of 5-minute bars, paired up
     "15m": ("1mo", "15m", 4, 0.0025, 260, 0.1),   # a month; the chart shows about ten sessions
     "1h":  ("6mo", "1h", 4, 0.004, 260, 0.2),     # six months; the chart shows about six weeks
     "1d":  ("2y", "1d", 5, 0.006, 252, 0.35),      # two years fetched for the 200-day average, levels from the last year
     "1wk": ("10y", "1wk", 3, 0.012, 260, 0.5),    # ten years; the chart shows five
     "3mo": ("max", "1mo", 2, 0.02, 400, 0.7),     # every quarter Yahoo has, built from monthly bars
 }
+
+
+def clean_intraday_volume(hist):
+    """Yahoo's intraday volume has bogus bars, at times every other one, each worth most of a day's trading (a session's 5-minute
+    bars can add up to ten times its daily volume). A bar over 20 times its session's median is one of those: leave it blank (0)."""
+    if "Volume" not in hist:
+        return hist
+    vol = hist["Volume"]
+    med = vol.where(vol > 0).groupby(vol.index.date).transform("median")
+    hist = hist.copy()
+    hist.loc[vol > 20 * med, "Volume"] = 0
+    return hist
 
 
 def levels(sym, iv="1d", keep=3):
@@ -247,8 +260,12 @@ def levels(sym, iv="1d", keep=3):
         hist.loc[hist.index[-1], ["Close", "High", "Low", "Open"]] = [float(px)] * 4
     hist = hist.dropna(subset=["Close"])
     if iv == "3mo":     # Yahoo's own 3-month bars start on odd dates; calendar quarters read better
-        hist = hist.resample("QS").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna(subset=["Close"])
-    intraday = iv in ("5m", "15m", "1h")
+        hist = hist.resample("QS").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna(subset=["Close"])
+    if iv in ("5m", "10m", "15m", "1h"):
+        hist = clean_intraday_volume(hist)
+    if iv == "10m":     # sessions open at 9:30, so 10-minute bins from the hour line up with the bell
+        hist = hist.resample("10min").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna(subset=["Close"])
+    intraday = iv in ("5m", "10m", "15m", "1h")
     if iv in ("1wk", "3mo") and px:     # the current week's or quarter's bar ends at today's price
         k = hist.index[-1]
         hist.loc[k, "Close"] = float(px)
@@ -259,6 +276,8 @@ def levels(sym, iv="1d", keep=3):
     idx = hist.index.tz_convert(NY) if intraday and hist.index.tz is not None else hist.index
     d = [i.strftime("%Y-%m-%dT%H:%M" if intraday else "%Y-%m-%d") for i in idx]
     o, h, l, c = ([float(x) for x in hist[k]] for k in ("Open", "High", "Low", "Close"))
+    # indexes like the Nasdaq-100 come with no volume; send none rather than a row of zeros
+    v = [int(x) if x == x else 0 for x in hist["Volume"]] if "Volume" in hist else []
     n, last = len(c), c[-1]
     look = 252 if iv == "1d" else n
     lv, tol = key_levels(h, l, c, d, look=look, w=w, min_pct=min_pct, recent=max(8, look // 4))
@@ -288,7 +307,8 @@ def levels(sym, iv="1d", keep=3):
             prev = None
     r4 = lambda a: [round(x, 4) for x in a[cut:]]
     return {"t": sym, "iv": iv, "name": md.get("shortName") or md.get("longName"), "last": round(last, 4),
-            "prev": jround(prev), "d": d[cut:], "o": r4(o), "h": r4(h), "l": r4(l), "c": r4(c), "ma": ma, "levels": chosen,
+            "prev": jround(prev), "d": d[cut:], "o": r4(o), "h": r4(h), "l": r4(l), "c": r4(c),
+            "v": v[cut:] if any(v[cut:]) else None, "ma": ma, "levels": chosen,
             "tol": round(tol, 4), "span": [d[max(0, n - look)], d[-1]],
             "hi52": {"p": round(h[hi_i], 4), "d": d[hi_i]}, "lo52": {"p": round(l[lo_i], 4), "d": d[lo_i]},
             "currency": md.get("currency"), "instrument": md.get("instrumentType")}

@@ -1,16 +1,44 @@
-/* OpenTicker: the Levels page. Support and resistance for the S&P 500, VXX and the Nasdaq-100 across the top, and
+/* OpenTicker: the Levels page. Support and resistance for the S&P 500, VXX, the Nasdaq-100 and QQQ across the top, and
    one stock of your choice below, as large as the window allows. Levels come from /api/x/levels (key_levels in
-   levels.py): swing highs and lows at the bar size you pick, from 5 minutes to quarterly, grouped into zones. Uses globals from index.html and pages.js. */
+   levels.py): swing highs and lows at the bar size you pick, from 5 minutes to quarterly, grouped into zones. The big chart
+   can also carry indicators (3 and 4 EMA, VWAP, volume, momentum), worked out here from the same bars. Uses globals from index.html and pages.js. */
 
-const LV_TOP=[["^GSPC","S&P 500","The 500 largest US companies"],["VXX","VXX","Tracks VIX futures: rises when investors get nervous"],["^NDX","Nasdaq-100","The 100 largest Nasdaq companies"]];
+const LV_TOP=[["^GSPC","S&P 500","The 500 largest US companies"],["VXX","VXX","Tracks VIX futures: rises when investors get nervous"],["^NDX","Nasdaq-100","The 100 largest Nasdaq companies"],
+  ["QQQ","QQQ","The fund that tracks the Nasdaq-100: what most people buy and sell to trade it"]];
 /* bar sizes: [key, label, short label for phones, what the levels cover] (the server's LEVEL_BARS in yahoo_extra.py) */
-const LV_IV=[["5m","5 min","5m","the past five sessions"],["15m","15 min","15m","the past month"],["1h","1 hour","1h","the past six months"],
+const LV_IV=[["5m","5 min","5m","the past five sessions"],["10m","10 min","10m","the past five sessions"],["15m","15 min","15m","the past month"],["1h","1 hour","1h","the past six months"],
   ["1d","Daily","D","the past year"],["1wk","Weekly","W","the past ten years"],["3mo","Quarterly","Q",null]];
 let lvIv=load("lvIv","1d"); if(!LV_IV.some(r=>r[0]===lvIv)) lvIv="1d";
 const lvQ=t=>({t,iv:lvIv});
 const lvSpan=d=>{ const x=LV_IV.find(x=>x[0]===d.iv)?.[3]; return x?"in "+x:`since ${d.span?.[0]?.slice(0,4)||"the start"}`; };   // "in the past year", "since 1999"
 let lvT=load("lvT","")||null, lvHover=null, lvClipN=0;
 const lvIdx=t=>t.startsWith("^");
+const lvIntra=iv=>iv==="5m"||iv==="10m"||iv==="15m";
+/* indicators the big chart can carry: [key, label, what it is, color] */
+const LV_IND=[["ema3","3 EMA","Average of the last 3 bars, weighted toward the newest: the quickest read of the short-term push","var(--ema3)"],
+  ["ema4","4 EMA","Average of the last 4 bars, weighted toward the newest. When the 3 EMA crosses it, the short-term push has turned","var(--ema4)"],
+  ["vwap","VWAP","The average price paid, weighted by how many shares traded at each price. Intraday it starts fresh each session","var(--vwap)"],
+  ["vol","Volume","Shares traded in each bar, and whether that is rising or dropping","var(--ink-3)"],
+  ["mom","Momentum","RSI over 14 bars, from 0 to 100: above 70 the run is stretched, below 30 it is washed out","var(--accent)"]];
+let lvInd=new Set(String(load("lvInd","")).split(",").filter(k=>LV_IND.some(r=>r[0]===k)));
+/* the indicator math, on the bars the chart shows */
+function lvEma(c,n){ const k=2/(n+1); let e=null; return c.map((x,i)=>{ e=e==null?x:x*k+e*(1-k); return i<n-1?null:e; }); }
+function lvVwap(d){   // intraday it starts again each session; on daily bars and longer it runs from the first bar on the chart
+  if(!d.v) return null; const intra=d.d[0].length>10; let pv=0,vv=0,day=null;
+  return d.c.map((c,i)=>{ const k=intra?d.d[i].slice(0,10):""; if(k!==day){ day=k; pv=0; vv=0; } const v=d.v[i]||0; pv+=(d.h[i]+d.l[i]+c)/3*v; vv+=v; return vv?pv/vv:null; }); }
+function lvRsi(c,n=14){   // Wilder's RSI
+  const out=c.map(()=>null); let g=0,l=0;
+  for(let i=1;i<c.length;i++){ const ch=c[i]-c[i-1], up=Math.max(ch,0), dn=Math.max(-ch,0);
+    if(i<=n){ g+=up/n; l+=dn/n; } else { g=(g*(n-1)+up)/n; l=(l*(n-1)+dn)/n; }
+    if(i>=n) out[i]=l?100-100/(1+g/l):100; }
+  return out; }
+/* volume over the last 5 finished bars against the 20 before them (the latest bar is usually still filling in). Medians, not
+   averages: Yahoo's intraday volume has the odd bar many times its neighbours, and one such bar shouldn't decide the answer */
+const lvMed=a=>{ const b=[...a].sort((x,y)=>x-y), m=b.length>>1; return b.length%2?b[m]:(b[m-1]+b[m])/2; };
+function lvVolTrend(d){ const v=d.v; if(!v||v.length<27) return null;
+  const ok=a=>a.filter(x=>x>0), a=lvMed(ok(v.slice(-6,-1))), b=lvMed(ok(v.slice(-26,-6))); if(!(a>0&&b>0)) return null;   // 0 is a bar the server blanked
+  const r=a/b-1, px=d.c[d.c.length-2]/d.c[d.c.length-7]-1; return {r,px,k:r>.15?"up":r<-.15?"down":"flat"}; }
+function lvIndData(d){ return {ema3:lvEma(d.c,3),ema4:lvEma(d.c,4),vwap:lvVwap(d),rsi:lvRsi(d.c),vt:lvVolTrend(d)}; }
 /* the other indexes the Market page's tiles open here: [short name, what it is] */
 const LV_NAMES={"^IXIC":["Nasdaq","The Nasdaq Composite: over 3,000 stocks listed on Nasdaq"],"^DJI":["Dow Jones","The Dow Jones Industrial Average: 30 large US companies"],"^RUT":["Russell 2000","2,000 smaller US companies"]};
 const lvLabel=t=>LV_TOP.find(x=>x[0]===t)?.[1]||LV_NAMES[t]?.[0]||t;
@@ -93,10 +121,13 @@ function lvRead(t,d,last){
 }
 
 /* ---------- the chart: price, level zones and their labels, the latest price, and on the big chart the averages ---------- */
-function lvChart(t,d,{w,h,last,big}){
+function lvChart(t,d,{w,h,last,big,ind}){
   const N=d.c.length, O=d.o, Hh=d.h, Lo=d.l, C=d.c, D=d.d;
   const L=lvLevels(d,last), near=lvNearest(L);
-  const ph=innerWidth<=600, left=big?(ph?36:46):8, R=big?(ph?92:104):64, T=big?12:8, B=big?24:8, PW=w-left-R, PH=h-T-B;
+  const ph=innerWidth<=600, left=big?(ph?36:46):8, R=big?(ph?92:104):64, T=big?12:8, B=big?24:8, PW=w-left-R;
+  // volume and momentum get their own strips under the price, sharing its time axis
+  const I=ind&&ind.size?lvIndData(d):null, gap=12, VH=I&&ind.has("vol")&&d.v?(ph?44:64):0, MH=I&&ind.has("mom")?(ph?54:76):0;
+  const PH=h-T-B-(VH?VH+gap:0)-(MH?MH+gap:0);
   const step=PW/N, X=i=>left+step*(i+.5);
   let lo=Math.min(...Lo,last), hi=Math.max(...Hh,last);
   // the nearest level on each side always shows (if it's not absurdly far); others only when they fit the window
@@ -118,19 +149,37 @@ function lvChart(t,d,{w,h,last,big}){
     s+=`<rect x="${left}" y="${(yc-zh/2).toFixed(1)}" width="${PW}" height="${zh.toFixed(1)}" fill="${col(x)}" opacity="${(n?.1+.04*x.strength:.04+.02*x.strength).toFixed(2)}"/>`;
     s+=`<line x1="${left}" x2="${w-R}" y1="${Y(x.p).toFixed(1)}" y2="${Y(x.p).toFixed(1)}" stroke="${col(x)}" stroke-width="${n?1.6:1}" ${n||x.strength>=2?"":`stroke-dasharray="4 4"`} opacity="${n?.95:.45}"/>`; });
   const clip="lvClip"+(++lvClipN);   // one per chart: the drawer's Levels tab can sit over the Levels page
-  if(MA.length) s+=`<clipPath id="${clip}"><rect x="${left}" y="${T}" width="${PW}" height="${PH}"/></clipPath>`;   // an average far from the price runs off the chart, not over the axis
+  if(MA.length||I) s+=`<clipPath id="${clip}"><rect x="${left}" y="${T}" width="${PW}" height="${PH}"/></clipPath>`;   // an average far from the price runs off the chart, not over the axis
   MA.forEach(m=>{ let p=""; m.a.forEach((v,i)=>{ if(v==null) return; p+=(p?"L":"M")+X(i).toFixed(1)+","+Y(v).toFixed(1); }); s+=`<path d="${p}" fill="none" stroke="${m.col}" stroke-width="1.3" opacity=".8" stroke-dasharray="5 3" clip-path="url(#${clip})"/>`; });
   if(big&&step>=1.5){ const bw=Math.max(1,Math.min(9,step*.62));
     C.forEach((c,i)=>{ const up=c>=O[i], cl=up?"var(--up)":"var(--down)", x=X(i), yo=Y(O[i]), yc=Y(c);
       s+=`<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${Y(Hh[i]).toFixed(1)}" y2="${Y(Lo[i]).toFixed(1)}" stroke="${cl}" stroke-width="1"/><rect x="${(x-bw/2).toFixed(1)}" y="${Math.min(yo,yc).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,Math.abs(yc-yo)).toFixed(1)}" fill="${cl}" rx="${bw>4?1:0}"/>`; }); }
   else{ const p=C.map((c,i)=>(i?"L":"M")+X(i).toFixed(1)+","+Y(c).toFixed(1)).join(""); s+=`<path d="${p}" fill="none" stroke="var(--ink)" stroke-width="${big?1.6:1.4}" stroke-linejoin="round"/>`; }
+  // the indicator lines over the price; VWAP breaks at each new session rather than joining the close to the next open
+  const line=(a,col,wd,dash,brk)=>{ if(!a) return; let p="", pk=null; a.forEach((v,i)=>{ const k=brk?D[i].slice(0,10):""; if(v==null){ pk=null; return; } p+=(pk===k?"L":"M")+X(i).toFixed(1)+","+Y(v).toFixed(1); pk=k; });
+    s+=`<path d="${p}" fill="none" stroke="${col}" stroke-width="${wd}" ${dash?`stroke-dasharray="${dash}"`:""} stroke-linejoin="round" clip-path="url(#${clip})"/>`; };
+  if(I){ if(ind.has("vwap")) line(I.vwap,"var(--vwap)",1.6,"6 3",D[0].length>10);
+    if(ind.has("ema4")) line(I.ema4,"var(--ema4)",1.5); if(ind.has("ema3")) line(I.ema3,"var(--ema3)",1.5); }
+  // the strips: volume bars colored by the bar's direction, then momentum with its 30 and 70 lines
+  let y0=T+PH+gap; const bw0=Math.max(1,Math.min(9,step*.62));
+  if(VH){ const sv=d.v.filter(x=>x>0).sort((a,b)=>a-b), mx=sv[Math.floor(sv.length*.95)]||sv[sv.length-1]||1, tr=I.vt;   // scaled to the 95th percentile so one huge bar doesn't flatten the rest
+    s+=`<text x="${left+4}" y="${y0+11}" font-size="11" font-weight="600" fill="var(--ink-3)">Volume${tr?` · ${tr.k==="up"?"rising":tr.k==="down"?"dropping":"steady"}`:""}</text>`;
+    d.v.forEach((v,i)=>{ if(!v) return; const bh=Math.max(1,(VH-14)*Math.min(1,v/mx)); s+=`<rect x="${(X(i)-bw0/2).toFixed(1)}" y="${(y0+VH-bh).toFixed(1)}" width="${bw0.toFixed(1)}" height="${bh.toFixed(1)}" fill="${C[i]>=O[i]?"var(--up)":"var(--down)"}" opacity=".45"/>`; });
+    s+=`<line x1="${left}" x2="${w-R}" y1="${y0+VH}" y2="${y0+VH}" stroke="var(--rule)"/>`;
+    y0+=VH+gap; }
+  if(MH){ const YM=v=>y0+MH*(1-v/100), r=I.rsi, rl=r[r.length-1];
+    s+=`<rect x="${left}" y="${YM(70).toFixed(1)}" width="${PW}" height="${(YM(30)-YM(70)).toFixed(1)}" fill="var(--grid)" opacity=".7"/>`;
+    [30,70].forEach(v=>{ s+=`<line x1="${left}" x2="${w-R}" y1="${YM(v).toFixed(1)}" y2="${YM(v).toFixed(1)}" stroke="var(--ink-3)" stroke-dasharray="2 3" opacity=".6"/><text x="${left-8}" y="${(YM(v)+4).toFixed(1)}" font-size="10.5" text-anchor="end" class="num" fill="var(--ink-3)">${v}</text>`; });
+    s+=`<text x="${left+4}" y="${y0+11}" font-size="11" font-weight="600" fill="var(--ink-3)">Momentum (RSI 14)</text>`;
+    let p=""; r.forEach((v,i)=>{ if(v==null) return; p+=(p?"L":"M")+X(i).toFixed(1)+","+YM(v).toFixed(1); }); s+=`<path d="${p}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round"/>`;
+    if(rl!=null){ const fs=11; s+=`<rect x="${w-R+6}" y="${(YM(rl)-8.5).toFixed(1)}" width="34" height="17" rx="8.5" fill="var(--panel)" stroke="var(--accent)"/><text x="${w-R+23}" y="${(YM(rl)+fs*.36).toFixed(1)}" font-size="${fs}" font-weight="650" text-anchor="middle" class="num" fill="var(--accent)">${rl.toFixed(0)}</text>`; } }
   // the latest price
   const yl=Y(last); s+=`<line x1="${left}" x2="${w-R}" y1="${yl.toFixed(1)}" y2="${yl.toFixed(1)}" stroke="var(--ink-2)" stroke-dasharray="2 3" opacity=".7"/>`;
   // labels on the right, nudged apart so they never sit on top of each other; the latest price wins its spot
   // a small chart (and the phone's) labels only the nearest level on each side; the list below has the rest
   const fs=big?11.5:10.5, lh=big?21:17, labelled=big&&!ph?L.filter(inView):[near.r,near.s,near.here].filter(x=>x&&inView(x));
   const items=[{y:yl,txt:lvP(t,last),now:true},...labelled.map(x=>({y:Y(x.p),txt:lvP(t,x.p),tag:big?x.tag:"",n:isNear(x),x}))].sort((a,b)=>a.y-b.y);
-  const placeLabels=a=>{ const top=T+lh/2-2, bot=h-B-lh/2+2;   // push down past any overlap, then back up from the bottom edge
+  const placeLabels=a=>{ const top=T+lh/2-2, bot=T+PH-lh/2+2;   // push down past any overlap, then back up from the bottom edge
     for(let j=1;j<a.length;j++) a[j].y=Math.max(a[j].y,a[j-1].y+lh);
     for(let j=a.length-1;j>=0;j--) a[j].y=Math.min(a[j].y,j===a.length-1?bot:a[j+1].y-lh);
     a.forEach(o=>o.y=Math.max(top,o.y)); };
@@ -139,16 +188,44 @@ function lvChart(t,d,{w,h,last,big}){
     s+=o.now?`<rect x="${x0}" y="${(o.y-lh/2+2).toFixed(1)}" width="${tw.toFixed(1)}" height="${lh-4}" rx="${(lh-4)/2}" fill="var(--ink)"/><text x="${(x0+7).toFixed(1)}" y="${(o.y+fs*.36).toFixed(1)}" font-size="${fs}" font-weight="650" class="num" fill="var(--panel)">${o.txt}</text>`
       :`<g opacity="${op}"><rect x="${x0}" y="${(o.y-lh/2+2).toFixed(1)}" width="${tw.toFixed(1)}" height="${lh-4}" rx="${(lh-4)/2}" fill="${o.n&&big?`color-mix(in srgb,${c} 14%,var(--panel))`:"var(--panel)"}" stroke="${c}" stroke-opacity="${o.n?.9:.5}"/><text x="${(x0+7).toFixed(1)}" y="${(o.y+fs*.36).toFixed(1)}" font-size="${fs}" font-weight="600" class="num" fill="${c}">${o.tag?`<tspan font-weight="750">${o.tag}</tspan><tspan dx="5" fill="var(--ink)" font-weight="${o.n?650:500}">${o.txt}</tspan>`:o.txt}</text></g>`; });
   if(big){ // time marks along the bottom: days for intraday bars, weeks for hourly, months, years
-    const iv=d.iv, key=dd=>iv==="5m"||iv==="15m"?dd.slice(0,10):iv==="1h"?lvWeek(dd):iv==="1d"?dd.slice(0,7):iv==="1wk"?dd.slice(0,4):dd.slice(0,3);
-    const lab=dd=>iv==="5m"||iv==="15m"?lvFmt(dd,{weekday:"short"})+" "+(+dd.slice(8,10)):iv==="1h"?lvFmt(dd,{month:"short",day:"numeric"})
+    const iv=d.iv, key=dd=>lvIntra(iv)?dd.slice(0,10):iv==="1h"?lvWeek(dd):iv==="1d"?dd.slice(0,7):iv==="1wk"?dd.slice(0,4):dd.slice(0,3);
+    const lab=dd=>lvIntra(iv)?lvFmt(dd,{weekday:"short"})+" "+(+dd.slice(8,10)):iv==="1h"?lvFmt(dd,{month:"short",day:"numeric"})
       :iv==="1d"?lvFmt(dd,{month:"short"})+(dd.slice(5,7)==="01"?" ’"+dd.slice(2,4):""):iv==="1wk"?dd.slice(0,4):dd.slice(0,3)+"0s";
     const marks=[]; let prevK=null; D.forEach((dd,i)=>{ const k=key(dd); if(prevK!==null&&k!==prevK) marks.push(i); prevK=k; });
     let lastX=-1e9; marks.forEach(i=>{ if(X(i)-lastX<56||X(i)>w-R-16) return; lastX=X(i);
       s+=`<line x1="${X(i).toFixed(1)}" x2="${X(i).toFixed(1)}" y1="${T}" y2="${h-B}" stroke="var(--grid)" opacity=".7"/><text x="${X(i).toFixed(1)}" y="${h-6}" font-size="11" text-anchor="middle" fill="var(--ink-3)">${lab(D[i])}</text>`; });
     s+=`<line id="lvX" x1="0" x2="0" y1="${T}" y2="${h-B}" stroke="var(--ink-3)" stroke-width="1" visibility="hidden"/>`;
-    lvHover={t,iv:d.iv,left,step,N,T,B,h,O,Hh,Lo,C,D};
+    lvHover={t,iv:d.iv,left,step,N,T,B,h,O,Hh,Lo,C,D,V:d.v,ind:I?ind:null,A:I};
   }
   return s+"</svg>";
+}
+
+/* ---------- the indicator readout: one short line for each indicator that's on ---------- */
+function lvIndRead(t,d,last){
+  if(!lvInd.size) return "";
+  const I=lvIndData(d), P=x=>lvP(t,x), at=a=>a?.[a.length-1], out=[];
+  const side=(v,lab)=>{ const r=last/v-1; return `Price ${Math.abs(r)<.0005?"is at":`is ${Math.abs(r*100).toFixed(Math.abs(r)<.1?1:0)}% ${r>0?"above":"below"}`} ${lab} (${P(v)})`; };
+  const it=(k,cl,txt)=>`<span class="lvri ${cl}"><i style="background:${LV_IND.find(x=>x[0]===k)[3]}"></i>${txt}</span>`;
+  const e3=at(I.ema3), e4=at(I.ema4);
+  if(lvInd.has("ema3")&&lvInd.has("ema4")&&e3!=null&&e4!=null)
+    out.push(it("ema3",e3>=e4?"up":"down",`3 EMA ${e3>=e4?"above":"below"} 4 EMA: the short-term push is ${e3>=e4?"up":"down"}`));
+  else [["ema3",e3,"its 3 EMA"],["ema4",e4,"its 4 EMA"]].forEach(([k,v,lab])=>{ if(lvInd.has(k)&&v!=null) out.push(it(k,cls(last-v),side(v,lab))); });
+  if(lvInd.has("vwap")){ const v=at(I.vwap), intra=d.d[0].length>10;
+    out.push(v==null?it("vwap","flat","VWAP needs volume, and Yahoo sends none for this index")
+      :it("vwap",cls(last-v),side(v,`VWAP, the average paid ${intra?"this session":"since "+lvFmt(d.d[0],{month:"short",day:"numeric",year:"numeric"})}`))); }
+  if(lvInd.has("vol")){ const vt=I.vt;
+    out.push(!d.v?it("vol","flat","No volume from Yahoo for this index"):!vt?it("vol","flat","Not enough bars to tell if volume is changing")
+      :it("vol",vt.k==="flat"?"flat":vt.k,`Volume ${vt.k==="up"?"rising":vt.k==="down"?"dropping":"steady"}: a typical bar of the last 5 traded ${Math.abs(vt.r*100).toFixed(0)}% ${vt.r>=0?"more":"less"} than one of the 20 before`
+        +(vt.k!=="flat"&&Math.abs(vt.px)>=.002?`, while the price ${vt.px>0?"rose":"fell"}${vt.k==="up"?", so the move has conviction":", so the move is running out of interest"}`:""))); }
+  if(lvInd.has("mom")){ const r=at(I.rsi);
+    if(r!=null) out.push(it("mom",r>=50?"up":"down",`Momentum ${r.toFixed(0)}: ${r>=70?"stretched, the run may need a rest":r<=30?"washed out, sellers may be tiring":r>=50?"leaning up":"leaning down"}`)); }
+  return out.join("");
+}
+function lvKey(d){
+  const k=[`<span><i class="k res"></i>Resistance (R1 nearest)</span>`,`<span><i class="k sup"></i>Support (S1 nearest)</span>`];
+  if(lvIv==="1d") k.push(`<span><i class="k m50"></i>50-day average</span>`,`<span><i class="k m200"></i>200-day average</span>`);
+  LV_IND.forEach(([x,lab,,col])=>{ if(lvInd.has(x)&&x!=="vol"&&x!=="mom") k.push(`<span><i class="k ind" style="--c:${col}"></i>${lab}</span>`); });
+  return k.join("");
 }
 
 /* ---------- the side list: every level from the top down, with the latest price in its place ---------- */
@@ -176,14 +253,16 @@ function renderLevels(){
         <div class="lvhead"><div class="lvwho" id="lvWho"></div>
           <div class="lvfind"><div class="lvsrch">${ic("search",14)}<input id="lvQ" type="search" placeholder="Show another stock…" autocomplete="off" spellcheck="false" aria-label="Show levels for another stock" aria-controls="lvRes"><div class="sres" id="lvRes" role="listbox" hidden></div></div><div class="lvquick" id="lvQuick"></div></div></div>
         <div class="lvsum" id="lvSum"></div>
+        <div class="lvind"><span class="lbl" id="lvIndL">Add to chart</span><div class="seg sm" id="lvIndB" role="group" aria-labelledby="lvIndL"></div></div>
+        <div class="lvrd" id="lvRd" aria-live="polite"></div>
         <div class="lvbody"><div><div class="lvchart" id="lvChart">${sk(420)}</div>
-          <div class="lvkey"><span><i class="k res"></i>Resistance (R1 nearest)</span><span><i class="k sup"></i>Support (S1 nearest)</span><span class="kma"><i class="k m50"></i>50-day average</span><span class="kma"><i class="k m200"></i>200-day average</span></div></div>
+          <div class="lvkey" id="lvKey"></div></div>
           <div class="lvside"><div class="lbl">All levels</div><div id="lvLad">${sk(300)}</div></div></div>
       </section></div>`;
     lvWire();
   }
   patch($("#lvRng"),LV_IV.map(([k,l,sh])=>`<button data-lvr="${k}" aria-pressed="${k===lvIv}" aria-label="${l} bars"><span class="lg">${l}</span><span class="sh">${sh}</span></button>`).join(""));
-  document.querySelectorAll("#lvl .kma").forEach(x=>x.hidden=lvIv!=="1d");
+  patch($("#lvIndB"),LV_IND.map(([k,l,tip])=>`<button data-lvind="${k}" aria-pressed="${lvInd.has(k)}" title="${esc(tip)}">${l}</button>`).join(""));
   LV_TOP.forEach(([s])=>{ const c=xpeek("levels",lvQ(s)); if(c?.data||c?.error) lvCard(s); else { lvCard(s); const iv=lvIv; xget("levels",lvQ(s)).then(()=>{ if(page==="levels"&&lvIv===iv) lvCard(s); }); } });
   lvMain();
 }
@@ -205,13 +284,16 @@ function lvMain(){
   const q=[...new Set([...(typeof recent!=="undefined"?recent:[]),...(me?.positions||[]).map(p=>p.t),...(me?.watch||[])])].filter(x=>x!==t).slice(0,5);
   patch($("#lvQuick"),q.map(x=>`<button class="chip" data-lv="${esc(x)}">${esc(x)}</button>`).join(""));
   if(!c?.data){
-    if(c?.error){ $("#lvChart").innerHTML=errBox(c.error,"levels",lvQ(t)); $("#lvLad").innerHTML=""; $("#lvSum").innerHTML=""; return; }
+    if(c?.error){ $("#lvChart").innerHTML=errBox(c.error,"levels",lvQ(t)); $("#lvLad").innerHTML=""; $("#lvSum").innerHTML=""; $("#lvRd").innerHTML=""; return; }
     $("#lvChart").innerHTML=sk(lvHeight()); $("#lvLad").innerHTML=sk(300); $("#lvSum").innerHTML=`<span class="sk" style="display:block;height:44px;grid-column:1/-1"></span>`;
     const iv=lvIv; xget("levels",lvQ(t)).then(()=>{ if(page==="levels"&&lvSym()===t&&lvIv===iv) lvMain(); }); return;
   }
   const d=c.data, last=lvLast(t,d), prev=lvPrev(t,d), box=$("#lvChart");
   patch($("#lvSum"),`<div class="lvv">${lvTag(lvVerdict(t,d,last))}<p class="lvread">${lvRead(t,d,last)}</p></div>${lvMeter(t,d,last)}`);
-  const H=lvHeight(); box.innerHTML=lvChart(t,d,{w:Math.max(300,box.clientWidth),h:H,last,big:true});
+  patch($("#lvRd"),lvIndRead(t,d,last)); patch($("#lvKey"),lvKey(d));
+  // the volume and momentum strips add to the chart's height rather than squeezing the price
+  const ph=innerWidth<=600, H=lvHeight()+(lvInd.has("vol")&&d.v?(ph?56:76):0)+(lvInd.has("mom")?(ph?66:88):0);
+  box.innerHTML=lvChart(t,d,{w:Math.max(300,box.clientWidth),h:H,last,big:true,ind:lvInd});
   $(".lvside").style.maxHeight=innerWidth>1100?H+28+"px":"";     // the list scrolls beside the chart rather than running past it
   const lad=$("#lvLad"); patch(lad,lvLadder(t,d,last,prev));
   const now=lad.querySelector(".now"), scr=lad.scrollHeight>lad.clientHeight+4; lad.classList.toggle("lvfade",scr); if(now&&scr) lad.scrollTop=now.offsetTop-lad.clientHeight/2+now.offsetHeight/2;   // keep "Now" in view
@@ -240,12 +322,18 @@ function lvWire(){
     const line=svg.querySelector("#lvX"); if(i<0||i>=g.N){ line?.setAttribute("visibility","hidden"); hideTip(); return; }
     const cx=g.left+g.step*(i+.5); line?.setAttribute("x1",cx); line?.setAttribute("x2",cx); line?.setAttribute("visibility","visible");
     const P=v=>lvP(g.t,v), ch1=i>0?g.C[i]/g.C[i-1]-1:null;
-    showTip(e,`<b>${lvWhen(g.D[i],g.iv)}</b><br>Close ${P(g.C[i])}${ch1!=null?` <span class="${cls(ch1)}">${pct(ch1)}</span>`:""}<br><span style="opacity:.75">Open ${P(g.O[i])} · High ${P(g.Hh[i])} · Low ${P(g.Lo[i])}</span>`); });
+    let extra=""; if(g.ind){ const A=g.A, parts=[];
+      [["ema3",A.ema3,"3 EMA"],["ema4",A.ema4,"4 EMA"],["vwap",A.vwap,"VWAP"]].forEach(([k,a,lab])=>{ if(g.ind.has(k)&&a?.[i]!=null) parts.push(`${lab} ${P(a[i])}`); });
+      if(g.ind.has("vol")&&g.V) parts.push(`Volume ${vol(g.V[i])}`);
+      if(g.ind.has("mom")&&A.rsi[i]!=null) parts.push(`Momentum ${A.rsi[i].toFixed(0)}`);
+      if(parts.length) extra=`<br><span style="opacity:.75">${parts.join(" · ")}</span>`; }
+    showTip(e,`<b>${lvWhen(g.D[i],g.iv)}</b><br>Close ${P(g.C[i])}${ch1!=null?` <span class="${cls(ch1)}">${pct(ch1)}</span>`:""}<br><span style="opacity:.75">Open ${P(g.O[i])} · High ${P(g.Hh[i])} · Low ${P(g.Lo[i])}</span>${extra}`); });
   ch.addEventListener("pointerleave",()=>{ ch.querySelector("#lvX")?.setAttribute("visibility","hidden"); hideTip(); });
 }
 document.addEventListener("click",e=>{
   const o=e.target.closest("[data-levels]"); if(o){ e.preventDefault(); openLevels(o.dataset.levels); return; }
   const r=e.target.closest("[data-lvr]"); if(r){ lvIv=r.dataset.lvr; save("lvIv",lvIv); renderLevels(); return; }
+  const n=e.target.closest("[data-lvind]"); if(n){ const k=n.dataset.lvind; lvInd.has(k)?lvInd.delete(k):lvInd.add(k); save("lvInd",[...lvInd].join(",")); renderLevels(); return; }
   const g=e.target.closest("[data-lvgo]"); if(g){ e.preventDefault(); lvPick(g.dataset.lvgo); return; }
   const c=e.target.closest("#lvl [data-lv]"); if(c){ lvPick(c.dataset.lv); const m=$("#lvMain"); if(m&&c.classList.contains("lvcard")&&m.getBoundingClientRect().top>innerHeight*.6) m.scrollIntoView({behavior:"smooth",block:"start"}); }
 });
@@ -271,7 +359,7 @@ document.addEventListener("click",e=>{ const b=e.target.closest("[data-dlvr]"); 
 function openLevels(t){ if(t){ lvT=t; save("lvT",t); } if(drawerOpen) closeDrawer(); if(page!=="levels") goPage("levels"); else renderLevels(); }
 { let rz=null; addEventListener("resize",()=>{ clearTimeout(rz); rz=setTimeout(()=>{ if(page==="levels"&&$("#lvl")) renderLevels(); },150); }); }
 setInterval(()=>{ if(page!=="levels"||document.hidden||!$("#lvl")) return;      // new prices every few minutes while the page is open
-  // wait for all four (usually from cache) and repaint once, only when one of them is new, keeping the list where it was scrolled
+  // wait for all of them (usually from cache) and repaint once, only when one of them is new, keeping the list where it was scrolled
   const syms=[...new Set([...LV_TOP.map(x=>x[0]),lvSym()])], at=()=>syms.map(s=>xpeek("levels",lvQ(s))?.at).join(), was=at();
   Promise.allSettled(syms.map(s=>xget("levels",lvQ(s)))).then(()=>{ if(page!=="levels"||!$("#lvl")||at()===was) return;
     const top=$("#lvLad")?.scrollTop; renderLevels(); const lad=$("#lvLad"); if(lad&&top!=null) lad.scrollTop=top; }); },60e3);
