@@ -6,6 +6,7 @@ import datetime as dt
 import os
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -244,6 +245,39 @@ class Restart(unittest.TestCase):
         answers = [m for m in personal.chat(UID, cid)["messages"] if m["role"] == "assistant"]
         self.assertEqual([m["text"] for m in answers], ["Done."])
 
+
+
+class SignalsScan(unittest.TestCase):
+    """Two pages asking for momentum scores at once start one scan, not two (the Signals model's OneScanAtATime)."""
+    def test_one_scan_at_a_time(self):
+        started, gate = [], threading.Event()
+
+        def scan():
+            started.append(1)
+            gate.wait(5)
+            server.SIG["running"] = False
+        saved = dict(server.SIG)
+        server.SIG.update(rows=[], running=False, failAt=0)
+        try:
+            with mock.patch.object(server, "signals_scan", scan), \
+                    mock.patch.dict(server.S.holdings, {"SPY": {"holdings": [{"t": "AAPL"}]}}):
+                ts = [threading.Thread(target=server.signals_payload, args=(True,)) for _ in range(4)]
+                for t in ts:
+                    t.start()
+                for t in ts:
+                    t.join()
+                self.assertTrue(server.signals_payload(True)["running"])
+                for _ in range(50):                    # the scan thread starts on its own
+                    if started:
+                        break
+                    time.sleep(0.02)
+                time.sleep(0.2)                        # time for a second one to show up, if there were one
+                self.assertEqual(len(started), 1)
+                gate.set()
+        finally:
+            gate.set()
+            server.SIG.clear()
+            server.SIG.update(saved)
 
 if __name__ == "__main__":
     unittest.main()

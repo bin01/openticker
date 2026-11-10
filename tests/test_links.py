@@ -45,6 +45,7 @@ class Fake:
     def __init__(self):
         self.codes, self.tokens, self.refresh, self.calls, self.revoked = {}, set(), set(), [], []
         self.registered = None
+        self.rotate = False         # retire each refresh token once it's used, as providers that rotate them do
 
 
 def make_handler(fake):
@@ -94,6 +95,8 @@ def make_handler(fake):
                         return self.out(400, {"error": "invalid_grant"})
                 elif f["grant_type"] != "refresh_token" or f["refresh_token"] not in fake.refresh:
                     return self.out(400, {"error": "invalid_grant"})
+                elif fake.rotate:
+                    fake.refresh.discard(f["refresh_token"])
                 tok, ref = f"tok-{len(fake.tokens)}", f"ref-{len(fake.tokens)}"
                 fake.tokens.add(tok)
                 fake.refresh.add(ref)
@@ -246,6 +249,20 @@ class Links(unittest.TestCase):
         self.assertEqual([x["t"] for x in personal.positions("me")], ["TSLA"])
         self.assertIsNone(links.get_secret(lid))
         self.assertTrue(self.fake.revoked)
+
+    def test_rotated_refresh_token_is_kept(self):
+        """A provider that retires each refresh token once used: every sync saves the new one, so the next works too
+        (the TokenRefresh model's OneSync config)."""
+        lid = self.sign_in()
+        links.apply("me", lid)
+        self.fake.rotate = True
+        for _ in range(3):
+            sec = links.get_secret(lid)
+            sec["token"]["expires_at"] = 0
+            links.put_secret(lid, sec)
+            links.sync("me", lid)
+            self.assertIn(links.get_secret(lid)["token"]["refresh_token"], self.fake.refresh)
+        self.assertEqual(personal.link("me", lid)["status"], "ok")
 
     def test_callback_needs_our_state(self):
         links.connect("me", "other", self.url)
