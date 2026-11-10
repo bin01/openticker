@@ -145,7 +145,6 @@ class FakeRun:
     def run(self):
         for kind, p in FakeRun.script:
             self.emit(kind, p)
-        self.emit("done", {})
 
     def cancel(self):
         self.cancelled = True

@@ -57,7 +57,7 @@ Fixed in #16: leaving the screener mid-scan froze the progress bar (`ProgressMov
 
 ## Reading a result
 
-Read every TLC result with the pstack `/statechart` skill: it shows a broken rule as its shortest path in plain words, and draws how the screener moves between states when everything holds. The runner prints TLC's path as numbered steps with only the variables that changed.
+When a rule breaks, the runner prints TLC's path to it as numbered steps with only the variables that changed: it is the shortest way the code can break that rule. Retell it in plain words, one step per line, before acting on it.
 
 Before calling a broken rule a bug, replay its path on the real code one action per step: the server side as in `SignalsScan` (patch `server.signals_scan`, call `signals_payload`), the page side in a browser with the server running (open Screener → Momentum signals, leave, come back). If the code doesn't do what the path says, the model is wrong.
 

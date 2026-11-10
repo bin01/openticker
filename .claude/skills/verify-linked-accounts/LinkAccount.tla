@@ -27,10 +27,10 @@ YouDenyInBrowser == status = "signin" /\ pending /\ pending' = FALSE
     /\ status' = (IF synced THEN "auth" ELSE "error")
     /\ UNCHANGED <<synced, preview, worker>>
 
-\* Cancel on a signin/fetching row, Remove on an error row or an unsynced auth row -> cancel():
-\* a link that never synced is disconnected; one that did drops what it waited for and goes back to "ok"
-\* (or "auth" when it was waiting on a sign-in), positions untouched. A read still running finds it changed.
-YouCancel == (status \in {"signin", "fetching", "error"} \/ (status = "auth" /\ ~synced))
+\* Cancel on a signin/fetching row -> cancel(): a link that never synced is disconnected; one that did drops what
+\* it waited for and goes back to "ok" (or "auth" when it was waiting on a sign-in), positions untouched. A read
+\* still running finds it changed.
+YouCancel == status \in {"signin", "fetching"}
     /\ IF synced
        THEN status' = (IF status = "signin" THEN "auth" ELSE "ok") /\ pending' = FALSE /\ preview' = FALSE
             /\ UNCHANGED <<synced, worker>>
@@ -49,8 +49,9 @@ YouDontAdd == status = "review" /\ preview /\ ~synced
 YouRetry == status = "error" /\ StartRead /\ UNCHANGED <<synced, pending, preview>>
 \* Sign in again on an auth row -> reconnect(): PENDING[state] = ..., status "signin"
 YouSignInAgain == status = "auth" /\ status' = "signin" /\ pending' = TRUE /\ UNCHANGED <<synced, preview, worker>>
-\* Disconnect -> Keep them / Remove them -> disconnect(): remove_link. Also on a synced auth row.
-YouDisconnect == (status = "ok" \/ (status = "auth" /\ synced))
+\* disconnect(): remove_link. Disconnect -> Keep them / Remove them on an ok row, or on a synced auth or error row;
+\* Remove straight away on an error or auth row of a link that never synced.
+YouDisconnect == status \in {"ok", "auth", "error"}
     /\ status' = "none" /\ synced' = FALSE /\ preview' = FALSE /\ pending' = FALSE /\ worker' = FALSE
 
 \* ---- the server
@@ -85,8 +86,8 @@ SpinnerMeansWork == status = "fetching" => worker
 \* The Review button opens something to review, or reads it again.
 ReviewHasContent == status = "review" => (preview \/ ENABLED YouReviewLost)
 \* Cancel and Remove do what they say on every row that shows them: the row stops waiting.
-CancelWorks == (status \in {"signin", "fetching", "error"} \/ (status = "auth" /\ ~synced))
-    => ENABLED (YouCancel /\ status' \notin {"signin", "fetching", "review", "error"})
+CancelWorks == /\ status \in {"signin", "fetching"} => ENABLED (YouCancel /\ status' \notin {"signin", "fetching", "review", "error"})
+               /\ status \in {"auth", "error"} => ENABLED (YouDisconnect /\ status' = "none")
 \* A synced account keeps its daily sync, or the row says why it can't (the sign-in expired).
 KeepsSyncing == synced => status \in {"ok", "auth"} \/ (status = "fetching" /\ worker) \/ (status = "signin" /\ pending)
 ====

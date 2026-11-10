@@ -54,7 +54,7 @@ One design choice the model makes visible rather than a bug: an unexplained quic
 
 ## Reading a result
 
-Read every TLC result with the pstack `/statechart` skill: it shows a broken rule as its shortest path in plain words, and draws the states when everything holds. The runner prints TLC's path as numbered steps with only the variables that changed.
+When a rule breaks, the runner prints TLC's path to it as numbered steps with only the variables that changed: it is the shortest way the code can break that rule. Retell it in plain words, one step per line, before acting on it.
 
 Before calling a broken rule a bug, replay its path on the real code one action per step: the `Workbench` tests show how (`FakeRun` scripts what Claude Code emits, `workbench.state` is set directly, `claude_off` is moved back an hour). If the code doesn't do what the path says, the model is wrong.
 

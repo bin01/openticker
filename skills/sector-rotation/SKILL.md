@@ -30,3 +30,5 @@ A small table of the leaders and laggards, then the pattern, the stocks behind i
 ## Before you send
 
 - The pattern you name is supported by at least two sectors moving the same way.
+- A rate-driven call cites the 10-year yield's 1M change from the Macro table, and the sectors move the way that change predicts (falling yields lift real estate and utilities).
+- Every "new" or "established" label matches the 1W and 3M columns, and the confirm-or-break item is a level or a release with a date, not a general hope.
