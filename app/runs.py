@@ -245,6 +245,11 @@ def _finish(lv, label):
                                                                "by": acc["by"], "secs": secs, "error": error, "files": files, "ts": time.time()})
         except Exception as e:
             agent.srv.log(f"saving the answer failed: {e!r}")
+    if acc["text"] and not stopped:
+        try:
+            agent.record_verdict(row["user_id"], row["spec"], acc["text"], row.get("chat_id"))
+        except Exception as e:
+            agent.srv.log(f"keeping the evidence check failed: {e!r}")
     personal.run_set(row["id"], status="stopped" if stopped else "error" if error and not acc["text"] else "done", ended=time.time())
     with lv.cond:
         lv.done = True

@@ -43,6 +43,8 @@ create table if not exists runs(id text primary key, user_id text, chat_id text,
     status text, started real, ended real, resumes integer default 0);
 create index if not exists runs_status on runs(status);
 create table if not exists run_events(run_id text, seq integer, kind text, body text, primary key(run_id, seq));
+create table if not exists reads(id integer primary key, user_id text, t text, day text, lean text, pros integer,
+    cons integer, neutral integer, line text, price real, spy real, chat_id text, created real, unique(user_id, t, day));
 create table if not exists links(id text primary key, user_id text, provider text, name text, url text, auth integer,
     status text, error text, off text, synced real, count integer, created real);
 """
@@ -533,3 +535,23 @@ def run_events_add(rid, events):
 def run_events(rid, after=0):
     return [(r["seq"], r["kind"], json.loads(r["body"])) for r in
             _q("select seq, kind, body from run_events where run_id=? and seq>? order by seq", (rid, after))]
+
+
+# ---------------------------------------------------------------- Tick's evidence checks, kept to look back on
+LEANS = ("positive", "negative", "mixed")
+
+
+def read_add(uid, t, lean, pros, cons, neutral, line, price, spy, day, chat_id=None):
+    """One evidence check per stock per day: a second one that day replaces the first."""
+    if lean not in LEANS:
+        raise ValueError("lean must be positive, negative or mixed")
+    _exec("insert into reads(user_id, t, day, lean, pros, cons, neutral, line, price, spy, chat_id, created) values(?,?,?,?,?,?,?,?,?,?,?,?) "
+          "on conflict(user_id, t, day) do update set lean=excluded.lean, pros=excluded.pros, cons=excluded.cons, neutral=excluded.neutral, "
+          "line=excluded.line, price=excluded.price, spy=excluded.spy, chat_id=excluded.chat_id, created=excluded.created",
+          (uid, t, day, lean, int(pros), int(cons), int(neutral), str(line or "")[:300], price, spy, chat_id, time.time()))
+
+
+def reads(uid, t=None, limit=200):
+    if t:
+        return _q("select * from reads where user_id=? and t=? order by day desc limit ?", (uid, t, limit))
+    return _q("select * from reads where user_id=? order by day desc, t limit ?", (uid, limit))

@@ -529,7 +529,7 @@ function renderSignals(main){
   const funds=(SIG.funds||["SPY","QQQ","SMH"]).join(", ");
   const head=`<div class="ph" style="margin:0"><div><h2>Momentum signals</h2>
     <div class="hint">Every stock in ${funds}, plus yours, scored from daily price and volume. Weak trends are capped at Hold, six core signals and six boosters add or take away points, and a bonus comes when several line up. It measures momentum, not value, and the ratings, stops and targets are a score, not advice to buy or sell.</div></div>
-    <div class="sig-asof">${SIG.asOf?`As of the close on ${sigDay(SIG.asOf)}`:""}${SIG.running&&all.length?` · <span class="sig-busy">refreshing</span>`:""}</div></div>`;
+    <div class="sig-asof">${SIG.asOf?`As of the close on ${sigDay(SIG.asOf)}`:""}${SIG.running&&all.length?` · <span class="sig-busy">refreshing</span>`:""}${breadthHTML()}</div></div>`;
   let body;
   if(!all.length&&SIG.running){
     const f=SIG.total?Math.round(100*SIG.done/SIG.total):0;
@@ -558,9 +558,40 @@ function renderSignals(main){
         ${open?`<tr class="sig-why"><td colspan="10">${why(r)}</td></tr>`:""}`; };
     const table=rows.length?`<div class="tbl-wrap"><table class="hold qt sig"><thead><tr>${th("","Stock","l")}${th("rating","Rating","l")}${th("score","Score")}${th("price","Price")}<th data-c="adx" class="sortable ${sigSort.k==="adx"?"on":""}" data-sig-k="adx" aria-sort="${sigSort.k==="adx"?(sigSort.dir>0?"ascending":"descending"):"none"}" title="Average Directional Index: how strong the trend is. Under 20 is no trend.">Trend${sigSort.k==="adx"?(sigSort.dir>0?" ↑":" ↓"):""}</th>${th("rs6","vs S&P, 6 mo")}${th("fromHigh","From high")}<th data-c="stop">Stop</th><th data-c="target">Target</th><th></th></tr></thead>
       <tbody>${rows.map(tr).join("")}</tbody></table></div>`:`<p class="hint" style="margin:14px 0">${sigScope==="mine"&&!scoped.length?"None of your stocks are scored yet. Add some to your watchlist or portfolio.":"No stocks have this rating."}</p>`;
-    body=filt+`<p class="hint" style="margin:10px 0 0">${rows.length} stocks. Click a row to see why it scored what it did; click the ticker to open the stock.</p>`+table+method();
+    body=filt+`<p class="hint" style="margin:10px 0 0">${rows.length} stocks. Click a row to see why it scored what it did; click the ticker to open the stock.</p>`+table+trackHTML()+method();
   }
   main.innerHTML=head+`<div id="scrRes">${body}</div>`;
+}
+/* how much of the market is in an uptrend: momentum ratings work better when most stocks are */
+function breadthHTML(){
+  const b=SIG?.breadth; if(!b||b.above200==null) return "";
+  const a=Math.round(b.above200*100), was=b.above200Then==null?null:Math.round(b.above200Then*100);
+  return `<div class="sig-breadth" title="Of the ${b.n} stocks in ${(SIG.funds||[]).join(", ")}. A broad market, with most stocks above their 200-day average, is where momentum ratings have worked best.">${a}% of these stocks are above their 200-day average${was!=null&&was!==a?` (${was}% a month ago)`:""}</div>`;
+}
+/* the score's track record: every stock scored again every two weeks over two years, then followed for 1 and 3 months */
+function trackHTML(){
+  const T=SIG?.track;
+  if(!T?.ratings) return `<section class="sig-track"><div class="lbl">How these ratings have done</div><p class="hint">${SIG?.running?"Worked out after this scan finishes.":"Being worked out: OpenTicker scores every stock again at earlier dates and checks what happened next. It takes a few minutes, once a day."}</p></section>`;
+  const R=T.ratings, all=R.All?.["21"]||{}, mo=(m,y)=>new Date(y,m-1,15).toLocaleDateString("en-US",{month:"short",year:"numeric"});
+  const span=T.from&&T.to?`${mo(+T.from.slice(5,7),+T.from.slice(0,4))} to ${mo(+T.to.slice(5,7),+T.to.slice(0,4))}`:"";
+  const lead=x=>{ if(!x?.n) return "–"; const v=Math.round(x.vs*1000)/10; return `<span class="${cls(v)}">${v>0?"+":v<0?"−":""}${Math.abs(v).toFixed(1)}</span>`; };
+  const beat=x=>x?.n?`${Math.round(x.beat*100)}%`:"–";
+  const row=(k,lab,c)=>{ const a=R[k]?.["21"], z=R[k]?.["63"]; if(!a?.n) return "";
+    return `<tr${k==="All"?' class="sig-all"':""}><td class="l">${c?`<span class="${sigCls(k)}">${lab}</span>`:lab}</td><td class="num tk-n">${a.n.toLocaleString()}</td><td class="num">${lead(a)}</td><td class="num">${beat(a)}</td><td class="num">${lead(z)}</td><td class="num tk-b3">${beat(z)}</td></tr>`; };
+  const top=["Strong Buy","Buy"].map(k=>R[k]?.["21"]).filter(x=>x?.n), n=top.reduce((s,x)=>s+x.n,0);
+  const topVs=n?top.reduce((s,x)=>s+x.vs*x.n,0)/n:null, av=R.Avoid?.["21"];
+  let say;
+  if(topVs==null||!all.n) say="Not enough Buy ratings yet to judge.";
+  else{ const d=topVs-all.vs, tb=top.reduce((s,x)=>s+x.beat*x.n,0)/n, f=x=>`${x>0.0005?"+":x<-0.0005?"−":""}${Math.abs(x*100).toFixed(1)}`;
+    const vs=`${f(topVs)} points against the S&P 500 over the next month, against ${f(all.vs)} for every stock`;
+    if(d>=0.01&&tb>=all.beat+0.03) say=`Stocks rated Buy or better have done clearly better: ${vs}, and they beat the index more often${av?.n&&av.vs<all.vs?`, while Avoid-rated stocks trailed`:""}. A month is still a short, noisy window.`;
+    else if(d>0.002) say=`Stocks rated Buy or better did only slightly better: ${vs}. That's too small to lean on; read the rating as a description of the trend, not an edge.`;
+    else say=`Stocks rated Buy or better did no better than the average stock: ${vs}. Read the rating as a description of the trend, not an edge.`; }
+  return `<section class="sig-track"><div class="lbl">How these ratings have done</div>
+    <p class="sig-say">${say}</p>
+    <div class="tbl-wrap"><table class="hold qt"><thead><tr><th class="l">Rating then</th><th class="tk-n">Cases</th><th>1 month later,<br>points vs S&amp;P 500</th><th>Beat it</th><th>3 months later,<br>points vs S&amp;P 500</th><th class="tk-b3">Beat it</th></tr></thead>
+    <tbody>${SIG_RATINGS.map(([k])=>row(k,k,true)).join("")}${row("All","Every stock")}</tbody></table></div>
+    <p class="hint">${T.stocks} stocks scored every two weeks${span?` from ${span}`:""}, each time using only the prices known that day, then followed for one and three months. "Points vs S&amp;P 500" is the average lead over the index. Most stocks trail the index in a typical month, because a few giants carry it, so compare each rating with the "Every stock" row rather than with 50%. These are today's index members, so stocks that dropped out aren't counted, which flatters every rating a little; two years is only one or two market phases.</p></section>`;
 }
 function dist(rows){
   if(!rows.length) return "";

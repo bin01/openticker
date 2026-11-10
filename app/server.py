@@ -1256,6 +1256,11 @@ SIGNALS_PATH = CACHE / "signals.json"
 SIGNAL_FUNDS = ("SPY", "QQQ", "SMH")   # the S&P 500, the Nasdaq-100 and chip stocks; small caps would double the scan
 SIG = {"running": False, "done": 0, "total": 0, "at": 0.0, "asOf": None, "rows": [], "error": None, "whileOpen": False}
 _sig_lock = threading.Lock()
+# The score's track record: every stock scored again every two weeks over the past two years, and what it did next
+# (signals.track). Worked out after a scan, once a day, in its own thread; the Screener and Tick read it.
+TRACK_PATH = CACHE / "signals-track.json"
+TRACK = {"asOf": None, "summary": None, "stocks": {}, "running": False}
+SIGNAL_DAYS = 1100     # calendar days of bars a scan fetches: the score reads 300 sessions, the track record two years more
 
 
 def _load_signals():
@@ -1263,6 +1268,27 @@ def _load_signals():
         SIG.update(json.loads(SIGNALS_PATH.read_text()), running=False)
     except Exception:
         pass
+    try:
+        TRACK.update(json.loads(TRACK_PATH.read_text()), running=False)
+    except Exception:
+        pass
+
+
+def signals_track(bars, spy, sector_of, as_of):
+    """The track record for the bars a scan just fetched. Several minutes of work, so it runs once per close."""
+    if TRACK["running"] or TRACK["asOf"] == as_of:
+        return
+    TRACK["running"] = True
+    try:
+        t0 = time.time()
+        stocks = signals.track(bars, spy, sector_of)
+        TRACK.update(asOf=as_of, summary=jsonable(signals.track_summary(stocks)), stocks=jsonable(stocks))
+        paths.write_json(TRACK_PATH, {k: TRACK[k] for k in ("asOf", "summary", "stocks")}, separators=(",", ":"))
+        log(f"signals: track record for {len(stocks)} stocks as of {as_of} in {time.time() - t0:.0f}s")
+    except Exception as e:
+        log(f"signals track record failed: {e!r}")
+    finally:
+        TRACK["running"] = False
 
 
 def _signal_ohlc(syms, start, done=None):
@@ -1307,7 +1333,7 @@ def signals_scan():
     universe = [t for t in list(fund) + own if VALID.fullmatch(t) and t not in FUNDS and t not in etf_of]
     bench = ["SPY", "SMH"] + [e for e, _, _ in X.SECTOR_ETFS]
     SIG.update(running=True, done=0, total=len(universe))
-    start = (X.ny_today() - dt.timedelta(days=430)).isoformat()
+    start = (X.ny_today() - dt.timedelta(days=SIGNAL_DAYS)).isoformat()
     try:
         _yf_fresh()
         b = _signal_ohlc(bench, start)
@@ -1319,20 +1345,21 @@ def signals_scan():
         live = market_open(now_ny)
         trim = (lambda f: f[f.index.strftime("%Y-%m-%d") < today]) if live else (lambda f: f)   # score finished sessions only
         spy = trim(b["SPY"])["Close"]
-        rows = []
+        rows, trimmed, sector_of = [], {}, {}
         for t in universe:
             f = bars.get(t)
             if f is None:
                 continue
-            f = trim(f)
+            f = trimmed[t] = trim(f)
             if t in chips:
                 sec = ("SMH", "Chip stocks (SMH)")
             else:
                 sec = etf_of.get(str(sectors.get(t) or "").lower().replace(" ", "-"))
                 sec = sec and (sec[0], f"{sec[1]} ({sec[0]})")
             sc = sec and b.get(sec[0])
+            sector_of[t] = (trim(sc)["Close"] if sc is not None else None, sec[1] if sec else None)
             try:
-                r = signals.score(f, spy, trim(sc)["Close"] if sc is not None else None, sec[1] if sec else None)
+                r = signals.score(f, spy, *sector_of[t])
             except Exception as e:
                 log(f"signals {t} failed: {e!r}")
                 continue
@@ -1342,9 +1369,13 @@ def signals_scan():
         rows.sort(key=lambda r: (signals.ORDER.index(r["rating"]), -r["score"]))
         as_of = spy.index[-1].strftime("%Y-%m-%d")
         partial = sum(1 for r in rows if r["vs"]) < 0.8 * len(rows)   # sectors still being looked up on a first launch
-        SIG.update(rows=jsonable(rows), asOf=as_of, at=time.time(), whileOpen=live, partial=partial, running=False, error=None)
-        paths.write_json(SIGNALS_PATH, {k: SIG[k] for k in ("rows", "asOf", "at", "whileOpen", "partial")}, separators=(",", ":"))
+        wide = signals.breadth({t: f for t, f in trimmed.items() if t in fund})   # the market, not the person's picks
+        SIG.update(rows=jsonable(rows), asOf=as_of, at=time.time(), whileOpen=live, partial=partial, running=False, error=None,
+                   breadth=jsonable(wide))
+        paths.write_json(SIGNALS_PATH, {k: SIG[k] for k in ("rows", "asOf", "at", "whileOpen", "partial", "breadth")}, separators=(",", ":"))
         log(f"signals: scored {len(rows)}/{len(universe)} stocks as of {as_of}")
+        if not partial:   # every sector known; the record covers finished sessions only, so once per close is enough
+            threading.Thread(target=signals_track, args=(trimmed, spy, sector_of, as_of), daemon=True).start()
     except Exception as e:
         log(f"signals scan failed: {e!r}")
         SIG.update(running=False, failAt=time.time(), error="Yahoo didn't send price history just now. Trying again shortly.")
@@ -1369,7 +1400,8 @@ def signals_payload(private):
             threading.Thread(target=signals_scan, daemon=True).start()
     rows = SIG["rows"] if private else [r for r in SIG["rows"] if r.get("fund")]
     return {"rows": rows, "asOf": SIG["asOf"], "at": SIG["at"] or None, "running": SIG["running"],
-            "done": SIG["done"], "total": SIG["total"], "error": SIG["error"], "funds": list(SIGNAL_FUNDS)}
+            "done": SIG["done"], "total": SIG["total"], "error": SIG["error"], "funds": list(SIGNAL_FUNDS),
+            "breadth": SIG.get("breadth"), "track": TRACK["summary"], "trackAsOf": TRACK["asOf"]}
 
 
 def earnings_loop():
@@ -2375,7 +2407,7 @@ main{{max-width:360px;padding:24px;text-align:center}}b{{display:block;font-size
                 "scope": scope, "t": t or None}
         old = personal.chat_drop_answer(uid, cid) if cid and retry else []   # the new answer replaces the old one
         try:
-            rid = runs.start(uid, cid, prov, spec, lambda: agent.context_for(scope, t, uid))
+            rid = runs.start(uid, cid, prov, spec, lambda: agent.context_for(scope, t, uid, spec["skill"]))
         except Exception:
             for m in old:                    # it didn't start: the old answer stays, as it does on the page
                 personal.chat_add(uid, cid, m)

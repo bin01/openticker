@@ -80,6 +80,8 @@ One click runs a playbook written for that question. Hover any insight and press
 | Playbook | What you get |
 | --- | --- |
 | Quick take | The story of a stock in 200 words: trend, analysts, what's next |
+| Weigh the evidence | Six kinds of evidence (trend, estimates, valuation, insiders, positioning, analysts), which way they lean, how the same setup has done before, and what would flip it. Each check is saved so you can see later how it played out |
+| Review my position | For a stock you own: what changed since you bought, the risk to the next support in dollars, its share of your portfolio, and alerts at the prices that matter |
 | Deep dive | The business, where its growth comes from, and what the price assumes |
 | Why is it moving? | Market, sector or company news, sized against a normal day |
 | Earnings | Before a report: the bar to beat and the move options price in. After: what happened and how the stock took it |
@@ -122,6 +124,9 @@ openticker stock NVDA              # company, price and trend, analysts, earning
 openticker earnings NVDA           # one section: analysts, earnings, ownership, options, news, financials, events
 openticker technicals NVDA         # trend, RSI, MACD, volume, support and resistance
 openticker insiders NVDA           # insider buying and selling in depth
+openticker signals NVDA            # the momentum score, its parts, and how each rating has done before
+openticker valuation NVDA          # multiples, and the P/E against its own past
+openticker reads                   # Tick's past evidence checks and how they played out
 openticker portfolio               # your positions, watchlist and what changed
 openticker market                  # indexes, sectors, macro and today's movers
 openticker fund SMH --h 1M         # what drove a fund

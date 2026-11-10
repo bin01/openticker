@@ -6,23 +6,25 @@ metadata:
   order: 9
   label: "Is it expensive?"
   scope: stock
+  data: "valuation"
   prompt: "Is {t} expensive right now?"
 ---
 
 # Is it expensive?
 
-**Data**: `openticker stock TICKER`, then `openticker compare TICKER PEER1 PEER2 PEER3` with three close competitors.
+**Data**: `openticker valuation TICKER` for the multiples and the P/E against its own past, `openticker stock TICKER` for growth and estimates, then `openticker compare TICKER PEER1 PEER2 PEER3` with three close competitors.
 
 ## Work through
 
 1. **The multiples in plain words**: trailing and forward P/E, price/sales and PEG. For example, "you pay $26 for each $1 of the last year's profit, and $13 for each $1 expected next year."
 2. **Against growth**: whether the forward P/E is justified by expected EPS growth. A PEG near 1 is the usual rough line for "fairly priced for its growth".
-3. **Against peers**: a small table of the same multiples and growth.
-4. **What's priced in**: roughly what growth the price assumes, and what happens to the multiple if growth disappoints.
+3. **Against its own past**: where today's P/E sits in the range of its last few years. A stock at the top of its own range needs growth to speed up, or the multiple to stay high, to do well from here.
+4. **Against peers**: a small table of the same multiples and growth.
+5. **What's priced in**: roughly what growth the price assumes, and what happens to the multiple if growth disappoints.
 
 ## Answer shape
 
-Answer at the top: cheap, fair or expensive, and against what. Then the four points, under 220 words, with the peer table.
+Answer at the top: cheap, fair or expensive, and against what. Then the five points, under 220 words, with the peer table.
 
 ## Before you send
 

@@ -21,7 +21,7 @@ Object.assign(IC,{code:'<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>',file
 const TICK="Tick";
 /* skills ship with the server; this copy lets things render before /api/ask/info answers */
 const ASK_SKILLS_FALLBACK=[
-  {name:"stock-snapshot",label:"Quick take",scope:"stock"},{name:"company-deep-dive",label:"Deep dive",scope:"stock",needs:["workbench","web"]},{name:"explain-move",label:"Why is it moving?",scope:"stock"},
+  {name:"stock-snapshot",label:"Quick take",scope:"stock"},{name:"weigh-evidence",label:"Weigh the evidence",scope:"stock"},{name:"position-review",label:"Review my position",scope:"stock"},{name:"company-deep-dive",label:"Deep dive",scope:"stock",needs:["workbench","web"]},{name:"explain-move",label:"Why is it moving?",scope:"stock"},
   {name:"earnings-preview",label:"Earnings",scope:"stock"},{name:"technical-analysis",label:"Read the chart",scope:"stock"},
   {name:"insider-trades",label:"Insider trades",scope:"stock"},{name:"bull-bear",label:"Bull vs bear",scope:"stock"},
   {name:"analyst-pulse",label:"What analysts say",scope:"stock"},{name:"valuation-check",label:"Is it expensive?",scope:"stock"},
@@ -842,6 +842,8 @@ function mdToHtml(src,msg){
       if(lang==="chart"){ const raw=body.join("\n").replace(/&quot;/g,'"').replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&");
         let spec=null; try{ spec=closed?JSON.parse(raw):null; }catch(e){}
         out.push(spec?`<figure class="tkc" data-c="${esc(encodeURIComponent(JSON.stringify(spec)))}"></figure>`:closed?"":msg&&!msg.done?`<figure class="tkc wait"><span>Drawing a chart…</span></figure>`:`<pre class="mdpre"><code>${body.join("\n")}</code></pre>`); }   // a finished answer whose chart never closed shows what it wrote
+      else if(lang==="verdict"||lang==="alert"){ let v=null; try{ v=closed?JSON.parse(unEsc(body.join("\n"))):null; }catch(e){}
+        if(v) out.push(lang==="verdict"?verdictHTML(v):alertHTML(v)); }   // half-written or malformed: show nothing
       else out.push(`<pre class="mdpre"><code>${body.join("\n")}</code></pre>`);
       continue; }
     if(/^\|.*\|$/.test(tr)&&i+1<L.length&&/^\|[\s:|-]+\|$/.test(L[i+1].trim())){
@@ -861,6 +863,32 @@ function mdToHtml(src,msg){
   const i=msg?ASK.conv.indexOf(msg):-1, u=i>0?ASK.conv[i-1]:null;
   return linkTickers(out.join(""),u?.ctx?.scope==="stock"?u.ctx.t:null);
 }
+
+/* the evidence check's tally (```verdict) and a suggested alert (```alert), both JSON blocks Tick writes ---------- */
+const unEsc=x=>x.replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&");
+const LEAN={positive:["up","The evidence leans positive"],negative:["down","The evidence leans negative"],mixed:["","The evidence is mixed"]};
+function verdictHTML(v){
+  const L=LEAN[v.lean]; if(!L) return "";
+  const n=k=>Math.max(0,Math.min(12,Math.round(+v[k]||0))), dots=(k,c)=>`<i class="${c}"></i>`.repeat(n(k));
+  return `<div class="tkv ${L[0]}"><div class="tkv-h"><b>${L[1]}</b><span class="tkv-d" aria-hidden="true">${dots("for","f")}${dots("neutral","n")}${dots("against","a")}</span></div>`
+    +`<div class="tkv-n">${n("for")} for · ${n("against")} against · ${n("neutral")} neutral</div>`
+    +(v.line?`<p>${esc(String(v.line))}</p>`:"")
+    +`<div class="tkv-f">Saved to Tick's record. Ask “How have your past reads done?” in a month to see how it played out.</div></div>`;
+}
+const ALERT_OK={above:1,below:1,ma200:1};
+function alertHTML(a){
+  const t=String(a.t||"").toUpperCase(), k=a.kind, v=+a.value;
+  if(!/^[A-Z0-9.^=-]{1,12}$/.test(t)||!ALERT_OK[k]||(k!=="ma200"&&!(v>0))) return "";
+  const what=k==="ma200"?`${t} crosses its 200-day average`:`${t} ${k==="above"?"rises above":"falls below"} $${v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const on=(me?.alerts||[]).some(x=>x.kind===k&&x.t===t&&(k==="ma200"||Math.abs((x.value||0)-v)<0.005));
+  return `<div class="tka${on?" on":""}">${ic("bell",15)}<span><b>${esc(what)}</b>${a.why?`<em>${esc(String(a.why))}</em>`:""}</span>`
+    +`<button type="button" data-tka="${esc(JSON.stringify({t,kind:k,value:k==="ma200"?null:v}))}"${on?" disabled":""}>${on?"Alert set":"Alert me"}</button></div>`;
+}
+document.addEventListener("click",async e=>{ const b=e.target.closest("#askB [data-tka]"); if(!b||b.disabled) return;
+  let a; try{ a=JSON.parse(b.dataset.tka); }catch(x){ return; }
+  b.disabled=true; b.textContent="Setting…";
+  try{ await api("/api/me/alert",a); b.textContent="Alert set"; b.closest(".tka")?.classList.add("on"); }
+  catch(x){ b.disabled=false; b.textContent="Alert me"; toast(x.message||"Couldn't set that alert. Try again."); } });
 
 /* charts Tick draws: a ```chart block of JSON becomes a small SVG line or bar chart --------------------------- */
 const CH_COL=["var(--fund)","var(--accent)","var(--warn)","var(--c4)"];
