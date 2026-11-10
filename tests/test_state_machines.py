@@ -258,6 +258,68 @@ class Restart(unittest.TestCase):
             self.assertEqual([m.get("error") for m in replies], [runs.GAVE_UP], name)
             self.assertEqual(personal.run_get(rid)["status"], "error", name)
 
+    def test_deleting_a_conversation_stops_its_answer(self):
+        """Deleted while its answer runs: the answer stops, and finishing doesn't bring the conversation back."""
+        import io
+        import json
+        cid, go = fresh("chatdel0001"), threading.Event()
+
+        class Slow(FakeRun):
+            def run(self):
+                self.emit("status", {"text": "Asking Claude Code"})
+                self.emit("text", {"text": "Half an answer"})
+                go.set()
+                while not self.cancelled:
+                    time.sleep(0.01)
+
+        personal.chat_add(UID, cid, {"role": "user", "text": "q", "ts": time.time()})
+        with mock.patch.object(agent, "Run", Slow):
+            rid = runs.start(UID, cid, "claude", {"q": "q", "skill": None, "history": []}, lambda: "ctx")
+            self.assertTrue(go.wait(5))
+            h = server.Handler.__new__(server.Handler)
+            raw = json.dumps({"id": cid}).encode()
+            h.path, h.headers, h.rfile = "/api/ask/chat/delete", {"Content-Type": "application/json", "Content-Length": str(len(raw))}, io.BytesIO(raw)
+            sent = []
+            h.send = lambda code, b, ctype: sent.append(code)
+            with mock.patch.object(server.agent, "may_ask", lambda handler: True):
+                h.do_POST()
+            self.assertEqual(sent, [200])
+            for _ in range(250):
+                if runs._live[rid].done:
+                    break
+                time.sleep(0.02)
+        self.assertTrue(runs._live[rid].done)
+        self.assertTrue(runs._live[rid].stopped)
+        self.assertIsNone(personal.chat(UID, cid))
+        self.assertEqual(personal.run_get(rid)["status"], "stopped")
+
+    def test_ask_again_replaces_the_answer(self):
+        """"Ask again" through /api/ask: once the new answer lands, the conversation has one question and one answer."""
+        import io
+        import json
+        cid = fresh("chatretry01")
+        ask(cid, [("status", {"text": "Asking Claude Code"}), ("text", {"text": "Old answer."})])
+        FakeRun.script = [("status", {"text": "Asking Claude Code"}), ("text", {"text": "New answer."})]
+        got = {}
+        h = server.Handler.__new__(server.Handler)
+        raw = json.dumps({"provider": "claude", "q": "How volatile is NVDA?", "chat": cid, "retry": True, "history": []}).encode()
+        h.path, h.headers, h.rfile = "/api/ask", {"Content-Type": "application/json", "Content-Length": str(len(raw))}, io.BytesIO(raw)
+        h.send = lambda code, b, ctype: got.setdefault("refused", code)
+        with mock.patch.object(server.agent, "may_ask", lambda handler: True), mock.patch.object(agent, "context_for", lambda *a: "ctx"), \
+                mock.patch.object(server.Handler, "follow_run", lambda self, rid, uid, after: got.setdefault("rid", rid)):
+            h.do_POST()
+        self.assertNotIn("refused", got)
+        while not runs._live[got["rid"]].done:
+            time.sleep(0.02)
+        msgs = personal.chat(UID, cid)["messages"]
+        self.assertEqual([(m["role"], m["text"]) for m in msgs], [("user", "How volatile is NVDA?"), ("assistant", "New answer.")])
+        self.assertEqual(personal.chat_drop_answer(UID, fresh("chatnone01")), [])   # nothing to take from a missing conversation
+
+    def test_first_answer_still_makes_its_conversation(self):
+        cid = fresh("chatnew0001")
+        ask(cid, [("status", {"text": "Asking Claude Code"}), ("text", {"text": "Done."})])
+        self.assertEqual([m["role"] for m in personal.chat(UID, cid)["messages"]], ["user", "assistant"])
+
     def test_finished_answer_saved_if_missing(self):
         """Stopped after the log ended but before the answer reached the conversation: it's saved, once."""
         cid = fresh("chatdup0002")

@@ -2031,6 +2031,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(400, b"bad json", "text/plain")
             uid, cid = user_for(self), str(body.get("id") or "")
             mine = personal.chat(uid, cid) is not None
+            live = runs.running_for_chat(uid, cid) if mine else None
+            if live:   # stop its answer first, so finishing doesn't bring the conversation back
+                runs.stop(live["id"], uid)
             personal.chat_delete(uid, cid)
             if mine and not runs.running_for_chat(uid, cid):   # an answer still running keeps its folder; the prune gets it later
                 workbench.remove(cid)
@@ -2275,7 +2278,13 @@ main{{max-width:360px;padding:24px;text-align:center}}b{{display:block;font-size
         hist = [h for h in body.get("history") or [] if isinstance(h, dict)][-6:]
         cid = str(body.get("chat") or "")
         cid = cid if re.fullmatch(r"[\w-]{8,40}", cid) else ""
-        if cid:
+        retry = body.get("retry") is True   # "Ask again": the question is already in the conversation
+        if cid and retry:
+            if personal.chat(uid, cid) is None:
+                cid = ""
+            elif runs.running_for_chat(uid, cid):   # its answer would land after the new one
+                return self.send(409, json.dumps({"error": "Tick is still answering in this conversation."}).encode(), "application/json")
+        elif cid:
             try:
                 personal.chat_add(uid, cid, {"role": "user", "text": str(body.get("show") or q)[:4000], "ctx": {"scope": scope, "t": t or None},
                                              "skill": sk["name"] if sk else None, "ts": time.time()})
@@ -2284,7 +2293,13 @@ main{{max-width:360px;padding:24px;text-align:center}}b{{display:block;font-size
         fit = None if sk else agent.match_skill(q, scope)   # a typed question a playbook says it covers
         spec = {"q": q, "skill": sk["name"] if sk else fit["name"] if fit else None, "history": hist, "model": body.get("model"), "effort": body.get("effort"),
                 "scope": scope, "t": t or None}
-        rid = runs.start(uid, cid, prov, spec, lambda: agent.context_for(scope, t, uid))
+        old = personal.chat_drop_answer(uid, cid) if cid and retry else []   # the new answer replaces the old one
+        try:
+            rid = runs.start(uid, cid, prov, spec, lambda: agent.context_for(scope, t, uid))
+        except Exception:
+            for m in old:                    # it didn't start: the old answer stays, as it does on the page
+                personal.chat_add(uid, cid, m)
+            raise
         self.follow_run(rid, uid, 0)   # the answer runs on its own: leaving this stream doesn't stop it
 
     def follow_run(self, rid, uid, after):
