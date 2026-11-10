@@ -166,7 +166,7 @@ openticker calendar
 
 ## Privacy
 
-Everything runs on your Mac. Your watchlist, positions, alerts and Tick conversations live in `~/Library/Application Support/OpenTicker` and never leave it. Market data comes from Yahoo Finance. When you ask Tick something, the question and the data for what you're looking at go to the agent you chose, under that agent's terms. Only this Mac, or a phone you paired, can use Tick.
+Everything runs on your Mac. Your watchlist, positions, alerts and Tick conversations live in `~/Library/Application Support/OpenTicker` and never leave it. Market data comes from Yahoo Finance. When you ask Tick something, the question and the data for what you're looking at go to the agent you chose, under that agent's terms. Your holdings go to Tick as tickers and weights; exact shares, cost and dollar values only when a question needs them. Only this Mac, or a phone you paired, can use Tick.
 
 OpenTicker uses Yahoo Finance's public data through [yfinance](https://github.com/ranaroussi/yfinance) and fund holdings published by State Street, Invesco and VanEck. It's for personal research and isn't affiliated with any of them. Data can be delayed or wrong, and nothing here is investment advice.
 
