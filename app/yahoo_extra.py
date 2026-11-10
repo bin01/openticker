@@ -321,9 +321,13 @@ def options(sym, earnings_date: str | None = None, expiry: str | None = None):
         pass
     today = ny_today()
 
+    chains = {}   # each expiry is downloaded once per call; a failed download isn't kept, so it raises again on the next use
+
     def chain(e):
-        c = t.option_chain(e)
-        return c.calls, c.puts
+        if e not in chains:
+            c = t.option_chain(e)
+            chains[e] = (c.calls, c.puts)
+        return chains[e]
 
     def atm(e):
         calls, puts = chain(e)

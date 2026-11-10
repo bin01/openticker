@@ -262,7 +262,7 @@ class Restart(unittest.TestCase):
         """Stopped after the log ended but before the answer reached the conversation: it's saved, once."""
         cid = fresh("chatdup0002")
         personal.chat_add(UID, cid, {"role": "user", "text": "q", "ts": time.time() - 10})
-        rid = self.orphan(cid, {"q": "q", "prompt": "p"}, 0, [("status", {"text": "Asking Claude Code"}), ("text", {"text": "Done."}),
+        self.orphan(cid, {"q": "q", "prompt": "p"}, 0, [("status", {"text": "Asking Claude Code"}), ("text", {"text": "Done."}),
                                                              ("end", {"secs": 3, "by": "Claude Code", "error": None, "files": []})])
         runs.recover()
         answers = [m for m in personal.chat(UID, cid)["messages"] if m["role"] == "assistant"]

@@ -296,6 +296,14 @@ def space(key, uid=None):
     return d
 
 
+def remove(key):
+    """Delete a conversation's folder (its code, saved files and the copy of the person's positions). Never raises."""
+    try:
+        shutil.rmtree(SPACES / _key(key), ignore_errors=True)
+    except Exception:
+        pass
+
+
 def find(key):
     d = SPACES / _key(key)
     return d if d.is_dir() else None

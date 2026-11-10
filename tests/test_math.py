@@ -218,6 +218,25 @@ class InsiderSection(unittest.TestCase):
         self.assertIn("| 20% |", t)                                   # sold 2,000 of 10,000 shares
         self.assertIn("+20.0%", t)                                    # bought at $100, now $120
 
+    def test_row_without_a_date_is_left_out(self):
+        today = dt.date.today()
+        day = lambda n: (today - dt.timedelta(days=n)).isoformat()
+        tx = [
+            {"date": day(10), "insider": "DOE JANE", "role": "Director", "what": "buy", "kind": "buy", "shares": 100, "value": 10000, "price": 100},
+            {"date": day(20), "insider": "ROE RICH", "role": "Director", "what": "sell", "kind": "sell", "shares": 200, "value": 22000, "price": 110},
+            {"date": None, "insider": "POE PAT", "role": "Officer", "what": "buy", "kind": "buy", "shares": 50, "value": 5000, "price": 100},
+        ]
+        old = agent.srv
+        agent.srv = types.SimpleNamespace(X=types.SimpleNamespace(ny_today=lambda: today))
+        try:
+            t = "\n".join(agent.sec_insiders({"insiders": tx}, 120.0))
+        finally:
+            agent.srv = old
+        self.assertIn("1 open-market buy by 1 person ($10,000)", t)
+        self.assertIn("1 sale by 1 person ($22,000)", t)
+        self.assertNotIn("Poe Pat", t)
+        self.assertNotIn("None", t)
+
 
 class Money(unittest.TestCase):
     def test_formats(self):

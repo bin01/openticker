@@ -183,7 +183,6 @@ def check(skill: Path, run_tests=True) -> bool:
         cfg = skill / cfg_name
         text = cfg.read_text()
         keep, rules = parse_cfg(text)
-        spec_line = next((l for l in keep if l.strip().startswith("SPECIFICATION")), None)
         mod = re.search(r"^\\\* model: (\w+)", text, re.M)
         spec = skill / ((mod.group(1) if mod else cfg.stem) + ".tla")
         if not spec.exists():

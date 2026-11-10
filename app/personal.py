@@ -3,7 +3,7 @@
 Everything is keyed by user_id. Today there is one local user ("me"); adding sign-in later only
 means resolving a different user_id per request, not reshaping the data.
 
-Storage is a SQLite file at data/app.db next to this file.
+Storage is a SQLite file at data/app.db under OPENTICKER_HOME (see paths.py).
 """
 
 from __future__ import annotations
@@ -13,11 +13,9 @@ import sqlite3
 import subprocess
 import threading
 import time
-from pathlib import Path
 
 import paths  # noqa: E402
 
-HERE = Path(__file__).resolve().parent
 DATA = paths.DATA
 DB_PATH = DATA / "app.db"
 DEFAULT_USER = "me"

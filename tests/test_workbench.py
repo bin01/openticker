@@ -2,6 +2,7 @@
 served from a conversation's out/ folder, Claude Code's sandbox settings keep it in its folder, and the `ot` module
 hands code the prices."""
 import http.server
+import importlib
 import json
 import os
 import socket
@@ -136,7 +137,7 @@ class Settings(unittest.TestCase):
 class OT(unittest.TestCase):
     def test_prices(self):
         try:
-            import pandas  # noqa: F401
+            importlib.import_module("pandas")
         except ImportError:
             self.skipTest("needs pandas")
         d = tempfile.mkdtemp()
