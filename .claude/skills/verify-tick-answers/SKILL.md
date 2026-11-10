@@ -2,10 +2,10 @@
 name: verify-tick-answers
 description: Model-checks that every question to Tick gets exactly one reply in its conversation, however OpenTicker stops and restarts mid-answer, and that the page ends a question only when the log does. Use when changing app/runs.py (start, _work, _finish, recover, _close_finished, follow), askDrive or askFollow in app/static/ask.js, or the run and chat functions in app/personal.py.
 metadata:
-  synced: 3218198
+  synced: 1d01cf8
   covers: app/runs.py app/static/ask.js
   models: TickAnswer.cfg
-  known: TickAnswer.cfg:EveryQuestionAnswered
+  known:
   tests: tests.test_state_machines.Restart
 ---
 
@@ -47,8 +47,7 @@ Every action in `TickAnswer.tla` is one step in the code. One step means one wri
 | `OpenTickerStops` | the process ends; `_live` and `Live.stopped` are gone, the page's stream drops |
 | `ComesBackCloses` | `recover`: the saved log has "end" → `_close_finished` adds the answer only if the conversation has none newer than `started` |
 | `ComesBackGivesUp` | `recover`: `resumes >= 2` or no `spec["prompt"]` → `run_events_add(... "end" GAVE_UP)` |
-| `GiveUpClosed` | `recover`: `personal.run_set(status="error")` |
-| `GiveUpTold` | `recover`: `personal.chat_add(... GAVE_UP)` |
+| `GiveUpTold` | `recover`: `personal.chat_add(... GAVE_UP)`, before closing the run; then `run_set(status="error")` is `RunClosed` |
 | `ComesBackResumes` | `recover`: `run_set(resumes=+1)`, `_work(resume=True)` on the same log |
 | `ComesBackIdle` | a closed run isn't in `runs_open()`, so start-up leaves it alone |
 | `Reattach`, `ShowEnd` | `askDrive`: after a drop, fetch `/api/ask/run?after=0` again; stop reading at "end" (`runs.follow` sends it from memory or SQLite, and writes one for an old log that has none) |
@@ -58,9 +57,9 @@ Not modeled: what the agent writes, the work log, Stop's effect beyond closing t
 
 ## Findings on the current code
 
-1. **`EveryQuestionAnswered` breaks** (known). Path: you ask; OpenTicker stops before the prompt is saved; at start-up `recover` gives up, writes "end" and marks the run "error"; OpenTicker stops again before `chat_add(GAVE_UP)`; at the next start-up the run is closed, so nothing tells the conversation. The question stays without a reply. The window is a few milliseconds during start-up, so it's rare. The fix is to call `chat_add` before `run_set(status="error")` in `recover`, the order `_finish` already uses; `_close_finished` then covers a stop between them. Not fixed here: product code changes need the person's go-ahead.
+None open. Every rule holds.
 
-When it's fixed, swap `GiveUpClosed` and `GiveUpTold` in the model to match, run the check, and remove the line from `known`. The runner fails while `known` lists a rule that holds.
+Fixed: `EveryQuestionAnswered` used to break. `recover` marked a given-up run "error" before telling the conversation, so a stop between those two writes left the question without a reply for good. It now tells the conversation first, the order `_finish` uses; a stop in between leaves an open run whose log ends, which the next start closes through `_close_finished` without a second reply. `test_given_up_answer_told_once_across_a_stop` stops at each of the two writes and fails on the old order.
 
 ## Reading a result
 
@@ -81,4 +80,4 @@ A broken rule is either a bug or a model that no longer matches the code. Before
 At 3218198 each rule was broken on purpose, and the check caught it:
 - `OneAnswer`: `recover` resuming a run whose log already ends (the `_close_finished` branch removed). Model: `ComesBackResumes` from "ended" → `OneAnswer` breaks. Code: `test_finished_answer_not_answered_twice` fails.
 - `PageEndsWithTheLog`: the page treating a dropped stream as the end. Model: `ShowEnd` without `srv \in LogEnds` → breaks.
-- `EveryQuestionAnswered`: the finding above.
+- `EveryQuestionAnswered`: `recover` closing a given-up run before `chat_add` (the order before the fix). Model: `GiveUpTold` after the close → breaks. Code: `test_given_up_answer_told_once_across_a_stop` fails.

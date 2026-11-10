@@ -235,6 +235,29 @@ class Restart(unittest.TestCase):
         self.assertEqual(len([m for m in personal.chat(UID, cid)["messages"] if m["role"] == "assistant"]), 1)
         self.assertEqual(personal.run_get(rid)["status"], "done")
 
+    def test_given_up_answer_told_once_across_a_stop(self):
+        """OpenTicker stops in the middle of giving up on an answer, at either of its last two writes: the next start
+        still tells the conversation, exactly once (the TickAnswer model's EveryQuestionAnswered and OneAnswer)."""
+        for n, (mod, name) in enumerate(((personal, "chat_add"), (personal, "run_set"))):
+            cid = fresh(f"chatgone10{n}")
+            personal.chat_add(UID, cid, {"role": "user", "text": "q", "ts": time.time() - 10})
+            rid = self.orphan(cid, {"q": "q"}, 0, [("status", {"text": "Gathering the data"})])
+            real = getattr(mod, name)
+
+            def dies(*a, real=real, **kw):
+                if kw.get("status") == "error" or (len(a) > 2 and a[2].get("error") == runs.GAVE_UP):
+                    raise Stop()
+                return real(*a, **kw)
+            with mock.patch.object(mod, name, dies):
+                try:
+                    runs.recover()
+                except Stop:
+                    pass
+            runs.recover()
+            replies = [m for m in personal.chat(UID, cid)["messages"] if m["role"] == "assistant"]
+            self.assertEqual([m.get("error") for m in replies], [runs.GAVE_UP], name)
+            self.assertEqual(personal.run_get(rid)["status"], "error", name)
+
     def test_finished_answer_saved_if_missing(self):
         """Stopped after the log ended but before the answer reached the conversation: it's saved, once."""
         cid = fresh("chatdup0002")

@@ -2,7 +2,7 @@
 name: verify-market-day
 description: Model-checks one New York weekday of live prices (trading day, market holiday, or a closure the calendar doesn't know) so that a closed day never gets a row of prices or a close note, and the header and Market page say open or closed truthfully. Use when changing the stream or polling in app/server.py (on_stream_msg, apply_price, poll_loop, market_open, close_note_loop), the exchange calendar in app/yahoo_extra.py (market_holidays, session_hours, clock_status), or setStatus in app/index.html.
 metadata:
-  synced: 3218198
+  synced: 1d01cf8
   covers: app/server.py app/yahoo_extra.py app/index.html
   models: TradingDay.cfg Holiday.cfg Closure.cfg
   known:
