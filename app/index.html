@@ -528,7 +528,16 @@ tr:hover .lotb{color:var(--ink-2)}
 #lvl i.k.res{background:var(--down)}#lvl i.k.sup{background:var(--up)}#lvl i.k.here{background:var(--accent)}
 #lvl i.k.ind{background:var(--c)}#lvl i.k.ind[style*="vwap"]{background:repeating-linear-gradient(90deg,var(--c) 0 6px,transparent 6px 9px)}
 .lvind{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 8px}.lvind .lbl{margin:0}.lvind .seg button{white-space:nowrap}
-@media (max-width:600px){.lvind .seg{width:100%;display:grid;grid-template-columns:repeat(5,auto)}.lvind .seg button{padding:6px 4px}}
+@media (max-width:600px){.lvind .seg{width:100%;display:grid;grid-template-columns:repeat(3,1fr)}.lvind .seg button{padding:6px 4px}}
+#lvl i.k.sg{width:auto;height:auto;background:none;color:var(--up);font-size:10px;line-height:1}#lvl i.k.sg.dn{color:var(--down)}
+.lvsig{border:1px solid var(--rule);border-radius:10px;padding:10px 12px;margin:0 0 10px}.lvsig:empty{display:none}
+.lvsh{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.lvsn{font-size:12.5px;color:var(--ink-2)}.lvsn b{color:var(--ink);font-weight:600}
+.lvsp{font:700 13px/1 var(--f-mono);letter-spacing:.02em;padding:7px 11px;border-radius:999px;white-space:nowrap}
+.lvsp.call{background:var(--up-soft);color:var(--up)}.lvsp.put{background:var(--down-soft);color:var(--down)}.lvsp.hold{background:var(--grid);color:var(--ink-2)}
+.lvck{list-style:none;margin:10px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:4px 16px;font-size:12px;color:var(--ink-2)}
+.lvck li{display:flex;gap:7px;align-items:baseline;min-width:0}.lvck li b{width:10px;flex:none;font-size:10px}.lvck li em{font-style:normal;font-weight:600;color:var(--ink)}
+.lvck li.up b{color:var(--up)}.lvck li.down b{color:var(--down)}.lvck li.flat b,.lvck li.na b{color:var(--ink-3)}.lvck li.na{color:var(--ink-3)}
+.lvtr{margin:8px 0 0;font-size:12px;color:var(--ink-3)}
 .lvrd{display:flex;flex-wrap:wrap;gap:6px 18px;margin:0 0 10px;font-size:12.5px;color:var(--ink-2)}.lvrd:empty{display:none}
 .lvri{display:inline-flex;align-items:center;gap:7px}.lvri i{width:10px;height:3px;border-radius:2px;flex:none}
 .lvri.up{color:color-mix(in srgb,var(--up) 70%,var(--ink-2))}.lvri.down{color:color-mix(in srgb,var(--down) 70%,var(--ink-2))}
