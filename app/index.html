@@ -23,6 +23,7 @@
   --rule:#e1e4df; --grid:#eceeea; --accent:#2b59d6; --accent-soft:#e7ecfb;
   --up:#12804e; --up-soft:#dcefe4; --down:#c53b31; --down-soft:#f7e1de; --fund:#121513;
   --tile-0:#e9ebe7; --tile-up:#0f8a52; --tile-down:#d23a2f; --tile-ink:#ffffff; --tile-ink-0:#2b302d; --warn:#b7791f;
+  --ema4:#7c3aed; --ema13:#0e8a8a; --vwap:#c0388f;
   --shadow:0 1px 2px rgba(18,21,19,.05),0 8px 24px rgba(18,21,19,.06); --glow:rgba(43,89,214,.07);
   --f-body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-display:var(--f-body);
@@ -35,12 +36,14 @@
   --rule:#252b28; --grid:#1f2522; --accent:#86a5f3; --accent-soft:#1c2540;
   --up:#41c585; --up-soft:#15301f; --down:#f2685d; --down-soft:#391b18; --fund:#eef1ee;
   --tile-0:#262c29; --tile-up:#1f9e62; --tile-down:#d9473c; --tile-ink:#ffffff; --tile-ink-0:#d5dad6; --warn:#e0a948;
+  --ema4:#b294f6; --ema13:#4cc6c2; --vwap:#ea7bc4;
   --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25); --glow:rgba(134,165,243,.09); color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0d100f; --panel:#151917; --raise:#1a1f1c; --ink:#eef1ee; --ink-2:#b2bab4; --ink-3:#7c857f;
   --rule:#252b28; --grid:#1f2522; --accent:#86a5f3; --accent-soft:#1c2540;
   --up:#41c585; --up-soft:#15301f; --down:#f2685d; --down-soft:#391b18; --fund:#eef1ee;
   --tile-0:#262c29; --tile-up:#1f9e62; --tile-down:#d9473c; --tile-ink:#ffffff; --tile-ink-0:#d5dad6; --warn:#e0a948;
+  --ema4:#b294f6; --ema13:#4cc6c2; --vwap:#ea7bc4;
   --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25); --glow:rgba(134,165,243,.09); color-scheme:dark}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -497,8 +500,9 @@ tr:hover .lotb{color:var(--ink-2)}
 #lvl .phead .hint{max-width:none}
 @media (min-width:1101px){#lvl .phead{flex-wrap:nowrap}#lvl .phead>div:first-child{flex:1;min-width:0}#lvl .phead .seg{flex:none}}
 .lviv .sh{display:none}
-@media (max-width:600px){.lviv{width:100%;display:grid;grid-template-columns:repeat(6,1fr)}.lviv .lg{display:none}.lviv .sh{display:inline}}#lvl.page{gap:14px}
-.lvtop{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:600px){.lviv{width:100%;display:grid;grid-template-columns:repeat(7,1fr)}.lviv .lg{display:none}.lviv .sh{display:inline}}#lvl.page{gap:14px}
+.lvtop{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+@media (min-width:601px) and (max-width:1100px){.lvtop{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .lvcard{display:flex;flex-direction:column;gap:6px;text-align:left;background:var(--panel);border:1px solid var(--rule);border-radius:16px;padding:13px 13px 12px;min-width:0;cursor:pointer;color:var(--ink);font:inherit;transition:border-color .15s,box-shadow .15s}
 .lvcard:hover{border-color:color-mix(in srgb,var(--ink) 25%,var(--rule))}
 .lvcard[aria-pressed="true"]{border-color:var(--ink);box-shadow:var(--shadow)}
@@ -522,6 +526,12 @@ tr:hover .lotb{color:var(--ink-2)}
 .lvmini svg{display:block;width:100%;height:auto}
 #lvl i.k{display:inline-block;width:12px;height:3px;border-radius:2px;flex:none}
 #lvl i.k.res{background:var(--down)}#lvl i.k.sup{background:var(--up)}#lvl i.k.here{background:var(--accent)}
+#lvl i.k.ind{background:var(--c)}#lvl i.k.ind[style*="vwap"]{background:repeating-linear-gradient(90deg,var(--c) 0 6px,transparent 6px 9px)}
+.lvind{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 8px}.lvind .lbl{margin:0}.lvind .seg button{white-space:nowrap}
+@media (max-width:600px){.lvind .seg{width:100%;display:grid;grid-template-columns:repeat(5,auto)}.lvind .seg button{padding:6px 4px}}
+.lvrd{display:flex;flex-wrap:wrap;gap:6px 18px;margin:0 0 10px;font-size:12.5px;color:var(--ink-2)}.lvrd:empty{display:none}
+.lvri{display:inline-flex;align-items:center;gap:7px}.lvri i{width:10px;height:3px;border-radius:2px;flex:none}
+.lvri.up{color:color-mix(in srgb,var(--up) 70%,var(--ink-2))}.lvri.down{color:color-mix(in srgb,var(--down) 70%,var(--ink-2))}
 #lvl i.k.m50{background:repeating-linear-gradient(90deg,var(--accent) 0 5px,transparent 5px 8px)}#lvl i.k.m200{background:repeating-linear-gradient(90deg,var(--warn) 0 5px,transparent 5px 8px)}
 .lvmain{padding:18px 20px 16px;scroll-margin-top:84px}
 .lvhead{display:flex;justify-content:space-between;align-items:center;gap:12px 20px;flex-wrap:wrap}

@@ -54,7 +54,7 @@ Whichever you pick, OpenTicker installs to `~/.openticker`, runs in the backgrou
 | **My stocks** | Your watchlist and positions (typed in, imported from your broker's CSV, or kept in sync from Monarch, Interactive Brokers or Robinhood through their MCP servers, read-only) with gains and losses, how you're doing against the S&P 500, a brief of what changed, a portfolio X-ray, alerts that say why a stock moved, and a note on your phone at the close |
 | **Any stock** | A chart with earnings and events marked, analysts, earnings history, ownership, options, financials and news |
 | **Funds** | Which stocks drove SPY, QQQ, SMH and SPSM (small caps) over a day, a week or a year, holding by holding |
-| **Levels** | Support and resistance, full screen: the S&P 500, VXX and the Nasdaq-100 across the top, any stock you pick below, on 5-minute to quarterly bars, with each level's strength and how far away it is |
+| **Levels** | Support and resistance, full screen: the S&P 500, VXX, the Nasdaq-100 and QQQ across the top, any stock you pick below, on 5-minute to quarterly bars, with each level's strength and how far away it is. Add 4 and 13 EMA, VWAP, volume (and whether it's rising or dropping) and momentum to the chart |
 | **Calendar** | Upcoming earnings and economic events |
 | **Screener** | Yahoo's ready-made stock and fund ideas, a filter you build (size, valuation, growth, yield, 1-year change, sector), and Momentum signals: trend, strength and volume in one score |
 

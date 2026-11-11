@@ -46,7 +46,7 @@ The person can start you here with `openticker edit "what they want"`, or from *
 | `app/paths.py` | Where data lives: `OPENTICKER_HOME`, default `~/Library/Application Support/OpenTicker` (`data/`, `cache/`, `logs/`, `config.json`) |
 | `app/index.html` | The page: all CSS (theme tokens at the top), the header, and the main script (funds, the stock drawer, alerts, theme) |
 | `app/static/pages.js` | The router (`PAGES`) and the Market, Calendar and Screener pages |
-| `app/static/levels.js` | The Levels page: the index cards, the big chart with level zones, the list of levels and the stock picker |
+| `app/static/levels.js` | The Levels page: the index cards, the big chart with level zones, its indicators (`LV_IND`: 4 and 13 EMA, VWAP, volume, momentum), the list of levels and the stock picker |
 | `app/static/stock-tabs.js` | Tabs inside the stock drawer and "What stands out" |
 | `app/static/insights.js` | The brief, the portfolio X-ray, events on charts |
 | `app/static/ux.js` | ⌘K command menu (`COMMANDS`) and the phone tab bar |

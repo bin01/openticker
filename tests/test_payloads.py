@@ -31,3 +31,22 @@ class RevisedFigures(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IntradayVolume(unittest.TestCase):
+    def test_blanks_bogus_bars_and_keeps_real_ones(self):
+        import pandas as pd
+        idx = pd.date_range("2026-11-10 09:30", periods=24, freq="5min", tz="America/New_York")
+        vol = [300_000] * 24
+        vol[0] = 2_000_000          # a busy opening bar: real, about 7 times the median
+        vol[5] = vol[7] = 20_000_000   # Yahoo's bogus bars, each most of a day's volume
+        clean = X.clean_intraday_volume(pd.DataFrame({"Close": [1.0] * 24, "Volume": vol}, index=idx))
+        self.assertEqual(clean["Volume"].iloc[0], 2_000_000)
+        self.assertEqual(clean["Volume"].iloc[5], 0)
+        self.assertEqual(clean["Volume"].iloc[7], 0)
+        self.assertEqual(int(clean["Volume"].sum()), 2_000_000 + 21 * 300_000)
+
+    def test_no_volume_column(self):
+        import pandas as pd
+        df = pd.DataFrame({"Close": [1.0, 2.0]}, index=pd.date_range("2026-11-10 09:30", periods=2, freq="5min"))
+        self.assertIs(X.clean_intraday_volume(df), df)
