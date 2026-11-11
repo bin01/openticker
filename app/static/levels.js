@@ -19,7 +19,8 @@ const LV_IND=[["ema4","4 EMA","Average of the last 4 bars, weighted toward the n
   ["ema13","13 EMA","Average of the last 13 bars, weighted toward the newest. When the 4 EMA crosses it, the short-term trend has turned","var(--ema13)"],
   ["vwap","VWAP","The average price paid, weighted by how many shares traded at each price. Intraday it starts fresh each session","var(--vwap)"],
   ["vol","Volume","Shares traded in each bar, and whether that is rising or dropping","var(--ink-3)"],
-  ["mom","Momentum","RSI over 14 bars, from 0 to 100: above 70 the run is stretched, below 30 it is washed out","var(--accent)"]];
+  ["mom","Momentum","RSI over 14 bars, from 0 to 100: above 70 the run is stretched, below 30 it is washed out","var(--accent)"],
+  ["sig","Signals","Mark where the signal turned to CALL (up arrow) or PUT (down arrow) on the earlier bars","var(--ink-2)"]];
 let lvInd=new Set(String(load("lvInd","")).split(",").filter(k=>LV_IND.some(r=>r[0]===k)));
 /* the indicator math, on the bars the chart shows */
 function lvEma(c,n){ const k=2/(n+1); let e=null; return c.map((x,i)=>{ e=e==null?x:x*k+e*(1-k); return i<n-1?null:e; }); }
@@ -121,7 +122,7 @@ function lvRead(t,d,last){
 }
 
 /* ---------- the chart: price, level zones and their labels, the latest price, and on the big chart the averages ---------- */
-function lvChart(t,d,{w,h,last,big,ind}){
+function lvChart(t,d,{w,h,last,big,ind,sig}){
   const N=d.c.length, O=d.o, Hh=d.h, Lo=d.l, C=d.c, D=d.d;
   const L=lvLevels(d,last), near=lvNearest(L);
   const ph=innerWidth<=600, left=big?(ph?36:46):8, R=big?(ph?92:104):64, T=big?12:8, B=big?24:8, PW=w-left-R;
@@ -160,6 +161,9 @@ function lvChart(t,d,{w,h,last,big,ind}){
     s+=`<path d="${p}" fill="none" stroke="${col}" stroke-width="${wd}" ${dash?`stroke-dasharray="${dash}"`:""} stroke-linejoin="round" clip-path="url(#${clip})"/>`; };
   if(I){ if(ind.has("vwap")) line(I.vwap,"var(--vwap)",1.6,"6 3",D[0].length>10);
     if(ind.has("ema13")) line(I.ema13,"var(--ema13)",1.5); if(ind.has("ema4")) line(I.ema4,"var(--ema4)",1.5); }
+  // past signals: an arrow under the bar where CALL began, over the bar where PUT began
+  if(sig?.marks&&ind?.has("sig")) sig.marks.forEach(([i,k])=>{ const x=X(i), y=k>0?Y(Lo[i])+5:Y(Hh[i])-5, a=k>0?6:-6;
+    s+=`<path d="M${x.toFixed(1)},${y.toFixed(1)}l-4.5,${a*1.3}h9z" fill="${k>0?"var(--up)":"var(--down)"}" stroke="var(--panel)" stroke-width="1" clip-path="url(#${clip})"/>`; });
   // the strips: volume bars colored by the bar's direction, then momentum with its 30 and 70 lines
   let y0=T+PH+gap; const bw0=Math.max(1,Math.min(9,step*.62));
   if(VH){ const sv=d.v.filter(x=>x>0).sort((a,b)=>a-b), mx=sv[Math.floor(sv.length*.95)]||sv[sv.length-1]||1, tr=I.vt;   // scaled to the 95th percentile so one huge bar doesn't flatten the rest
@@ -224,8 +228,82 @@ function lvIndRead(t,d,last){
 function lvKey(d){
   const k=[`<span><i class="k res"></i>Resistance (R1 nearest)</span>`,`<span><i class="k sup"></i>Support (S1 nearest)</span>`];
   if(lvIv==="1d") k.push(`<span><i class="k m50"></i>50-day average</span>`,`<span><i class="k m200"></i>200-day average</span>`);
-  LV_IND.forEach(([x,lab,,col])=>{ if(lvInd.has(x)&&x!=="vol"&&x!=="mom") k.push(`<span><i class="k ind" style="--c:${col}"></i>${lab}</span>`); });
+  if(lvInd.has("sig")) k.push(`<span><i class="k sg">▲</i>CALL began</span>`,`<span><i class="k sg dn">▼</i>PUT began</span>`);
+  LV_IND.forEach(([x,lab,,col])=>{ if(lvInd.has(x)&&x!=="vol"&&x!=="mom"&&x!=="sig") k.push(`<span><i class="k ind" style="--c:${col}"></i>${lab}</span>`); });
   return k.join("");
+}
+
+/* ---------- the signal: Leans CALL, HOLD or Leans PUT, by fixed rules on the bars the chart shows ----------
+   Four checks on the stock (trend, VWAP, momentum, volume) and three on the market (QQQ, the S&P 500 and VXX, matched bar by bar).
+   It leans CALL only when every check that has data points up, PUT only when every one points down, and is HOLD otherwise.
+   The track record reruns the same rules on the earlier bars and counts how often the price then moved the signal's way. */
+const LV_MKT=[["QQQ","QQQ"],["^GSPC","S&P 500"],["VXX","VXX"]];
+/* how far ahead the track record looks: [bars, in words]; intraday it stays inside the session */
+const LV_HZ={"5m":[6,"30 min"],"10m":[3,"30 min"],"15m":[4,"hour"],"1h":[7,"day"],"1d":[5,"week"],"1wk":[4,"month"],"3mo":[1,"quarter"]};
+function lvSigPrep(d,last){   // the indicator lines, with the latest bar's close at the live price
+  const c=d.c.slice(); if(last!=null&&isFinite(last)) c[c.length-1]=last; const e={...d,c};
+  const at={}; d.d.forEach((x,i)=>at[x]=i);
+  return {d:e,c,at,ema4:lvEma(c,4),ema13:lvEma(c,13),vwap:lvVwap(e),rsi:lvRsi(c)}; }
+function lvVolAt(v,i,live){   // volume of the 5 bars to i (to i-1 on the live bar, which is still filling in) against the 20 before
+  const e=live?i:i+1; if(!v||e<25) return null; const ok=a=>a.filter(x=>x>0), a=lvMed(ok(v.slice(e-5,e))), b=lvMed(ok(v.slice(e-25,e-5)));
+  return a>0&&b>0?a/b-1:null; }
+const lvDir=x=>x>0?1:x<0?-1:0;
+/* one check: dir 1 (up), -1 (down), 0 (neither), or null when there is no data for it */
+function lvChecks(S,i,M,live){
+  const c=S.c[i], e4=S.ema4[i], e13=S.ema13[i], vw=S.vwap?.[i], r=S.rsi[i], r3=S.rsi[i-3], out=[];
+  out.push({k:"trend",lab:"Trend",dir:e4==null||e13==null?null:lvDir(e4-e13),txt:e4==null||e13==null?"Not enough bars":`4 EMA ${e4>=e13?"above":"below"} 13 EMA`});
+  out.push({k:"vwap",lab:"VWAP",dir:vw==null?null:lvDir(c-vw),txt:vw==null?"No volume, so no VWAP":`Price ${c>=vw?"above":"below"} VWAP`});
+  if(r==null||r3==null) out.push({k:"mom",lab:"Momentum",dir:null,txt:"Not enough bars"});
+  else { const up=r>=55&&r>r3, dn=r<=45&&r<r3, hot=r>=75, cold=r<=25;
+    out.push({k:"mom",lab:"Momentum",dir:hot||cold?0:up?1:dn?-1:0,
+      txt:`RSI ${r.toFixed(0)}${hot?", stretched":cold?", washed out":up?" and rising":dn?" and falling":r>=50?", no push":", no push"}`}); }
+  const vr=lvVolAt(S.d.v,i,live), px=i>=5?c/S.c[i-5]-1:0;
+  out.push({k:"vol",lab:"Volume",dir:vr==null?null:vr<-.15||Math.abs(px)<.001?0:lvDir(px),
+    txt:vr==null?"No volume":`${vr>.15?"Rising":vr<-.15?"Dropping":"Steady"} while price ${Math.abs(px)<.001?"is flat":px>0?"rises":"falls"}`});
+  // the market, at the same bar
+  M.forEach(m=>{
+    if(!m.S){ out.push({k:m.t,lab:m.lab,dir:m.wait?undefined:null,txt:m.wait?"Loading…":"No data"}); return; }
+    const j=m.S.at[S.d.d[i]]??(live?m.S.c.length-1:null);
+    if(j==null){ out.push({k:m.t,lab:m.lab,dir:null,txt:"No bar at this time"}); return; }
+    const a=m.S.ema4[j], b=m.S.ema13[j], w=m.S.vwap?.[j], cc=m.S.c[j];
+    const tr=a==null||b==null?0:lvDir(a-b), vd=w==null?tr:lvDir(cc-w), both=tr===vd?tr:0;
+    if(m.t==="VXX") out.push({k:m.t,lab:m.lab,dir:-both,txt:both>0?"Rising: investors getting nervous":both<0?"Falling: the market is calm":"Mixed"});
+    else out.push({k:m.t,lab:m.lab,dir:both,txt:both>0?"Trending up, above VWAP":both<0?"Trending down, below VWAP":"Mixed"}); });
+  return out;
+}
+function lvSigOf(ch){   // every check with data must agree
+  if(ch.some(x=>x.dir===undefined)) return {sig:null,wait:true};
+  const has=ch.filter(x=>x.dir!=null); if(has.length<5) return {sig:0,few:true};
+  return {sig:has.every(x=>x.dir===1)?1:has.every(x=>x.dir===-1)?-1:0}; }
+function lvSignal(t,d,last){
+  if(t==="VXX") return {skip:true};
+  const S=lvSigPrep(d,last), n=S.c.length;
+  const M=LV_MKT.map(([s,lab])=>{ const c=xpeek("levels",lvQ(s)); return {t:s,lab,wait:!c?.data&&!c?.error,S:c?.data?lvSigPrep(c.data,lvLast(s,c.data)):null}; });
+  const ch=lvChecks(S,n-1,M,true), now=lvSigOf(ch);
+  // the track record: each fresh signal on the earlier bars, and where the price was the horizon later
+  const [H,hz]=LV_HZ[d.iv]||[5,"few bars"], intra=lvIntra(d.iv), marks=[], rec={1:[],"-1":[]};
+  if(!now.wait){ let prev=0;
+    for(let i=20;i<n-1;i++){ const s=lvSigOf(lvChecks(S,i,M,false)).sig||0;
+      if(s&&s!==prev){ marks.push([i,s]); const j=i+H;
+        if(j<n-1&&(!intra||S.d.d[j].slice(0,10)===S.d.d[i].slice(0,10))) rec[s].push(d.c[j]/d.c[i]-1); }
+      prev=s; } }
+  return {...now,ch,marks,rec,hz};
+}
+function lvSigBox(t,d,G){
+  if(!G||G.skip) return G?.skip?`<div class="lvsig"><div class="lvsh"><span class="lvsp hold">No signal</span><span class="lvsn">VXX is the fear gauge the signal reads for every other chart.</span></div></div>`:"";
+  const iv=LV_IV.find(x=>x[0]===d.iv)?.[1]||"";
+  const pill=G.wait?`<span class="lvsp hold">Checking…</span>`:G.sig===1?`<span class="lvsp call">Leans CALL</span>`:G.sig===-1?`<span class="lvsp put">Leans PUT</span>`:`<span class="lvsp hold">HOLD</span>`;
+  const up=G.ch.filter(x=>x.dir===1).length, dn=G.ch.filter(x=>x.dir===-1).length, has=G.ch.filter(x=>x.dir!=null).length;
+  const why=G.wait?"Waiting for the market data":G.few?"Too few checks have data to call it":G.sig===1?`All ${has} checks point up`:G.sig===-1?`All ${has} checks point down`
+    :`The checks disagree: ${up} up, ${dn} down, ${has-up-dn} neither`;
+  const chip=x=>{ const cl=x.dir===1?"up":x.dir===-1?"down":x.dir==null?"na":"flat", ic=x.dir===1?"▲":x.dir===-1?"▼":x.dir==null?"·":"–";
+    return `<li class="${cl}" title="${esc(x.lab)}: ${esc(x.txt)}"><b>${ic}</b><span><em>${esc(x.lab)}</em> ${esc(x.txt)}</span></li>`; };
+  const tr=s=>{ const a=G.rec[s]; if(!a.length) return ""; const w=a.filter(x=>s>0?x>0:x<0).length, avg=a.reduce((p,x)=>p+x,0)/a.length;
+    return `${a.length} ${s>0?"CALL":"PUT"} signal${a.length>1?"s":""}, ${w} ${s>0?"rose":"fell"} over the next ${G.hz} (average ${pct(avg)})`; };
+  const rec=G.wait?"":[tr(1),tr(-1)].filter(Boolean).join(" · ");
+  return `<div class="lvsig"><div class="lvsh">${pill}<span class="lvsn"><b>${why}.</b> ${esc(iv)} bars, by fixed rules: a read of the chart, not advice.</span></div>
+    <ul class="lvck">${G.ch.map(chip).join("")}</ul>
+    ${G.wait?"":`<p class="lvtr">${rec?`On this chart: ${rec}.`:"No earlier signals on this chart to check against."}${G.rec[1].length+G.rec[-1].length<10&&rec?" Too few to lean on.":""}</p>`}</div>`;
 }
 
 /* ---------- the side list: every level from the top down, with the latest price in its place ---------- */
@@ -253,6 +331,7 @@ function renderLevels(){
         <div class="lvhead"><div class="lvwho" id="lvWho"></div>
           <div class="lvfind"><div class="lvsrch">${ic("search",14)}<input id="lvQ" type="search" placeholder="Show another stock…" autocomplete="off" spellcheck="false" aria-label="Show levels for another stock" aria-controls="lvRes"><div class="sres" id="lvRes" role="listbox" hidden></div></div><div class="lvquick" id="lvQuick"></div></div></div>
         <div class="lvsum" id="lvSum"></div>
+        <div id="lvSig" aria-live="polite"></div>
         <div class="lvind"><span class="lbl" id="lvIndL">Add to chart</span><div class="seg sm" id="lvIndB" role="group" aria-labelledby="lvIndL"></div></div>
         <div class="lvrd" id="lvRd" aria-live="polite"></div>
         <div class="lvbody"><div><div class="lvchart" id="lvChart">${sk(420)}</div>
@@ -263,7 +342,7 @@ function renderLevels(){
   }
   patch($("#lvRng"),LV_IV.map(([k,l,sh])=>`<button data-lvr="${k}" aria-pressed="${k===lvIv}" aria-label="${l} bars"><span class="lg">${l}</span><span class="sh">${sh}</span></button>`).join(""));
   patch($("#lvIndB"),LV_IND.map(([k,l,tip])=>`<button data-lvind="${k}" aria-pressed="${lvInd.has(k)}" title="${esc(tip)}">${l}</button>`).join(""));
-  LV_TOP.forEach(([s])=>{ const c=xpeek("levels",lvQ(s)); if(c?.data||c?.error) lvCard(s); else { lvCard(s); const iv=lvIv; xget("levels",lvQ(s)).then(()=>{ if(page==="levels"&&lvIv===iv) lvCard(s); }); } });
+  LV_TOP.forEach(([s])=>{ const c=xpeek("levels",lvQ(s)); if(c?.data||c?.error) lvCard(s); else { lvCard(s); const iv=lvIv; xget("levels",lvQ(s)).then(()=>{ if(page==="levels"&&lvIv===iv){ lvCard(s); if(LV_MKT.some(m=>m[0]===s)) lvMain(); } }); } });
   lvMain();
 }
 function lvCard(s){
@@ -284,16 +363,17 @@ function lvMain(){
   const q=[...new Set([...(typeof recent!=="undefined"?recent:[]),...(me?.positions||[]).map(p=>p.t),...(me?.watch||[])])].filter(x=>x!==t).slice(0,5);
   patch($("#lvQuick"),q.map(x=>`<button class="chip" data-lv="${esc(x)}">${esc(x)}</button>`).join(""));
   if(!c?.data){
-    if(c?.error){ $("#lvChart").innerHTML=errBox(c.error,"levels",lvQ(t)); $("#lvLad").innerHTML=""; $("#lvSum").innerHTML=""; $("#lvRd").innerHTML=""; return; }
-    $("#lvChart").innerHTML=sk(lvHeight()); $("#lvLad").innerHTML=sk(300); $("#lvSum").innerHTML=`<span class="sk" style="display:block;height:44px;grid-column:1/-1"></span>`;
+    if(c?.error){ $("#lvChart").innerHTML=errBox(c.error,"levels",lvQ(t)); $("#lvLad").innerHTML=""; $("#lvSum").innerHTML=""; $("#lvRd").innerHTML=""; $("#lvSig").innerHTML=""; return; }
+    $("#lvChart").innerHTML=sk(lvHeight()); $("#lvLad").innerHTML=sk(300); $("#lvSum").innerHTML=`<span class="sk" style="display:block;height:44px;grid-column:1/-1"></span>`;  $("#lvSig").innerHTML="";
     const iv=lvIv; xget("levels",lvQ(t)).then(()=>{ if(page==="levels"&&lvSym()===t&&lvIv===iv) lvMain(); }); return;
   }
   const d=c.data, last=lvLast(t,d), prev=lvPrev(t,d), box=$("#lvChart");
   patch($("#lvSum"),`<div class="lvv">${lvTag(lvVerdict(t,d,last))}<p class="lvread">${lvRead(t,d,last)}</p></div>${lvMeter(t,d,last)}`);
+  const G=lvSignal(t,d,last); patch($("#lvSig"),lvSigBox(t,d,G));
   patch($("#lvRd"),lvIndRead(t,d,last)); patch($("#lvKey"),lvKey(d));
   // the volume and momentum strips add to the chart's height rather than squeezing the price
   const ph=innerWidth<=600, H=lvHeight()+(lvInd.has("vol")&&d.v?(ph?56:76):0)+(lvInd.has("mom")?(ph?66:88):0);
-  box.innerHTML=lvChart(t,d,{w:Math.max(300,box.clientWidth),h:H,last,big:true,ind:lvInd});
+  box.innerHTML=lvChart(t,d,{w:Math.max(300,box.clientWidth),h:H,last,big:true,ind:lvInd,sig:G});
   $(".lvside").style.maxHeight=innerWidth>1100?H+28+"px":"";     // the list scrolls beside the chart rather than running past it
   const lad=$("#lvLad"); patch(lad,lvLadder(t,d,last,prev));
   const now=lad.querySelector(".now"), scr=lad.scrollHeight>lad.clientHeight+4; lad.classList.toggle("lvfade",scr); if(now&&scr) lad.scrollTop=now.offsetTop-lad.clientHeight/2+now.offsetHeight/2;   // keep "Now" in view
