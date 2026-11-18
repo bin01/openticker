@@ -22,7 +22,7 @@ const TICK="Tick";
 /* skills ship with the server; this copy lets things render before /api/ask/info answers */
 const ASK_SKILLS_FALLBACK=[
   {name:"stock-snapshot",label:"Quick take",scope:"stock"},{name:"weigh-evidence",label:"Weigh the evidence",scope:"stock"},{name:"position-review",label:"Review my position",scope:"stock"},{name:"company-deep-dive",label:"Deep dive",scope:"stock",needs:["workbench","web"]},{name:"explain-move",label:"Why is it moving?",scope:"stock"},
-  {name:"earnings-preview",label:"Earnings",scope:"stock"},{name:"technical-analysis",label:"Read the chart",scope:"stock"},
+  {name:"earnings-preview",label:"Earnings",scope:"stock"},{name:"industry-check",label:"Industry check",scope:"stock"},{name:"technical-analysis",label:"Read the chart",scope:"stock"},
   {name:"insider-trades",label:"Insider trades",scope:"stock"},{name:"bull-bear",label:"Bull vs bear",scope:"stock"},
   {name:"analyst-pulse",label:"What analysts say",scope:"stock"},{name:"valuation-check",label:"Is it expensive?",scope:"stock"},
   {name:"portfolio-checkup",label:"Check up on my portfolio",scope:"portfolio"},{name:"week-ahead",label:"What to watch this week",scope:"portfolio"},

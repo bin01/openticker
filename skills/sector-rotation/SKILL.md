@@ -20,12 +20,12 @@ metadata:
    - Risk-on: tech, consumer discretionary and financials leading.
    - Defensive: utilities, consumer staples and health care leading.
    - Rate-driven: real estate and utilities moving with the 10-year yield.
-3. **Who's doing the work**: the few large stocks behind the leading sector's move.
+3. **Who's doing the work**: the few large stocks behind the leading sector's move, and the business reason they're moving: what changed in demand, supply or prices for what they sell. A sector led by two stocks on one company's order book is a narrower story than its label suggests.
 4. **What would confirm or break it** next.
 
 ## Answer shape
 
-A small table of the leaders and laggards, then the pattern, the stocks behind it and what to watch, under 220 words.
+A small table of the leaders and laggards, then the pattern, the stocks behind it and what to watch, under 250 words.
 
 ## Before you send
 

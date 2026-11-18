@@ -83,11 +83,12 @@ One click runs a playbook written for that question. Hover any insight and press
 | Weigh the evidence | Six kinds of evidence (trend, estimates, valuation, insiders, positioning, analysts), which way they lean, how the same setup has done before, and what would flip it. Each check is saved so you can see later how it played out |
 | Review my position | For a stock you own: what changed since you bought, the risk to the next support in dollars, its share of your portfolio, and alerts at the prices that matter |
 | Deep dive | The business, where its growth comes from, and what the price assumes |
+| Industry check | What's driving the business: demand, supply, the customers it depends on and how they pay, what would break the story, and which of your holdings sit on either side of it |
 | Why is it moving? | Market, sector or company news, sized against a normal day |
 | Earnings | Before a report: the bar to beat and the move options price in. After: what happened and how the stock took it |
 | Read the chart | Trend, momentum, volume, and the support and resistance levels that matter |
 | Insider trades | Who's buying or selling, how much of their stake, and whether it means anything |
-| Bull vs bear | Both cases from the numbers, and what would prove each right |
+| Bull vs bear | Both cases, from the business and the numbers, and what would prove each right |
 | What analysts say | Ratings, targets and estimate revisions, and their direction |
 | Is it expensive? | Multiples against growth, its own history and peers |
 | Check up on my portfolio | Concentration, sector tilt, what's driving returns, what's next |

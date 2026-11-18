@@ -16,14 +16,14 @@ metadata:
 ## Cover
 
 1. **Scorecard**: total value, today's move and the total gain. Name the position doing the most work and the one hurting most.
-2. **Shape**: concentration (the largest position and the top three as a share of the total), sector tilt, and doubling up through similar stocks, such as owning NVDA and SMH.
+2. **Shape**: concentration (the largest position and the top three as a share of the total), sector tilt, and doubling up through similar stocks, such as owning NVDA and SMH. Then look past the sector labels for the bet the holdings share: group them by what drives their sales, and say which sit on opposite sides of one trend. A chip maker and the cloud companies that buy its chips are in different sectors and one bet, and the maker's revenue is the buyers' cost. Name the largest shared bet and its share of the portfolio.
 3. **What changed**: the most important brief items for holdings, such as rating changes, target moves, insider trades or unusual options.
 4. **Coming up**: earnings for holdings in the next two weeks, with implied moves.
 5. **One thing to think about**: the biggest risk or imbalance, framed as a question, such as "NVDA is 40% of the portfolio. Is that on purpose?"
 
 ## Answer shape
 
-Use these headings: **Scorecard**, **Shape**, **What changed**, **Coming up**, **One thing to think about**. Under 250 words. Use a small table for positions only when there are more than three.
+Use these headings: **Scorecard**, **Shape**, **What changed**, **Coming up**, **One thing to think about**. Under 280 words. Use a small table for positions only when there are more than three.
 
 ## Before you send
 

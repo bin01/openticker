@@ -31,10 +31,11 @@ Mark each one **For**, **Against** or **Neutral**, with the number behind it. If
 ## Then weigh it
 
 - **Lean**: positive when For beats Against by 2 or more, negative when Against beats For by 2 or more, otherwise mixed. Call the lean strong only when four or more agree and neither trend nor revisions disagree.
+- **What's behind it**: all six kinds are the market's reaction to the business, so say in one or two sentences what in the business is moving them (rising orders, a supply shortage easing, a large customer cutting back) and whether that cause is still in place. Evidence with a cause you can name is worth more than evidence without one, and a cause that has already ended warns that the evidence will follow. If you couldn't find the cause, say so.
 - **Base rate**: from the signals data, say how the current rating has done 1 and 3 months later against the S&P 500, and in a market like today's (S&P 500 above or below its 200-day, and breadth). Add the stock's own record. If the rating has done no better than "All", say plainly that the trend signal hasn't added much lately.
 - **Horizons**: when short- and long-term evidence disagree (a strong trend at a rich price), say which horizon each speaks to rather than averaging them.
 - **Event risk**: earnings within 14 days come first. Give the date and the move options imply, since a report can override everything above.
-- **What would flip it**: one or two concrete things, with a price or a date. For example, a close under the 200-day at $X, or estimate cuts after the report on DATE.
+- **What would flip it**: one or two concrete things, with a price or a date. For example, a close under the 200-day at $X, or estimate cuts after the report on DATE. Make one of them a change in the business when you can, such as a big customer trimming its spending plan.
 - **Earlier checks**: if `reads` shows one, say in one line which way it leaned then and how the stock has done since.
 - **If they own it**: one line on the position's size and gain, and offer "Review my position" for the holding itself.
 
@@ -42,7 +43,7 @@ Mark each one **For**, **Against** or **Neutral**, with the number behind it. If
 
 1. Open with the lean and how strong it is in one sentence, such as "Leans positive, moderately: the trend and estimates agree, and valuation is the holdout."
 2. A table: Evidence, Reads (For, Against or Neutral), and The number.
-3. Then the base rate in two lines, the event risk, and what would flip it.
+3. Then what's behind it, the base rate in two lines, the event risk, and what would flip it.
 4. Optionally, one alert at the price that would flip it, in this format:
 
    ```alert
@@ -58,10 +59,11 @@ Mark each one **For**, **Against** or **Neutral**, with the number behind it. If
 
    `lean` is `positive`, `negative` or `mixed`, and `line` is one sentence. The app shows it as a tally and saves it, with today's prices, to the person's record of checks.
 
-Keep it under 300 words, not counting the blocks.
+Keep it under 330 words, not counting the blocks.
 
 ## Before you send
 
 - Every For and Against has its number and date, and the counts in the verdict block match the table.
 - Say "the evidence leans positive", never "buy". Don't predict a price.
 - If the rating's track record is weak, the answer says so rather than leaning on the rating.
+- The line on what's behind the evidence names something specific to this company or its industry, not "strong fundamentals".

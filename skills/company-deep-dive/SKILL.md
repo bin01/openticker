@@ -25,15 +25,15 @@ If the person asks only one part (for example only what's priced in), do that pa
 
 1. **The business in a paragraph.** What it sells, to whom, how it makes money, and the segments with each one's share of revenue and profit.
 2. **Follow the money: end markets.** Give revenue by end market (for example industrial, auto, data center, consumer) with shares. For the two or three biggest, say where customers' spending is heading now: capex plans, unit forecasts, inventory cycles. Give a number and a date for each. This decides whether growth comes, so spend the most effort here.
-3. **Customers.** Cover concentration: the largest customers, or the share sold through distributors, from the 10-K. Then what those customers are signalling, and any shift: design wins or losses, customers making the part themselves, exposure to China or tariffs.
-4. **Growth drivers and limits.** Cover new products, capacity and utilization, pricing power, margins and the capex cycle. Say which drivers are working and which are stalled.
+3. **Customers.** Cover concentration: the largest customers, or the share sold through distributors, from the 10-K. Then what those customers are signalling, and any shift: design wins or losses, customers making the part themselves, exposure to China or tariffs. Say how the customers pay for it: spending from their own cash flow lasts longer than spending from debt or investors' money.
+4. **Growth drivers and limits.** Cover new products, capacity and utilization, pricing power, margins and the capex cycle. Name what limits supply (a scarce input, a supplier's capacity, power, lead times), since while supply is short the company holds its prices, and when it catches up prices fall first. Say which drivers are working and which are stalled.
 5. **What the price assumes.** Do this in code in your workbench, never in your head:
    - Start from trailing free cash flow, or earnings if free cash flow is distorted by a capex cycle (say which, and why).
    - Discount at the 10-year Treasury yield plus beta times a 5% equity premium, and state the rate.
    - Run 10 years of growth, then 3% terminal growth, and solve for the growth that makes the value equal today's price.
    - Show how the answer moves with the discount rate one point either side, and with a 15× or 25× exit multiple instead of terminal growth.
    - Set the result against the analysts' consensus for next year and the long term, the company's guidance, its 5- and 10-year record, and what peers' multiples imply.
-6. **The verdict.** Can the drivers in 2–4 deliver the growth in 5? What would close or widen the gap?
+6. **The verdict.** Can the drivers in 2–4 deliver the growth in 5? What would close or widen the gap, and what one or two developments would break the case outright?
 
 ## Answer shape
 
