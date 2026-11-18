@@ -19,7 +19,7 @@ A stock's numbers are the end of a chain: someone needs something, someone can o
 - `openticker stock TICKER` and `openticker financials TICKER` (usually in the conversation already), and `openticker compare TICKER PEER1 PEER2` with its closest rivals.
 - For a whole industry, `openticker market` for the sector funds and `openticker compare` on the three or four companies that show it best.
 - The person's holdings come with the question as weights. That's enough here; exact shares and dollars aren't needed.
-- The rest comes from reading: the company's latest earnings call and annual report, what its largest customers and suppliers said in theirs, and named industry researchers. If you can't read the web, work from what you know, say so once, and give only figures you can date.
+- The rest comes from reading: the company's latest earnings call and annual report, what its largest customers and suppliers said in theirs, and named industry researchers. Three or four good sources are enough; this is an hour's due diligence boiled down, not a research report. If you can't read the web, work from what you know, say so once, and give only figures you can date.
 
 If the question is a lookup that happens to use one of these words ("who is its biggest customer?"), answer it in a few lines and stop. If it's about an industry and not one company ("chip stocks", "the banks"), run the same steps for the industry and name the companies that show each point.
 

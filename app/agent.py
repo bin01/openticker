@@ -1673,7 +1673,7 @@ TOOLS_NOTE = """If you can run shell commands, the `openticker` command returns 
   openticker portfolio | brief | market | fund SPY --h 1M | compare NVDA AMD AVGO | calendar | search "name"
   openticker insiders T | technicals T | signals T | valuation T | history T T2 --h 3M | reads T
 Use it when the provided data isn't enough (for example, to compare with a peer).
-Use the web for what this data can't tell you: news newer than the data, and the industry behind a stock (what its customers plan to spend, what's in short supply, prices along the chain, who is winning orders). Go to the source where you can: the company's filings and earnings calls, its customers' and suppliers' own reports, named research firms. A lookup needs none of it.
+Use the web for what this data can't tell you: news newer than the data, and the industry behind a stock (what its customers plan to spend, what's in short supply, prices along the chain, who is winning orders). Go to the source where you can: the company's filings and earnings calls, its customers' and suppliers' own reports, named research firms. Three or four good sources are usually enough, and a lookup needs none.
 The data above shows the person's holdings as weights only. `openticker portfolio` has their exact shares, average cost, dollar value and gain: run it only when the question needs those numbers (what they've made or lost, their cost basis, how much a position is worth), and keep those numbers out of anything you send to the web."""
 
 
