@@ -818,7 +818,7 @@ function mdInline(s){
   return s.replace(/\0/g,"").replace(/!\[([^\]]*)\]\((?:\.\/)?(?:out\/)?([\w][\w .()+-]*\.(?:png|jpe?g|gif|webp))\)/gi,(_,alt,n)=>{ alt=alt.replace(/\*+|`/g,"");
        return put(`<figure class="tkimg"><img src="${esc(askFileURL(n))}" alt="${alt}" loading="lazy" onerror="this.parentNode.classList.add('bad')">${alt?`<figcaption>${alt}</figcaption>`:""}</figure>`); })
      .replace(/`([^`]+)`/g,(_,c)=>put(`<code>${c}</code>`))
-     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s\0]+)\)/g,(_,t,u)=>put(`<a href="${u}" target="_blank" rel="noopener noreferrer">`)+t+put("</a>"))
+     .replace(/\[([^\]]+)\]\((https?:\/\/(?:[^()\s\0]|\([^()\s\0]*\))+)\)/g,(_,t,u)=>put(`<a href="${u}" target="_blank" rel="noopener noreferrer">`)+t+put("</a>"))
      .replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/(^|[\s(])\*([^*\s][^*]*)\*/g,"$1<i>$2</i>")
      .replace(/\0(\d+)\0/g,(_,k)=>keep[k]);
 }
