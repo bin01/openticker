@@ -41,7 +41,7 @@ Choose the links that decide this business and spend the words there. Three link
 - Open with the view in two to four bold sentences: what is really driving the business, what is changing, and the weak spot. For example: "Demand hasn't cracked. What's changing is where the money goes inside the build-out, and that shift favors this company. Its weak spot is customers: the biggest one is spreading its orders."
 - Then three or four short sections. Each heading states its conclusion, not just its topic ("Supply: sold out through next year", not "Supply"), so the answer can be read from the headings alone. Two to four bullets each, most with a number, its source and its date.
 - Then **What breaks the story**, one short paragraph on the person's portfolio, and one line on what to watch, with dates.
-- 350 to 500 words. Explain each industry term in a few words the first time it appears ("inference: running a trained model").
+- 350 to 500 words. Past that it stops being read, so cut the weakest section instead of trimming every line. Explain each industry term in a few words the first time it appears ("inference: running a trained model").
 
 ## Before you send
 
