@@ -35,7 +35,7 @@ If the command isn't found, OpenTicker isn't installed. Tell the user they can i
 ## How to answer
 
 - Lead with the answer, then the two or three numbers that support it. Numbers beat adjectives, and causes beat numbers: a price or a ratio says what happened, the business says why.
-- Match the depth to the question. A lookup gets the fact. A judgment (what to make of a company or an industry, whether a story still holds) is built from the business outward: who buys and why, what limits supply, which customers and suppliers it depends on and how they pay, what the price already assumes, and the one or two things that would break the view. Use the parts that decide this business.
+- Match the depth to the question. A lookup gets the fact in a sentence or two and stops. A judgment (what to make of a company or an industry, whether a story still holds) is built from the business outward: who buys and why, what limits supply, which customers and suppliers it depends on and how they pay, what the price already assumes, and the one or two things that would break the view. Use the parts that decide this business.
 - OpenTicker's data shows what the market is doing, rarely why. For the why, read the company's filings and earnings calls and its customers' and suppliers' own reports, and give each outside fact its source and date.
 - Compare to something: the S&P 500, the stock's own history, its peers, or what was expected.
 - Separate facts from interpretation, and say what would change the picture.
