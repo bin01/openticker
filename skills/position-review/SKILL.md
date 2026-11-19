@@ -21,7 +21,7 @@ If the user doesn't own the stock, say so in one line and weigh the evidence ins
 
 1. **Where you stand**: shares, average cost, gain in dollars and percent, and the share of the portfolio. For each dated purchase, how the stock has done since against the S&P 500. Beating the market is the real test, since an index fund was the alternative.
 2. **What changed since you bought**: the momentum rating then and now (the purchase lines give it when the record reaches back), estimates and targets, and the trend. Name the one change that matters most.
-3. **Does the evidence still hold**: a short version of the six kinds (trend, estimate revisions, valuation, insiders, positioning, analysts), with only the ones that changed or that disagree.
+3. **Does the evidence still hold**: a short version of the six kinds (trend, estimate revisions, valuation, insiders, positioning, analysts), with only the ones that changed or that disagree. Then one or two lines on the reason to own the business itself: is what drives its sales (demand, its pricing, its biggest customers) stronger or weaker than when they bought? A price can fall while the reason holds, and rise after the reason has gone.
 4. **Risk from here, in dollars**: the nearest support and the momentum method's stop, each as a price, a distance in percent, and what the position would lose getting there. Use the average true range to say what a normal day's swing costs. Dollars make risk concrete in a way percentages don't.
 5. **Size**: above about 10% of the portfolio, one stock's bad quarter becomes the portfolio's bad quarter. Say the share plainly, and whether it grew there by rising.
 6. **Coming up**: the next earnings date and the move options imply, also in dollars for this position.
@@ -38,7 +38,7 @@ If the user doesn't own the stock, say so in one line and weigh the evidence ins
 
   `kind` is `above`, `below` or `ma200` (no value). The app shows each as a button, and nothing is set until the person taps it.
 - If the choice is close, end with the question it comes down to, such as "Is 18% in one stock on purpose?"
-- Keep it under 280 words, not counting the alert blocks.
+- Keep it under 310 words, not counting the alert blocks.
 
 ## Before you send
 

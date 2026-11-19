@@ -22,7 +22,7 @@ const TICK="Tick";
 /* skills ship with the server; this copy lets things render before /api/ask/info answers */
 const ASK_SKILLS_FALLBACK=[
   {name:"stock-snapshot",label:"Quick take",scope:"stock"},{name:"weigh-evidence",label:"Weigh the evidence",scope:"stock"},{name:"position-review",label:"Review my position",scope:"stock"},{name:"company-deep-dive",label:"Deep dive",scope:"stock",needs:["workbench","web"]},{name:"explain-move",label:"Why is it moving?",scope:"stock"},
-  {name:"earnings-preview",label:"Earnings",scope:"stock"},{name:"technical-analysis",label:"Read the chart",scope:"stock"},
+  {name:"earnings-preview",label:"Earnings",scope:"stock"},{name:"industry-check",label:"Industry check",scope:"stock"},{name:"technical-analysis",label:"Read the chart",scope:"stock"},
   {name:"insider-trades",label:"Insider trades",scope:"stock"},{name:"bull-bear",label:"Bull vs bear",scope:"stock"},
   {name:"analyst-pulse",label:"What analysts say",scope:"stock"},{name:"valuation-check",label:"Is it expensive?",scope:"stock"},
   {name:"portfolio-checkup",label:"Check up on my portfolio",scope:"portfolio"},{name:"week-ahead",label:"What to watch this week",scope:"portfolio"},
@@ -818,7 +818,7 @@ function mdInline(s){
   return s.replace(/\0/g,"").replace(/!\[([^\]]*)\]\((?:\.\/)?(?:out\/)?([\w][\w .()+-]*\.(?:png|jpe?g|gif|webp))\)/gi,(_,alt,n)=>{ alt=alt.replace(/\*+|`/g,"");
        return put(`<figure class="tkimg"><img src="${esc(askFileURL(n))}" alt="${alt}" loading="lazy" onerror="this.parentNode.classList.add('bad')">${alt?`<figcaption>${alt}</figcaption>`:""}</figure>`); })
      .replace(/`([^`]+)`/g,(_,c)=>put(`<code>${c}</code>`))
-     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s\0]+)\)/g,(_,t,u)=>put(`<a href="${u}" target="_blank" rel="noopener noreferrer">`)+t+put("</a>"))
+     .replace(/\[([^\]]+)\]\((https?:\/\/(?:[^()\s\0]|\([^()\s\0]*\))+)\)/g,(_,t,u)=>put(`<a href="${u}" target="_blank" rel="noopener noreferrer">`)+t+put("</a>"))
      .replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/(^|[\s(])\*([^*\s][^*]*)\*/g,"$1<i>$2</i>")
      .replace(/\0(\d+)\0/g,(_,k)=>keep[k]);
 }

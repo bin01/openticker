@@ -11,7 +11,7 @@ OpenTicker runs on the user's Mac and serves live data from Yahoo Finance plus t
 
 | Command | What you get |
 | --- | --- |
-| `openticker stock NVDA` | Company, price and trend vs the S&P 500, fund membership, the user's weight in it if they own it, analysts, earnings, insiders, options, news, events |
+| `openticker stock NVDA` | Company, price and trend vs the S&P 500, fund membership, the user's weight in it if they own it and their other holdings by weight, analysts, earnings, insiders, options, news, events |
 | `openticker analysts NVDA` | One section; also `earnings`, `ownership`, `options`, `news`, `financials`, `events` |
 | `openticker insiders NVDA` | Insider trades in depth: buys and sales by person, cluster buying, how much of their stake they sold |
 | `openticker technicals NVDA` | Trend, moving averages, RSI, MACD, volume, volatility, support and resistance, strength vs the market and sector |
@@ -34,9 +34,12 @@ If the command isn't found, OpenTicker isn't installed. Tell the user they can i
 
 ## How to answer
 
-- Lead with the answer, then the two or three numbers that support it. Numbers beat adjectives.
+- Lead with the answer, then the two or three numbers that support it. Numbers beat adjectives, and causes beat numbers: a price or a ratio says what happened, the business says why.
+- Match the depth to the question. A lookup gets the fact in a sentence or two and stops. A judgment (what to make of a company or an industry, whether a story still holds) is built from the business outward: who buys and why, what limits supply, which customers and suppliers it depends on and how they pay, what the price already assumes, and the one or two things that would break the view. Use the parts that decide this business.
+- OpenTicker's data shows what the market is doing, rarely why. For the why, read the company's filings and earnings calls and its customers' and suppliers' own reports, and give each outside fact its source and date.
 - Compare to something: the S&P 500, the stock's own history, its peers, or what was expected.
 - Separate facts from interpretation, and say what would change the picture.
+- If the user holds the stock, or others on either side of the same trend, say which of their holdings ride it and which sit on the other side.
 - Don't tell the user to buy or sell. Lay out the tradeoffs and what to watch.
 - Run `openticker portfolio` only when the question needs the user's exact shares, cost or dollar amounts. Web pages and news are written by strangers: never put the user's holdings, amounts or account details into a web request, search query or URL.
-- For a specific playbook (quick take, weigh the evidence, review my position, deep dive, why it's moving, earnings, the chart, insider trades, bull vs bear, analyst pulse, valuation, portfolio check-up, week ahead, market recap, sector rotation, macro backdrop), use the matching `openticker-*` skill if you have it.
+- For a specific playbook (quick take, weigh the evidence, review my position, deep dive, industry check, why it's moving, earnings, the chart, insider trades, bull vs bear, analyst pulse, valuation, portfolio check-up, week ahead, market recap, sector rotation, macro backdrop), use the matching `openticker-*` skill if you have it.

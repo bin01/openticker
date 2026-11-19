@@ -66,6 +66,31 @@ class Needs(unittest.TestCase):
         self.assertEqual(runs._skill({"skill": "stock-snapshot"}, "ollama", False)["name"], "stock-snapshot")
 
 
+class Thinking(unittest.TestCase):
+    """Tick reasons from the business outward (demand, supply, customers, how they pay, what breaks it) and matches
+    the depth to the question, in its own prompt and in the skill outside agents read."""
+
+    def test_the_soul_and_the_core_skill_say_how_to_think(self):
+        for text in (agent.SYSTEM, (ROOT / "skills" / "openticker" / "SKILL.md").read_text()):
+            for word in ("who buy", "limits", "customers", "pay", "break", "lookup", "judgment", "the business says why"):
+                self.assertIn(word, text.lower(), word)
+        self.assertIn("the industry behind a stock", agent.TOOLS_NOTE)       # the web isn't only for news any more
+        self.assertNotIn("only for news", agent.TOOLS_NOTE)
+
+    def test_industry_questions_get_the_industry_check(self):
+        m = lambda q: (agent.match_skill(q, "stock", "ollama") or {}).get("name")   # no workbench or web needed
+        for q in ("Go deeper into industry trends, around usage of chips, supply and demand", "Who are AVGO's biggest customers and can they walk?",
+                  "Is the AI trade still intact?", "Does the GLP-1 story still hold?", "I think you're thinking only from numbers",
+                  "is there a moat here", "what's the bottleneck for LLY"):
+            self.assertEqual(m(q), "industry-check", q)
+        for q in ("What's NVDA's P/E and when does it report next?", "Why is it down today?", "What do you think of AVGO here?", "review my portfolio"):
+            self.assertIsNone(m(q), q)
+        with mock.patch.object(workbench, "claude_ready", return_value=True):   # earlier playbooks keep their questions
+            self.assertEqual(agent.match_skill("Should I buy NVDA given AI demand?", "stock", "claude")["name"], "weigh-evidence")
+            self.assertEqual(agent.match_skill("what growth is priced in, given demand?", "stock", "claude")["name"], "company-deep-dive")
+        self.assertEqual(agent.skill("industry-check")["data"], ["financials"])
+
+
 def fake_server():
     """Just enough of server.py for the portfolio text: two lots of NVDA and one of AAPL, AMD on the watchlist."""
     snap = {"watch": ["AMD"], "positions": [
@@ -102,6 +127,18 @@ class Holdings(unittest.TestCase):
         for bad in ("40", "110", "8,000", "$"):
             self.assertNotIn(bad, line)
         self.assertIn("watchlist", " ".join(agent._my_position("AMD", 1, exact=False)))
+
+    def test_stock_context_names_the_other_holdings_by_weight(self):
+        """An answer about one stock can say what else the person owns rides the same trend: tickers and weights, no amounts."""
+        own = " ".join(agent._other_holdings("NVDA", 1))
+        self.assertIn("Your other holdings, by share of the portfolio: AAPL 17.4%.", own)
+        self.assertIn("Also on your watchlist: AMD.", own)
+        self.assertNotIn("NVDA", own)
+        new = " ".join(agent._other_holdings("AMD", 1))            # a stock they don't own: all of it, and not AMD twice
+        self.assertIn("Your holdings, by share of the portfolio: NVDA 82.6%, AAPL 17.4%.", new)
+        self.assertNotIn("watchlist", new)
+        for bad in self.EXACT:
+            self.assertNotIn(bad, own + new, bad)
 
     def test_portfolio_command_still_has_exact_figures(self):
         out = agent.text_for("portfolio", {}, 1)        # `openticker portfolio`, on demand

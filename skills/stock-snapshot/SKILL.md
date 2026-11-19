@@ -15,7 +15,7 @@ metadata:
 
 ## Write it in this order
 
-1. **The story in one line**: name the kind of situation, such as "a momentum leader cooling off", "a cheap stock with estimates rising" or "a broken chart waiting on earnings".
+1. **The story in one line**: name the kind of situation and what in the business is behind it, such as "a momentum leader cooling off as its biggest customers slow their orders", "a cheap stock with estimates rising on higher prices for what it sells" or "a broken chart waiting on earnings". Use only what the data or what you already know supports; a quick take doesn't stop to research.
 2. **How it's trading**: today, 1 month and year to date against the S&P 500; where it sits against its 50- and 200-day averages; the distance from the 52-week high.
 3. **What the pros think**: the consensus, the average target as upside or downside, and the direction of the last few rating and target changes. Say whether EPS estimates are rising or falling over 30 and 90 days, since revisions move stocks more than ratings do.
 4. **Watch next**: the next earnings date and the move options imply; insider buying, if any; unusual options activity.

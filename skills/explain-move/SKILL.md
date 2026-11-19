@@ -16,14 +16,14 @@ metadata:
 ## Break the move into three layers
 
 1. **Market**: what SPY and QQQ did over the same period. If the stock moved in line with them, say so plainly.
-2. **Group**: whether peers and the sector moved the same way. A move shared by the group is about the industry, not the company.
+2. **Group**: whether peers and the sector moved the same way. A move shared by the group is about the industry, not the company, so find what in the industry changed: a customer's spending plan, a supplier's or rival's results, a price along the chain, a rule. Say how it reaches this company, for example "its largest customer cut its budget".
 3. **Company**: news, an earnings report, rating or target changes, insider trades or unusual options in the window.
 
 Then **size it**: compare the move with the stock's typical daily move from the data. About 1× is an ordinary day; 2× is notable; 3× or more is a real event.
 
 ## Answer shape
 
-Open with the answer: "Mostly the market", "Chip stocks fell together", or "Company news: guidance cut". Then one line per layer with its number, and the size. Finish with whether the cause looks lasting (estimates, guidance, a change in the business) or passing (a flow, a sympathy move, a macro day). Under 180 words.
+Open with the answer: "Mostly the market", "Chip stocks fell together", or "Company news: guidance cut". Then one line per layer with its number, and the size. Finish with whether the cause looks lasting (estimates, guidance, a change in demand or supply for what it sells) or passing (a flow, a sympathy move, a macro day). Under 200 words.
 
 ## Before you send
 

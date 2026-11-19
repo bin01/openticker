@@ -20,11 +20,11 @@ metadata:
 2. **Against growth**: whether the forward P/E is justified by expected EPS growth. A PEG near 1 is the usual rough line for "fairly priced for its growth".
 3. **Against its own past**: where today's P/E sits in the range of its last few years. A stock at the top of its own range needs growth to speed up, or the multiple to stay high, to do well from here.
 4. **Against peers**: a small table of the same multiples and growth.
-5. **What's priced in**: roughly what growth the price assumes, and what happens to the multiple if growth disappoints.
+5. **What's priced in**: roughly what growth the price assumes, what has to go right in the business to deliver it (customers keep spending, prices hold, a new product lands), and what happens to the multiple if that fails. A multiple is cheap or expensive only against how long its growth can last.
 
 ## Answer shape
 
-Answer at the top: cheap, fair or expensive, and against what. Then the five points, under 220 words, with the peer table.
+Answer at the top: cheap, fair or expensive, and against what. Then the five points, under 250 words, with the peer table.
 
 ## Before you send
 

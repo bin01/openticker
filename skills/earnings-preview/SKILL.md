@@ -27,7 +27,7 @@ Compare the earnings date with today's date in the data.
 2. **The bar**: the EPS and revenue estimates for the quarter, and how EPS estimates moved over 30 and 90 days. Estimates rising into a report raise the bar.
 3. **Track record**: how often it beat, and the reactions. Point out when beats still led to drops, since that means a beat alone isn't enough.
 4. **Implied move against history**: the ± move options price in, against the average past next-session move. If options price more than usual, the market expects a bigger surprise. If less, it may be complacent.
-5. **What matters most this time**: the one or two things the market will judge, such as guidance, a key segment or margins. Base it on the business, the estimate trend and recent news, and say it's your read.
+5. **What matters most this time**: the one or two things the market will judge, such as guidance, a key segment or margins. Base it on the business, the estimate trend and recent news, and say it's your read. If its customers, suppliers or closest rivals have already reported this season, say what they showed: a customer raising its spending plan, or a rival's weak quarter, is the best preview there is.
 
 ## Recap
 
@@ -38,7 +38,7 @@ Compare the earnings date with today's date in the data.
 
 ## Answer shape
 
-Lead with one line: the date and the bar for a preview, or "beat and fell" or "missed and rose" for a recap. Put the track record in a table of the last four to six reports: date, EPS against estimate, and the reaction. Keep it under 250 words.
+Lead with one line: the date and the bar for a preview, or "beat and fell" or "missed and rose" for a recap. Put the track record in a table of the last four to six reports: date, EPS against estimate, and the reaction. Keep it under 280 words.
 
 ## Before you send
 
