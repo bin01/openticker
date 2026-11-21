@@ -246,12 +246,13 @@ function renderMarket(){
       <section class="hero mhero"><div><div class="eyebrow" id="mEyebrow"></div><h1 class="ptitle" id="mTitle">Reading the tape…</h1><div id="mIns">${sk(150)}</div></div>
         <div class="mside"><div class="lbl" id="mMineL">Your stocks today</div><div id="mMine">${sk(160)}</div></div></section>
       <section id="mTiles"></section>
-      <section class="panel" id="mUh"><div class="ph"><div><h2>${ic("gauge")}Under the hood</h2><div class="hint">Five signs of whether a selloff is spreading or staying put, each read against its own past.</div></div></div><div id="mUhBody">${sk(240)}</div></section>
+      <section class="panel" id="mUh"><div class="ph"><div><h2>${ic("gauge")}Under the hood</h2><div class="hint">Five signs of whether a selloff is spreading or staying put. Pick one to see it over time.</div></div><div class="seg sm" id="uhRng"></div></div><div id="mUhBody">${sk(240)}</div></section>
       <section class="panel"><div class="ph"><div><h2>${ic("layers")}Sectors</h2><div class="hint">The 11 S&amp;P sector funds. Pick one to see its industries and biggest companies.</div></div><div class="seg sm" id="mRng"></div></div><div id="mSectors">${sk(260)}</div><div id="mSector"></div></section>
       <section class="row even"><div class="panel"><div class="ph"><div><h2>${ic("updown")}Movers</h2><div class="hint">US stocks with the biggest moves and the most trading <span class="mWhen">today</span>.</div></div><div class="seg sm" id="mMovSeg"></div></div><div id="mMovers">${sk(300)}</div></div>
         <div class="panel"><div class="ph"><div><h2>${ic("landmark")}Economic calendar</h2><div class="hint">US data releases. Times are New York.</div></div><a class="lnk" href="#calendar" data-page="calendar" data-cal="econ">Full calendar ›</a></div><div id="mEcon">${sk(300)}</div></div></section></div>`;
     loadMarket();
   }
+  patch($("#uhRng"),Object.keys(UH_DAYS).map(k=>`<button data-uhr="${k}" aria-pressed="${k===uhRange}">${k}</button>`).join(""));
   patch($("#mUhBody"),stressHTML(xpeek("stress")));
   const v=macroView(), err=xpeek("macro")?.error;
   if(err&&!v){ patch($("#mIns"),errBox(err,"macro")); return; }
@@ -292,22 +293,104 @@ function renderMarket(){
   patch($("#mEcon"),!ec||ec.loading&&!ec.data?sk(300):ec.error?errBox(ec.error,"econ"):econList(ec.data.filter(e=>e.date>=shiftDays(nyToday(),-1)).slice(0,14),true));
 }
 /* "Under the hood": the stress gauges from /api/x/stress (app/stress.py). Each card says what it asks, where it
-   stands against its own past (calm, watch, stressed), the fact behind it and what that usually means */
-const UH_STATE={calm:["Calm","up"],watch:["Watch","warn"],stressed:["Stressed","down"]};
+   stands against fixed thresholds (calm, watch, stressed), the fact behind it and what that usually means. Above the
+   cards, a strip shows how many gauges were stressed each day; a card opens its own chart with its zones marked */
+const UH_STATE={calm:["Calm","up"],watch:["Watch","warn"],stressed:["Stressed","down"]}, UH_COL=["var(--up)","var(--warn)","var(--down)"], UH_LAB=["Calm","Watch","Stressed"];
+let uhSel=load("uhSel","")||null, uhRange=load("uhRange","1Y");
+const UH_DAYS={"3M":91,"1Y":365,"2Y":730};
+const UHC={};   // what the hover readouts need, by chart
+const uhFmt=(v,f)=>v==null?"–":f==="pct"?`${v<0?"−":""}${Math.abs(v*100).toFixed(1)}%`:f==="pts"?`${v.toFixed(2)} pts`:v.toFixed(1);
+const uhCut=last=>shiftDays(last,-UH_DAYS[uhRange]);
+const uhDate=d=>new Date(d+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"});
+function uhMonths(ds){   // month labels along the bottom, as positions from 0 to 1
+  const out=[], n=ds.length, step=n>300?3:n>130?2:1; let last="";
+  ds.forEach((d,i)=>{ const m=d.slice(0,7); if(m!==last){ last=m; const mo=+d.slice(5,7); if(i>0&&(mo-1)%step===0) out.push([i/(n-1||1),new Date(d+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",timeZone:"UTC"})+(mo===1?" "+d.slice(2,4):"")]); } });
+  return `<div class="uhx" aria-hidden="true">${out.map(([x,l])=>`<span style="left:${(x*100).toFixed(2)}%">${l}</span>`).join("")}</div>`;
+}
+const UH_LEG=`<span class="nw"><i class="sw down"></i>Stressed</span> <span class="nw"><i class="sw warn"></i>Watch</span>`;
+function uhStrip(tl){
+  if(!tl?.d?.length) return "";
+  const cut=uhCut(tl.d.at(-1)), i0=Math.max(0,tl.d.findIndex(d=>d>=cut)), d=tl.d.slice(i0), s=tl.s.slice(i0), n=d.length, W=1000, H=54, bw=W/n, u=(H-2)/tl.keys.length;
+  const bars=s.map((r,i)=>{ const st=[...r].filter(c=>c==="2").length, wa=[...r].filter(c=>c==="1").length, x=(i*bw).toFixed(2), w=Math.max(.6,bw>3?bw-1:bw*.85).toFixed(2);
+    return (st?`<rect x="${x}" y="${(H-st*u).toFixed(1)}" width="${w}" height="${(st*u).toFixed(1)}" fill="var(--down)"/>`:"")+(wa?`<rect x="${x}" y="${(H-(st+wa)*u).toFixed(1)}" width="${w}" height="${(wa*u).toFixed(1)}" fill="var(--warn)" opacity=".55"/>`:""); }).join("");
+  UHC.strip={d,s,names:tl.names};
+  return `<div class="uhtl"><div class="uhtlh"><span class="lbl">Gauges under stress, each day</span><span class="uhtip" id="uhTipStrip" data-keep>${UH_LEG}</span></div>
+    <div class="uhplot" data-uhov="strip"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="uhsv" role="img" aria-label="How many of the gauges were stressed each day">${bars}<line class="uhcur" data-live="x1 x2" x1="-9" x2="-9" y1="0" y2="${H}"/></svg></div>${uhMonths(d)}
+    ${tl.note?`<p class="uhnote">${esc(tl.note)}</p>`:""}</div>`;
+}
+const uhTick=(v,f)=>{ const x=f==="pct"?v*100:v, t=Number.isInteger(+x.toFixed(6))?x.toFixed(0):x.toFixed(1); return (x<0?"−"+t.slice(1):t)+(f==="pct"?"%":""); };
+function uhTicks(lo,hi){   // three to six round values inside the range
+  const raw=(hi-lo)/4, mag=10**Math.floor(Math.log10(raw)), step=[1,2,2.5,5,10].map(m=>m*mag).find(x=>x>=raw)||raw, out=[];
+  for(let y=Math.ceil(lo/step)*step;y<=hi;y+=step) out.push(+y.toFixed(10));
+  return out;
+}
+function uhDetail(g){
+  const h=g.hist; if(!h?.d?.length) return "";
+  const cut=uhCut(h.d.at(-1)), i0=Math.max(0,h.d.findIndex(d=>d>=cut)), d=h.d.slice(i0), v=h.v.slice(i0), st=h.s.slice(i0), v2=h.v2?h.v2.slice(i0):null, n=d.length;
+  const W=1000, H=220, L=0, R=0, T=10, B=8, b=h.bands;   // the gutters for labels are CSS padding on .uhplot.det
+  const all=[...v,...(v2||[]).filter(x=>x!=null),...(b||[]),...(h.fmt==="pct"?[0]:[])];
+  let lo=Math.min(...all), hi=Math.max(...all); const pad=(hi-lo)*.08||1; lo-=pad; hi+=pad;
+  const X=i=>L+(W-L-R)*i/Math.max(1,n-1), Y=y=>T+(H-T-B)*(1-(y-lo)/(hi-lo));
+  let zones="", lines="", labs="";   // labels are HTML on top: text inside a stretched SVG would stretch too
+  if(b){ const up=b[1]>b[0], [w,sx]=b, edge=up?hi:lo;
+    zones=`<rect x="${L}" width="${W-L-R}" y="${Math.min(Y(w),Y(sx)).toFixed(1)}" height="${Math.abs(Y(w)-Y(sx)).toFixed(1)}" fill="var(--warn)" opacity=".09"/><rect x="${L}" width="${W-L-R}" y="${Math.min(Y(sx),Y(edge)).toFixed(1)}" height="${Math.abs(Y(sx)-Y(edge)).toFixed(1)}" fill="var(--down)" opacity=".09"/>`;
+    lines=[[w,"Watch","var(--warn)"],[sx,"Stressed","var(--down)"]].map(([y,l,c])=>`<line x1="${L}" x2="${W-R}" y1="${Y(y).toFixed(1)}" y2="${Y(y).toFixed(1)}" stroke="${c}" stroke-dasharray="4 4" opacity=".8" vector-effect="non-scaling-stroke"/>`).join("");
+    labs+=[[w,"Watch","var(--warn)"],[sx,"Stressed","var(--down)"]].map(([y,l,c])=>`<span class="uhy r" style="top:${(Y(y)/H*100).toFixed(2)}%;color:${c}">${l}</span>`).join(""); }
+  const tv=uhTicks(lo,hi);
+  const ticks=tv.map(y=>`<line x1="${L}" x2="${W-R}" y1="${Y(y).toFixed(1)}" y2="${Y(y).toFixed(1)}" stroke="var(--grid)" vector-effect="non-scaling-stroke"/>`).join("");
+  labs+=tv.map(y=>`<span class="uhy" style="top:${(Y(y)/H*100).toFixed(2)}%">${esc(uhTick(y,h.fmt))}</span>`).join("");
+  const zero=h.fmt==="pct"&&lo<0&&hi>0?`<line x1="${L}" x2="${W-R}" y1="${Y(0).toFixed(1)}" y2="${Y(0).toFixed(1)}" stroke="var(--rule)" vector-effect="non-scaling-stroke"/>`:"";
+  let segs="", run=null;   // the line takes the color of its reading, a run at a time
+  for(let i=0;i<n;i++){ const p=`${X(i).toFixed(1)},${Y(v[i]).toFixed(1)}`;
+    if(!run||run.s!==st[i]){ if(run) segs+=`<path d="M${run.p.join("L")}L${p}" stroke="${UH_COL[run.s]}" class="uhln"/>`; run={s:st[i],p:[p]}; } else run.p.push(p); }
+  if(run&&run.p.length>1) segs+=`<path d="M${run.p.join("L")}" stroke="${UH_COL[run.s]}" class="uhln"/>`;
+  const l2=v2?`<path d="${v2.map((y,i)=>y==null?"":`${i&&v2[i-1]!=null?"L":"M"}${X(i).toFixed(1)},${Y(y).toFixed(1)}`).join("")}" class="uhln2"/>`:"";
+  UHC.det={d,v,v2,st,fmt:h.fmt,L,R,W,n,vname:h.vname||g.name,v2name:h.v2name};
+  const cnt=[0,1,2].map(k=>st.filter(x=>x===k).length), unit=g.weekly?"weeks":"days";
+  const span=uhRange==="3M"?"the past three months":uhRange==="1Y"?"the past year":"the past two years";
+  return `<div class="uhdet"><div class="sdh"><div><h3>${esc(g.name)} over time</h3><p class="hint" style="margin:4px 0 0;max-width:80ch">${esc(h.rule||"")}</p></div><button class="x" data-uh-close aria-label="Close chart">${ic("close",16)}</button></div>
+    <div class="uhtlh"><span class="uhleg">${v2?`<i class="sw ln"></i>${esc(h.vname||g.name)} <i class="sw ln2"></i>${esc(h.v2name)}`:""}</span><span class="uhtip" id="uhTipDet" data-keep></span></div>
+    <div class="uhplot det" data-uhov="det"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="uhsv big" role="img" aria-label="${esc(g.name)} over ${span}">${zones}${ticks}${zero}${lines}${l2}${segs}<line class="uhcur" data-live="x1 x2" x1="-9" x2="-9" y1="${T}" y2="${H-B}"/></svg>${labs}</div>
+    <div class="uhax">${uhMonths(d)}</div>
+    <p class="uhnote">Over ${span}: stressed on ${cnt[2]} ${unit}, watch on ${cnt[1]}, calm on ${cnt[0]}.${g.weekly?" The CFTC reports positions each Tuesday and publishes them on Friday.":""}</p></div>`;
+}
 function stressHTML(c){
   if(!c||c.loading&&!c.data) return sk(240);
   if(c.error&&!c.data) return errBox(c.error,"stress");
-  const d=c.data;
-  return `${d.head?`<p class="uhh"><b>${esc(d.head)}.</b>${d.sub?` ${esc(d.sub)}`:""}</p>`:""}<div class="uhg">${d.gauges.map(g=>{
-    const top=lab=>`<div class="uht"><span>${esc(g.name)}</span>${lab||""}</div><div class="uhq">${esc(g.question)}</div>`;
-    if(!g.state) return `<div class="uhc off">${top()}<p class="hint">${esc(g.error||"Not available right now.")}</p></div>`;
-    const [lab,cl]=UH_STATE[g.state], sp=g.spark||[], pts=sp.map((v,i)=>[i,v-sp[0]]), src=(g.source||"").match(/FRED|CFTC|Yahoo/)?.[0]||"";
-    return `<div class="uhc">${top(`<span class="chip ${cl}">${lab}</span>`)}
-      <div class="uhv num">${esc(g.value)}</div><div class="uhu">${esc(g.unit||"")}</div>
-      <div class="uhs">${pts.length>1?spark(pts,200,36,`var(--${cl})`):""}</div>
-      <p class="uhl">${esc(g.line)}</p><p class="uhm">${esc(g.meaning)}</p>
-      <div class="uhf">${g.note?`<span class="uhn">${esc(g.note)}</span>`:""}<span class="uhd" title="${esc(g.source||"")}">${esc(dayLabel(g.asOf))}${src?" · "+src:""}</span></div></div>`; }).join("")}</div>`;
+  const d=c.data, sel=d.gauges.find(g=>g.key===uhSel&&g.hist);
+  return `${d.head?`<p class="uhh"><b>${esc(d.head)}.</b>${d.sub?` ${esc(d.sub)}`:""}</p>`:""}${uhStrip(d.timeline)}<div class="uhg">${d.gauges.map(g=>{
+    const top=lab=>`<span class="uht"><span>${esc(g.name)}</span>${lab||""}</span><span class="uhq">${esc(g.question)}</span>`;
+    if(!g.state) return `<div class="uhc off">${top()}<span class="hint">${esc(g.error||"Not available right now.")}</span></div>`;
+    const [lab,cl]=UH_STATE[g.state], sp=g.spark||[], base=g.hist?.fmt==="pct"&&!g.weekly?0:Math.min(...sp), pts=sp.map((v,i)=>[i,v-base]), src=(g.source||"").match(/FRED|CFTC|Yahoo/)?.[0]||"";
+    return `<button type="button" class="uhc" data-uh="${g.key}" aria-pressed="${g.key===uhSel}" title="See ${esc(g.name.toLowerCase())} over time">${top(`<span class="chip ${cl}">${lab}</span>`)}
+      <span class="uhv num">${esc(g.value)}</span><span class="uhu">${esc(g.unit||"")}</span>
+      <span class="uhs">${pts.length>1?spark(pts,200,36,`var(--${cl})`):""}</span>
+      <span class="uhl">${esc(g.line)}</span><span class="uhm">${esc(g.meaning)}</span>
+      <span class="uhf">${g.note?`<span class="uhn">${esc(g.note)}</span>`:""}<span class="uhd" title="${esc(g.source||"")}">${esc(dayLabel(g.asOf))}${src?" · "+src:""}</span></span></button>`; }).join("")}</div>${sel?uhDetail(sel):""}`;
 }
+/* the hover readouts for the strip and the open chart */
+document.addEventListener("pointermove",e=>{
+  const el=e.target.closest?.("[data-uhov]"); if(!el) return;
+  const k=el.dataset.uhov, c=UHC[k]; if(!c) return;
+  const svg=el.querySelector("svg"), r=svg.getBoundingClientRect(), fx=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)), cur=svg.querySelector(".uhcur");
+  let i, x;
+  if(k==="strip"){ i=Math.min(c.d.length-1,Math.max(0,Math.floor(fx*c.d.length))); x=(i+.5)*1000/c.d.length;
+    const row=c.s[i], by=t=>c.names.filter((_,j)=>row[j]===t).map(n=>n.toLowerCase());
+    const st=by("2"), wa=by("1");
+    setText($("#uhTipStrip"),`${uhDate(c.d[i])}: `+(st.length?`stressed ${st.join(", ")}`:"nothing stressed")+(wa.length?`; watch ${wa.join(", ")}`:"")); }
+  else { const fi=(fx*c.W-c.L)/(c.W-c.L-c.R); i=Math.min(c.n-1,Math.max(0,Math.round(fi*(c.n-1)))); x=c.L+(c.W-c.L-c.R)*i/Math.max(1,c.n-1);
+    setText($("#uhTipDet"),`${uhDate(c.d[i])} · ${c.vname} ${uhFmt(c.v[i],c.fmt)}${c.v2&&c.v2[i]!=null?` · ${c.v2name} ${uhFmt(c.v2[i],c.fmt)}`:""} · ${UH_LAB[c.st[i]]}`); }
+  cur.setAttribute("x1",x); cur.setAttribute("x2",x);
+});
+document.addEventListener("pointerleave",e=>{ const el=e.target.closest?.("[data-uhov]"); if(!el) return; const cur=el.querySelector(".uhcur"); cur?.setAttribute("x1",-9); cur?.setAttribute("x2",-9);
+  if(el.dataset.uhov==="strip") patch($("#uhTipStrip"),`${UH_LEG}`); else setText($("#uhTipDet"),""); },true);
+document.addEventListener("click",e=>{
+  const t=e.target.closest("[data-uh],[data-uh-close],[data-uhr]"); if(!t) return;
+  if(t.dataset.uhr){ uhRange=t.dataset.uhr; save("uhRange",uhRange); }
+  else if(t.dataset.uhClose!==undefined){ uhSel=null; save("uhSel",""); }
+  else { uhSel=uhSel===t.dataset.uh?null:t.dataset.uh; save("uhSel",uhSel||""); if(uhSel) setTimeout(()=>$(".uhdet")?.scrollIntoView({behavior:"smooth",block:"nearest"}),60); }
+  renderMarket();
+});
 /* the sector's S&P 500 companies that moved most over the chosen range, from prices already on hand */
 function sectorMovers(name){
   const H=base?.funds?.SPY?.holdings||[], rows=[];

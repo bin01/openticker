@@ -3,6 +3,7 @@ that's down leaves only its own gauge empty, and the headline matches the gauges
 
     openticker test        (or: python -m unittest discover tests)
 """
+import datetime as dt
 import math
 import sys
 import unittest
@@ -12,8 +13,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
 import stress  # noqa: E402
 
 
-def days(n):
-    return [f"2026-{1 + i // 28:02d}-{1 + i % 28:02d}" for i in range(n)]
+END = dt.date(2026, 11, 20)     # a Friday
+
+
+def days(n, end=END):
+    """The last n weekdays up to end, oldest first."""
+    out, d = [], end
+    while len(out) < n:
+        if d.weekday() < 5:
+            out.append(d.isoformat())
+        d -= dt.timedelta(days=1)
+    return out[::-1]
+
+
+def tuesdays(n, end=END - dt.timedelta(days=3)):
+    return [(end - dt.timedelta(weeks=n - 1 - i)).isoformat() for i in range(n)]
 
 
 def flat(n, v):
@@ -42,12 +56,12 @@ def futures(shift=0.0, n=150):
         net = -0.20 + 0.03 * math.sin(i * 1.7)
         if i >= n - 4:
             net += shift * (i - (n - 5)) / 4
-        rows.append((days(n)[i], 400000 + net * 1e6 / 2, 400000 - net * 1e6 / 2, 1e6))
+        rows.append((tuesdays(n)[i], 400000 + net * 1e6 / 2, 400000 - net * 1e6 / 2, 1e6))
     return {"S&P 500": rows, "Nasdaq-100": futures_quiet(n)}
 
 
 def futures_quiet(n):
-    return [(days(n)[i], 100000.0, 100000.0, 400000.0) for i in range(n)]
+    return [(tuesdays(n)[i], 100000.0, 100000.0, 400000.0) for i in range(n)]
 
 
 def gauge(p, key):
@@ -110,6 +124,32 @@ class StressGauges(unittest.TestCase):
         self.assertEqual(shaken["head"], "Stocks are shaken, but bonds are calm")
         spreading = stress.payload(credit(6.0), prices(vix=32), futures())
         self.assertEqual(spreading["head"], "The stress has reached the bond market")
+
+    def test_history_ends_where_the_card_does(self):
+        p = stress.payload(credit(4.0, 3.2), prices(vix=32, hb_drop=0.15), futures(shift=0.10))
+        for g in p["gauges"]:
+            h = g["hist"]
+            self.assertEqual(len(h["d"]), len(h["v"]))
+            self.assertEqual(len(h["d"]), len(h["s"]))
+            self.assertEqual(stress.STATES[h["s"][-1]], g["state"], g["key"])
+        self.assertEqual(stress.STATES[gauge(p, "credit")["hist"]["s"][-30]], "calm")   # before the rise
+
+    def test_timeline_lines_up_the_gauges(self):
+        p = stress.payload(credit(4.0, 3.2), prices(vix=32, hb_drop=0.15, rsp_drop=0.12), futures(shift=0.10))
+        tl = p["timeline"]
+        self.assertEqual(tl["keys"], ["credit", "breadth", "appetite", "fear", "funds"])
+        self.assertEqual(len(tl["d"]), len(tl["s"]))
+        self.assertEqual(tl["s"][-1], "22222")
+        self.assertTrue(tl["note"].startswith("5 of 5 gauges are stressed today"))
+
+    def test_timeline_note(self):
+        tl = {"d": ["2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09"],
+              "s": ["22000", "00000", "02000", "22000", "22100"]}
+        today = stress.dt.date(2026, 1, 9)
+        self.assertEqual(stress.timeline_note(tl, today), "2 of 5 gauges are stressed today, and that many have been since Jan 8. "
+                         "Before that, the last time was Jan 5.")
+        tl["s"][-1] = "00000"
+        self.assertEqual(stress.timeline_note(tl, today), "No gauge is stressed today. The last stressed day was Jan 8.")
 
     def test_nothing_at_all(self):
         p = stress.payload()

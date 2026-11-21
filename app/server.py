@@ -1838,9 +1838,10 @@ def _live_ttl(open_ttl, closed_ttl):
 
 
 def stress_prices():
-    """Daily closes for the Yahoo-based gauges, only on days every one of them traded. Yahoo leaves today's bar empty
+    """Three years of daily closes for the Yahoo-based gauges (a year to measure highs from, then two years of
+    readings for the trend), only on days every one of them traded. Yahoo leaves today's bar empty
     for a while after the close; that day is left out until it fills, so no gauge mixes today with yesterday."""
-    close = X._series(stress.PRICES, "13mo", "1d").dropna(how="any")
+    close = X._series(stress.PRICES, "3y", "1d").dropna(how="any")
     if len(close) < 60:
         raise ValueError(f"Yahoo sent only {len(close)} full days for the market gauges")
     return {"dates": [d.strftime("%Y-%m-%d") for d in close.index],
