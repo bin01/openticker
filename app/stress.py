@@ -20,7 +20,6 @@ import json
 import subprocess
 from urllib.parse import urlencode
 
-UA = "OpenTicker/1.0 (personal market dashboard)"
 FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv"
 CFTC_TFF = "https://publicreporting.cftc.gov/resource/gpe5-46if.json"   # Traders in Financial Futures, futures only
 CREDIT_SERIES = "BAMLH0A0HYM2"         # ICE BofA US High Yield Index option-adjusted spread, percent
@@ -30,8 +29,9 @@ STATES = ("calm", "watch", "stressed")
 
 
 def _get(url: str) -> bytes:
-    # curl, like the fund holdings downloads: it uses the Mac's own certificates and proxy settings
-    out = subprocess.run(["curl", "-fsSL", "--connect-timeout", "10", "-m", "25", "-A", UA, url], capture_output=True, check=True)
+    # curl, like the fund holdings downloads: it uses the Mac's own certificates and proxy settings. Keep curl's own
+    # user agent: FRED's front end resets the connection for unfamiliar ones (seen 2026-11-20 with "OpenTicker/1.0")
+    out = subprocess.run(["curl", "-fsSL", "--connect-timeout", "10", "-m", "25", url], capture_output=True, check=True)
     return out.stdout
 
 
