@@ -675,6 +675,12 @@ def sec_signals(sym, b, info):
               + (f", after which it led the S&P 500 by {_pct(sum(x[4] - x[5] for x in same) / len(same))} on average and beat it "
                  f"{sum(1 for x in same if x[4] > x[5])} of {len(same)} times." if same else "."),
               _table(["Date", "Rating", "Score", "Next month vs S&P 500", "Next 3 months vs S&P 500"], rows)]
+    try:
+        t = srv.stress.text(srv.stress_payload())
+        if t:
+            L += ["", t]
+    except Exception:
+        pass
     br = srv.SIG.get("breadth") or {}
     if br.get("above200") is not None:
         L += ["", breadth_line(br)]

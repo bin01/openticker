@@ -112,7 +112,7 @@ function insightList(items){
 let mktRange=load("mktRange","1D"), sectorOpen=null, industryOpen=null;
 const MKT_RANGES=["1D","1W","1M","3M","YTD","1Y"];
 async function loadMarket(force){
-  const tasks=[xget("macro",{},force),xget("screen",{name:"day_gainers"}),xget("screen",{name:"day_losers"}),xget("screen",{name:"most_actives"}),xget("econ")];
+  const tasks=[xget("macro",{},force),xget("screen",{name:"day_gainers"}),xget("screen",{name:"day_losers"}),xget("screen",{name:"most_actives"}),xget("econ"),xget("stress")];
   for(const t of tasks) t.then?.(()=>{ if(page==="market") renderMarket(); });
   await Promise.allSettled(tasks); if(page==="market") renderMarket();
 }
@@ -246,11 +246,13 @@ function renderMarket(){
       <section class="hero mhero"><div><div class="eyebrow" id="mEyebrow"></div><h1 class="ptitle" id="mTitle">Reading the tape…</h1><div id="mIns">${sk(150)}</div></div>
         <div class="mside"><div class="lbl" id="mMineL">Your stocks today</div><div id="mMine">${sk(160)}</div></div></section>
       <section id="mTiles"></section>
+      <section class="panel" id="mUh"><div class="ph"><div><h2>${ic("gauge")}Under the hood</h2><div class="hint">Five signs of whether a selloff is spreading or staying put, each read against its own past.</div></div></div><div id="mUhBody">${sk(240)}</div></section>
       <section class="panel"><div class="ph"><div><h2>${ic("layers")}Sectors</h2><div class="hint">The 11 S&amp;P sector funds. Pick one to see its industries and biggest companies.</div></div><div class="seg sm" id="mRng"></div></div><div id="mSectors">${sk(260)}</div><div id="mSector"></div></section>
       <section class="row even"><div class="panel"><div class="ph"><div><h2>${ic("updown")}Movers</h2><div class="hint">US stocks with the biggest moves and the most trading <span class="mWhen">today</span>.</div></div><div class="seg sm" id="mMovSeg"></div></div><div id="mMovers">${sk(300)}</div></div>
         <div class="panel"><div class="ph"><div><h2>${ic("landmark")}Economic calendar</h2><div class="hint">US data releases. Times are New York.</div></div><a class="lnk" href="#calendar" data-page="calendar" data-cal="econ">Full calendar ›</a></div><div id="mEcon">${sk(300)}</div></div></section></div>`;
     loadMarket();
   }
+  patch($("#mUhBody"),stressHTML(xpeek("stress")));
   const v=macroView(), err=xpeek("macro")?.error;
   if(err&&!v){ patch($("#mIns"),errBox(err,"macro")); return; }
   if(!v) return;
@@ -288,6 +290,23 @@ function renderMarket(){
   // econ
   const ec=xpeek("econ");
   patch($("#mEcon"),!ec||ec.loading&&!ec.data?sk(300):ec.error?errBox(ec.error,"econ"):econList(ec.data.filter(e=>e.date>=shiftDays(nyToday(),-1)).slice(0,14),true));
+}
+/* "Under the hood": the stress gauges from /api/x/stress (app/stress.py). Each card says what it asks, where it
+   stands against its own past (calm, watch, stressed), the fact behind it and what that usually means */
+const UH_STATE={calm:["Calm","up"],watch:["Watch","warn"],stressed:["Stressed","down"]};
+function stressHTML(c){
+  if(!c||c.loading&&!c.data) return sk(240);
+  if(c.error&&!c.data) return errBox(c.error,"stress");
+  const d=c.data;
+  return `${d.head?`<p class="uhh"><b>${esc(d.head)}.</b>${d.sub?` ${esc(d.sub)}`:""}</p>`:""}<div class="uhg">${d.gauges.map(g=>{
+    const top=lab=>`<div class="uht"><span>${esc(g.name)}</span>${lab||""}</div><div class="uhq">${esc(g.question)}</div>`;
+    if(!g.state) return `<div class="uhc off">${top()}<p class="hint">${esc(g.error||"Not available right now.")}</p></div>`;
+    const [lab,cl]=UH_STATE[g.state], sp=g.spark||[], pts=sp.map((v,i)=>[i,v-sp[0]]), src=(g.source||"").match(/FRED|CFTC|Yahoo/)?.[0]||"";
+    return `<div class="uhc">${top(`<span class="chip ${cl}">${lab}</span>`)}
+      <div class="uhv num">${esc(g.value)}</div><div class="uhu">${esc(g.unit||"")}</div>
+      <div class="uhs">${pts.length>1?spark(pts,200,36,`var(--${cl})`):""}</div>
+      <p class="uhl">${esc(g.line)}</p><p class="uhm">${esc(g.meaning)}</p>
+      <div class="uhf">${g.note?`<span class="uhn">${esc(g.note)}</span>`:""}<span class="uhd" title="${esc(g.source||"")}">${esc(dayLabel(g.asOf))}${src?" · "+src:""}</span></div></div>`; }).join("")}</div>`;
 }
 /* the sector's S&P 500 companies that moved most over the chosen range, from prices already on hand */
 function sectorMovers(name){
