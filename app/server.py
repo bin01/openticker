@@ -50,6 +50,7 @@ import paths  # noqa: E402
 import personal  # noqa: E402
 import runs  # noqa: E402
 import signals  # noqa: E402
+import stress  # noqa: E402
 import workbench  # noqa: E402
 import yahoo_extra as X  # noqa: E402
 
@@ -1809,7 +1810,8 @@ def health_report():
              "ecal": "earnings dates", "ohlc": "daily price bars", "analysts": "analysts", "financials": "financials",
              "ownership": "ownership and insiders", "options": "options", "events": "dividends and filings", "etf": "fund details",
              "sector": "sectors", "industry": "industries", "screen": "screens", "screens": "screens", "custom": "screens",
-             "ipo": "IPOs", "splits": "splits", "mstatus": "market hours", "macro-daily": "macro prices", "macro-intra": "macro prices"}
+             "ipo": "IPOs", "splits": "splits", "mstatus": "market hours", "macro-daily": "macro prices", "macro-intra": "macro prices",
+             "fred": "credit spreads from FRED", "cftc": "hedge fund positions from the CFTC", "gauges": "the market gauges"}
     bad = sorted({plain.get(k, k) for k, v in research.items() if v.get("fail") and v["fail"] > v.get("ok", 0) and now - v["fail"] < 3600})
     rows.append({"name": "Research from Yahoo", "detail": "working" if research and not bad else "no requests yet" if not research
                  else "failing just now: " + ", ".join(bad), "ok": not bad})
@@ -1833,6 +1835,34 @@ def _quiet(fn):
 
 def _live_ttl(open_ttl, closed_ttl):
     return open_ttl if market_open() else closed_ttl
+
+
+def stress_prices():
+    """Daily closes for the Yahoo-based gauges, only on days every one of them traded. Yahoo leaves today's bar empty
+    for a while after the close; that day is left out until it fills, so no gauge mixes today with yesterday."""
+    close = X._series(stress.PRICES, "13mo", "1d").dropna(how="any")
+    if len(close) < 60:
+        raise ValueError(f"Yahoo sent only {len(close)} full days for the market gauges")
+    return {"dates": [d.strftime("%Y-%m-%d") for d in close.index],
+            "px": {c: [round(float(v), 4) for v in close[c].tolist()] for c in close.columns}}
+
+
+def stress_payload():
+    """The Market page's "Under the hood" gauges (stress.py). Each source is cached on its own and keeps its last good
+    copy, so one that's down leaves its gauge empty and the rest still show."""
+    errs = {}
+
+    def part(key, ttl, fn, gauges, who):
+        try:
+            return cached(key, ttl, fn)
+        except Exception:
+            for g in gauges:
+                errs[g] = f"{who} didn't answer just now. This fills in on its own when it does."
+            return None
+    cs = part(("x", "fred", stress.CREDIT_SERIES, ()), 6 * 3600, lambda: stress.fred(stress.CREDIT_SERIES), ["credit"], "FRED")
+    pr = part(("x", "gauges", None, ()), _live_ttl(600, 3600), stress_prices, ["breadth", "appetite", "fear"], "Yahoo Finance")
+    cf = part(("x", "cftc", None, ()), 6 * 3600, stress.cftc, ["funds"], "The CFTC")
+    return stress.payload(cs, pr, cf, errs)
 
 
 LEVEL_INDEXES = {"^GSPC", "^NDX", "^IXIC", "^DJI", "^RUT", "^VIX"}   # indexes the Levels page can chart besides tickers
@@ -1860,6 +1890,7 @@ EXTRA = {
     "screen":     (False, 300,       lambda s, q: X.screen_predefined((q.get("name") or [""])[0])),
     "custom":     (False, 300,       lambda s, q: X.screen_custom({k: v[0] for k, v in q.items()})),
     "econ":       (False, 3600,      lambda s, q: X.economic_calendar()),
+    "stress":     (False, None,      lambda s, q: stress_payload()),
     "ipo":        (False, 6 * 3600,  lambda s, q: X.ipo_calendar()),
     "splits":     (False, 6 * 3600,  lambda s, q: X.splits_calendar()),
 }
@@ -1880,7 +1911,7 @@ def extra(name, q):
         iv = (q.get("iv") or ["1d"])[0]
         ttl = {"5m": _live_ttl(60, 3600), "10m": _live_ttl(90, 3600), "15m": _live_ttl(120, 3600), "1h": _live_ttl(300, 3600),
                "1wk": 6 * 3600, "3mo": 24 * 3600}.get(iv, _live_ttl(300, 6 * 3600))
-    if name == "macro":
+    if name in ("macro", "stress"):     # cached part by part inside
         return jsonable(fn(sym, q))
     key = ("x", name, sym, tuple(sorted((k, tuple(v)) for k, v in q.items() if k != "t")))
     return jsonable(cached(key, ttl, lambda: fn(sym, q)))

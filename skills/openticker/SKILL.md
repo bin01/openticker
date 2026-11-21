@@ -20,7 +20,7 @@ OpenTicker runs on the user's Mac and serves live data from Yahoo Finance plus t
 | `openticker reads NVDA` | Earlier evidence checks (leave out the ticker for all of them) and how each stock has done since |
 | `openticker portfolio` | The user's positions with exact shares, cost, value and P&L, watchlist, upcoming earnings, recent changes |
 | `openticker brief` | What changed for the user's stocks: ratings, targets, insider trades, unusual options |
-| `openticker market` | SPY, QQQ, SMH, SPSM (small caps), sector ETFs, rates, oil, dollar, VIX and the day's S&P 500 movers |
+| `openticker market` | SPY, QQQ, SMH, SPSM (small caps), sector ETFs, rates, oil, dollar, VIX, the day's S&P 500 movers, and "under the hood" gauges of whether a selloff is spreading (credit spreads, breadth, risk appetite, fear, hedge fund futures positioning) |
 | `openticker fund SPY --h 1M` | Which holdings drove a fund over 1D, 1W, 1M, 3M, 6M or 1Y |
 | `openticker compare NVDA AMD AVGO` | Side by side |
 | `openticker history NVDA SMH --h 3M` | Daily closes over 1W, 1M, 3M, 6M or 1Y, with % change since the start, for charts |

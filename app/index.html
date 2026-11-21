@@ -647,6 +647,22 @@ input[type=date]::-webkit-calendar-picker-indicator{opacity:.5}
 .mtile .tv{font:600 17px/1.2 var(--f-mono);margin-top:5px;letter-spacing:-.01em}
 .mtile .tc{font:500 12px/1.3 var(--f-mono);white-space:nowrap}.mtile .tc small{font:500 11px var(--f-body);color:var(--ink-3);margin-left:2px}
 .mtile .tsp svg{display:block;width:100%;height:30px;margin-top:4px}
+.chip.warn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+#mUh .uhh{margin:0 0 14px;font-size:14.5px;line-height:1.5;color:var(--ink-2);max-width:92ch;text-wrap:pretty}
+#mUh .uhh b{color:var(--ink);font-weight:650}
+.uhg{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.uhc{border:1px solid var(--rule);border-radius:12px;padding:12px 13px 11px;min-width:0;display:flex;flex-direction:column}
+.uht{display:flex;justify-content:space-between;align-items:center;gap:8px;font:600 13px/1.2 var(--f-body)}
+.uhq{color:var(--ink-3);font-size:12px;margin-top:3px}
+.uhv{font:600 22px/1.1 var(--f-mono);margin-top:12px;letter-spacing:-.01em}
+.uhu{color:var(--ink-3);font-size:11.5px;margin-top:3px}
+.uhs svg{display:block;width:100%;height:36px;margin:10px 0 0}
+.uhl{font-size:12.5px;line-height:1.45;color:var(--ink-2);margin:10px 0 0;text-wrap:pretty}
+.uhm{font-size:13px;line-height:1.45;margin:8px 0 0;text-wrap:pretty}
+.uhf{color:var(--ink-3);font-size:11px;line-height:1.45;margin-top:auto;padding-top:10px;display:grid;gap:3px}
+.uhd{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:760px){.uhn{display:none}.uhv{margin-top:8px}.uhs svg{height:28px;margin-top:8px}.uhc{padding:11px 13px 10px}}
+.uhc.off .hint{margin-top:10px}
 button.mtile{display:block;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;transition:border-color .15s}
 button.mtile:hover{border-color:color-mix(in srgb,var(--ink) 30%,var(--rule))}
 button.mtile:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -1500,7 +1516,7 @@ body[data-page="mine"] section.keys{display:none}
 
 <script>
 /* ======================= icons ======================= */
-const IC={search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',levels:'<path d="M3 5h18M3 19h18"/><path d="m4 15 4-6 4 4 4-6 4 4"/>',chev:'<path d="m6 9 6 6 6-6"/>',upload:'<path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M20 15v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4"/>',bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+const IC={gauge:'<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',levels:'<path d="M3 5h18M3 19h18"/><path d="m4 15 4-6 4 4 4-6 4 4"/>',chev:'<path d="m6 9 6 6 6-6"/>',upload:'<path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M20 15v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4"/>',bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
   sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
   moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
   auto:'<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor"/>',
